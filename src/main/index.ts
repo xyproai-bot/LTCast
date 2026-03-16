@@ -464,7 +464,8 @@ app.whenReady().then(() => {
       return {
         preset: { name: preset.name, data: preset.data, updatedAt: preset.updatedAt ?? '' },
         audioPaths,
-        projectDir
+        projectDir,
+        presetFilePath
       }
     } catch { return null }
   })

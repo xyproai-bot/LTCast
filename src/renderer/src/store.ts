@@ -706,7 +706,7 @@ export const useStore = create<AppState>()(persist((set) => ({
       previousSetlist: null,
       savedPresets: presets,
       presetName: preset.name,
-      presetPath: result.projectDir ? `${result.projectDir}/${preset.name}.cuesync` : null,
+      presetPath: result.presetFilePath ?? null,
       presetDirty: false,
       // Clear playback state
       filePath: null, fileName: null, duration: 0,
