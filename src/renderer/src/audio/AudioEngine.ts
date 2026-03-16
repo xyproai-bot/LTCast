@@ -628,8 +628,8 @@ export class AudioEngine {
     if (this.ltcSignalTimeout) { clearTimeout(this.ltcSignalTimeout); this.ltcSignalTimeout = null }
     this.callbacks.onLtcSignalStatus(false)
 
-    // Stop music
-    if (this.musicSource) { try { this.musicSource.stop() } catch { /**/ } this.musicSource = null }
+    // Stop music (clear onended first to prevent double-firing of onEnded callback)
+    if (this.musicSource) { this.musicSource.onended = null; try { this.musicSource.stop() } catch { /**/ } this.musicSource = null }
     if (this.ctx) { try { this.ctx.close() } catch { /**/ } this.ctx = null }
 
     // Stop LTC sources (but keep ltcCtx alive for device handle)
