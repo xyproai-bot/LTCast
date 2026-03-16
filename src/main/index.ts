@@ -287,11 +287,15 @@ app.whenReady().then(() => {
   ipcMain.handle('list-presets', () => {
     try {
       const files = readdirSync(presetsDir).filter(f => f.endsWith('.cuesync'))
-      return files.map(f => {
-        const raw = readFileSync(join(presetsDir, f), 'utf-8')
-        const data = JSON.parse(raw)
-        return { name: data.name ?? f.replace('.cuesync', ''), data: data.data, updatedAt: data.updatedAt ?? '' }
-      })
+      const results = []
+      for (const f of files) {
+        try {
+          const raw = readFileSync(join(presetsDir, f), 'utf-8')
+          const data = JSON.parse(raw)
+          results.push({ name: data.name ?? f.replace('.cuesync', ''), data: data.data, updatedAt: data.updatedAt ?? '' })
+        } catch { /* skip corrupted preset file */ }
+      }
+      return results
     } catch { return [] }
   })
 
