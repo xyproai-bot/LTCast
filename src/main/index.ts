@@ -389,6 +389,29 @@ app.whenReady().then(() => {
     }
   })
 
+  // ── VB-CABLE first-launch prompt (Windows only) ──────────────
+  // Show once after install to let users know they need a virtual audio cable for LTC output
+  if (process.platform === 'win32' && app.isPackaged) {
+    const vbcableFlagPath = join(app.getPath('userData'), 'vbcable-prompted.json')
+    if (!existsSync(vbcableFlagPath)) {
+      writeFileSync(vbcableFlagPath, '{"prompted":true}', 'utf-8')
+      setTimeout(async () => {
+        const result = await dialog.showMessageBox(win, {
+          type: 'info',
+          title: 'Virtual Audio Cable Recommended',
+          message: 'CueSync requires a virtual audio cable to output LTC via software.',
+          detail: 'VB-CABLE is a free virtual audio device that lets CueSync send LTC timecode to other software on your computer.\n\nIf you\'re using a physical audio interface to output LTC, you can skip this.',
+          buttons: ['Download VB-CABLE (Free)', 'Skip'],
+          defaultId: 0,
+          cancelId: 1
+        })
+        if (result.response === 0) {
+          shell.openExternal('https://vb-audio.com/Cable/index.htm')
+        }
+      }, 2000)
+    }
+  }
+
   // Silent auto-check for updates 5 seconds after startup
   // Only in production — dev builds can't use the updater
   setTimeout(() => checkForUpdates(true), 5000)
