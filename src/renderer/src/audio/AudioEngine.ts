@@ -199,10 +199,26 @@ export class AudioEngine {
     // Parse "HH:MM:SS:FF" into total frames
     const parts = tcString.split(/[:;]/).map(Number)
     if (parts.length === 4 && parts.every(p => !isNaN(p))) {
-      this.generatorStartFrames = parts[0] * 3600 * fps
-        + parts[1] * 60 * fps
-        + parts[2] * fps
-        + parts[3]
+      const [h, m, s, f] = parts
+      if (fps === 29.97) {
+        // Drop-frame: mirror of _generateTimecode DF inverse calculation
+        const fpsInt = 30
+        const framesPerMin = fpsInt * 60 - 2   // 1798
+        const framesPer10Min = framesPerMin * 10 + 2  // 17982
+        const framesPerHour = framesPer10Min * 6      // 107892
+        const tenMinBlocks = Math.floor(m / 10)
+        const mInBlock = m % 10
+        let frames = h * framesPerHour + tenMinBlocks * framesPer10Min
+        if (mInBlock === 0) {
+          frames += s * fpsInt + f
+        } else {
+          frames += fpsInt * 60 + (mInBlock - 1) * framesPerMin + s * fpsInt + f
+        }
+        this.generatorStartFrames = frames
+      } else {
+        const fpsInt = Math.round(fps)
+        this.generatorStartFrames = h * 3600 * fpsInt + m * 60 * fpsInt + s * fpsInt + f
+      }
     } else {
       this.generatorStartFrames = 0
     }
