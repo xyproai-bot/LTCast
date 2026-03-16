@@ -50,6 +50,8 @@ export interface PresetData {
   generatorFps?: number
   artnetEnabled?: boolean
   artnetTargetIp?: string
+  mtcMode?: 'quarter-frame' | 'full-frame'
+  version?: number
 }
 
 export interface SavedPreset {
@@ -85,20 +87,37 @@ function ensureSetlistIds(data: PresetData): PresetData {
   return data
 }
 
+const CURRENT_PRESET_VERSION = 1
+
+/** Migrate old preset data to current version. */
+function migratePreset(data: PresetData): PresetData {
+  const version = data.version ?? 0
+  if (version === CURRENT_PRESET_VERSION) return data
+  // version 0 → 1: add mtcMode default
+  if (version < 1) {
+    data.mtcMode = data.mtcMode ?? 'full-frame' // old presets keep full-frame behavior
+  }
+  // Future: if (version < 2) { ... }
+  data.version = CURRENT_PRESET_VERSION
+  return data
+}
+
 /** Build a PresetData snapshot from the current store state. */
 function buildPresetData(s: Pick<AppState,
   'lang' | 'rightTab' | 'offsetFrames' | 'loop' | 'musicOutputDeviceId' |
   'ltcOutputDeviceId' | 'ltcGain' | 'selectedMidiPort' | 'forceFps' |
   'ltcChannel' | 'setlist' | 'generatorStartTC' | 'generatorFps' |
-  'artnetEnabled' | 'artnetTargetIp'>): PresetData {
+  'artnetEnabled' | 'artnetTargetIp' | 'mtcMode'>): PresetData {
   return {
+    version: CURRENT_PRESET_VERSION,
     lang: s.lang, rightTab: s.rightTab, offsetFrames: s.offsetFrames,
     loop: s.loop, musicOutputDeviceId: s.musicOutputDeviceId,
     ltcOutputDeviceId: s.ltcOutputDeviceId, ltcGain: s.ltcGain,
     selectedMidiPort: s.selectedMidiPort, forceFps: s.forceFps,
     ltcChannel: s.ltcChannel, setlist: s.setlist,
     generatorStartTC: s.generatorStartTC, generatorFps: s.generatorFps,
-    artnetEnabled: s.artnetEnabled, artnetTargetIp: s.artnetTargetIp
+    artnetEnabled: s.artnetEnabled, artnetTargetIp: s.artnetTargetIp,
+    mtcMode: s.mtcMode
   }
 }
 
@@ -142,6 +161,9 @@ export interface AppState {
   midiOutputs: MidiPort[]
   selectedMidiPort: string | null
   midiConnected: boolean
+
+  // MTC mode
+  mtcMode: 'quarter-frame' | 'full-frame'
 
   // Art-Net Timecode
   artnetEnabled: boolean
@@ -204,6 +226,7 @@ export interface AppState {
   setMidiOutputs: (ports: MidiPort[]) => void
   setSelectedMidiPort: (port: string | null) => void
   setMidiConnected: (connected: boolean) => void
+  setMtcMode: (mode: 'quarter-frame' | 'full-frame') => void
   setArtnetEnabled: (enabled: boolean) => void
   setArtnetTargetIp: (ip: string) => void
   setVideoFile: (name: string | null, waveform: Float32Array | null, duration: number) => void
@@ -271,6 +294,8 @@ export const useStore = create<AppState>()(persist((set) => ({
   midiOutputs: [],
   selectedMidiPort: null,
   midiConnected: false,
+
+  mtcMode: 'quarter-frame',
 
   artnetEnabled: false,
   artnetTargetIp: '255.255.255.255',
@@ -342,6 +367,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   setMidiOutputs: (midiOutputs) => set({ midiOutputs }),
   setSelectedMidiPort: (selectedMidiPort) => set({ selectedMidiPort, presetDirty: true }),
   setMidiConnected: (midiConnected) => set({ midiConnected }),
+  setMtcMode: (mtcMode) => set({ mtcMode, presetDirty: true }),
   setArtnetEnabled: (artnetEnabled) => set({ artnetEnabled, presetDirty: true }),
   setArtnetTargetIp: (artnetTargetIp) => set({ artnetTargetIp, presetDirty: true }),
   setTappedBpm: (tappedBpm) => set({ tappedBpm }),
@@ -550,7 +576,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   openProject: async () => {
     const result = await window.api.importPreset()
     if (!result) return
-    const presetData = ensureSetlistIds(result.data as PresetData)
+    const presetData = ensureSetlistIds(migratePreset(result.data as PresetData))
     const presets = await loadPresetsFromDisk()
     saveActivePresetName(result.name)
     // Add to recent files
@@ -575,7 +601,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     try {
       const result = await window.api.loadPresetFile(path)
       if (!result) return
-      const presetData = ensureSetlistIds(result.data as PresetData)
+      const presetData = ensureSetlistIds(migratePreset(result.data as PresetData))
       const presets = await loadPresetsFromDisk()
       saveActivePresetName(result.name)
       set({
@@ -608,7 +634,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     const preset = s.savedPresets.find(p => p.name === name)
     if (!preset) return s
     saveActivePresetName(name)
-    const data = ensureSetlistIds(preset.data)
+    const data = ensureSetlistIds(migratePreset(preset.data))
     return {
       ...data, presetName: name, presetPath: null, presetDirty: false,
       // Clear playback state
@@ -663,7 +689,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     if (!result) return false
     const { preset } = result
     const presets = await loadPresetsFromDisk()
-    const presetData = ensureSetlistIds(preset.data as PresetData)
+    const presetData = ensureSetlistIds(migratePreset(preset.data as PresetData))
     // Update setlist paths to point to extracted audio files
     if (presetData.setlist && result.audioPaths.length > 0) {
       presetData.setlist = presetData.setlist.map(item => {
@@ -692,6 +718,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     setlist: state.setlist,
     generatorStartTC: state.generatorStartTC,
     generatorFps: state.generatorFps,
+    mtcMode: state.mtcMode,
     artnetEnabled: state.artnetEnabled,
     artnetTargetIp: state.artnetTargetIp,
     presetPath: state.presetPath,

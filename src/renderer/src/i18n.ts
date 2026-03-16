@@ -93,7 +93,14 @@ export const strings = {
     fileRelinked: 'File relinked',
     filesAutoRelinked: '{n} files auto-relinked',
     fileMissing: 'File missing — click to relink',
-    confirmClearSetlist: 'Clear all items from setlist?'
+    confirmClearSetlist: 'Clear all items from setlist?',
+    mtcModeLabel: 'MTC Mode',
+    mtcModeQuarterFrame: 'Quarter-frame (recommended)',
+    mtcModeFullFrame: 'Full-frame (legacy)',
+    mtcModeHint: 'Quarter-frame provides continuous sync during playback. Full-frame is for compatibility with older devices.',
+    midiPortDisconnected: 'MIDI port disconnected: {name}',
+    audioDeviceDisconnected: 'Audio device disconnected. Playback paused.',
+    presetNewerVersion: 'This preset was created with a newer version of CueSync. Some settings may not load correctly.'
   },
   zh: {
     appTitle: 'CueSync',
@@ -189,13 +196,26 @@ export const strings = {
     fileRelinked: '檔案已重新連結',
     filesAutoRelinked: '已自動重新連結 {n} 個檔案',
     fileMissing: '檔案遺失 — 點擊重新連結',
-    confirmClearSetlist: '確定要清除全部曲目嗎？'
+    confirmClearSetlist: '確定要清除全部曲目嗎？',
+    mtcModeLabel: 'MTC 模式',
+    mtcModeQuarterFrame: 'Quarter-frame（推薦）',
+    mtcModeFullFrame: 'Full-frame（舊版相容）',
+    mtcModeHint: 'Quarter-frame 在播放中持續同步。Full-frame 用於舊設備相容性。',
+    midiPortDisconnected: 'MIDI 埠已斷線：{name}',
+    audioDeviceDisconnected: '音訊設備已斷線，播放已暫停。',
+    presetNewerVersion: '此 Preset 由較新版本的 CueSync 建立，部分設定可能無法載入。'
   }
 }
 
 export type Lang = keyof typeof strings
 export type StringKey = keyof typeof strings.en
 
-export function t(lang: Lang, key: StringKey): string {
-  return strings[lang][key] ?? strings.en[key] ?? key
+export function t(lang: Lang, key: StringKey, vars?: Record<string, string>): string {
+  let str: string = strings[lang][key] ?? strings.en[key] ?? key
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) {
+      str = str.replace(`{${k}}`, v)
+    }
+  }
+  return str
 }

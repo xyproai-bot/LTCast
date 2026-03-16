@@ -40,7 +40,8 @@ export default function App(): React.JSX.Element {
     tcGeneratorMode, setTcGeneratorMode,
     generatorStartTC, generatorFps,
     setLtcConfidence,
-    artnetEnabled, artnetTargetIp
+    artnetEnabled, artnetTargetIp,
+    setSelectedMidiPort
   } = useStore()
 
   // Sync window title bar with preset name
@@ -85,6 +86,11 @@ export default function App(): React.JSX.Element {
       },
       onTimecodeLookup: (lookup) => {
         setTimecodeLookup(lookup)
+      },
+      onDeviceDisconnected: () => {
+        setPlayState('paused')
+        const lang = useStore.getState().lang
+        toast.warning(t(lang, 'audioDeviceDisconnected'))
       }
     })
 
@@ -93,6 +99,12 @@ export default function App(): React.JSX.Element {
     mtcOut.onPortsChanged = () => {
       setMidiOutputs(mtcOut.getPorts())
       setMidiConnected(mtcOut.isConnected())
+    }
+    mtcOut.onPortDisconnected = (portName: string) => {
+      setMidiConnected(false)
+      setSelectedMidiPort(null)
+      const lang = useStore.getState().lang
+      toast.warning(t(lang, 'midiPortDisconnected', { name: portName }))
     }
     mtcOut.init()
       .then(() => {
@@ -103,6 +115,8 @@ export default function App(): React.JSX.Element {
           const ok = mtcOut.selectPort(savedPort)
           setMidiConnected(ok)
         }
+        // Restore saved MTC mode
+        mtcOut.setMode(useStore.getState().mtcMode)
       })
       .catch((e) => console.warn('MIDI init failed:', e))
     mtc.current = mtcOut
@@ -516,6 +530,7 @@ export default function App(): React.JSX.Element {
             onMusicDeviceChange={(id) => engine.current?.setMusicOutputDevice(id)}
             onLtcDeviceChange={(id) => engine.current?.setLtcOutputDevice(id)}
             onLtcGainChange={(gain) => engine.current?.setLtcGain(gain)}
+            onMtcModeChange={(mode) => mtc.current?.setMode(mode)}
           />
 
         </div>

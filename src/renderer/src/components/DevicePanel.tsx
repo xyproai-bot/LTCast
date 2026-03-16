@@ -7,6 +7,7 @@ interface Props {
   onMusicDeviceChange: (deviceId: string) => void
   onLtcDeviceChange: (deviceId: string) => void
   onLtcGainChange: (gain: number) => void
+  onMtcModeChange: (mode: 'quarter-frame' | 'full-frame') => void
 }
 
 function isValidIpv4(ip: string): boolean {
@@ -21,7 +22,7 @@ function gainToDb(gain: number): string {
   return (db >= 0 ? '+' : '') + db.toFixed(1) + ' dB'
 }
 
-export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDeviceChange, onLtcGainChange }: Props): React.JSX.Element {
+export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDeviceChange, onLtcGainChange, onMtcModeChange }: Props): React.JSX.Element {
   const {
     audioOutputDevices, setAudioOutputDevices,
     musicOutputDeviceId, setMusicOutputDeviceId,
@@ -32,6 +33,7 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
     midiConnected,
     detectedLtcChannel,
     ltcSignalOk,
+    mtcMode, setMtcMode,
     artnetEnabled, setArtnetEnabled,
     artnetTargetIp, setArtnetTargetIp,
     lang
@@ -70,6 +72,11 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
   const handleLtcGain = (value: number): void => {
     setLtcGain(value)
     onLtcGainChange(value)
+  }
+
+  const handleMtcMode = (mode: 'quarter-frame' | 'full-frame'): void => {
+    setMtcMode(mode)
+    onMtcModeChange(mode)
   }
 
   return (
@@ -156,6 +163,20 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
         <span className="signal-label">
           {midiConnected ? t(lang, 'connected') : t(lang, 'disconnected')}
         </span>
+      </div>
+
+      {/* MTC Mode */}
+      <div className="device-row">
+        <span className="device-label">{t(lang, 'mtcModeLabel')}</span>
+        <select
+          className="device-select"
+          value={mtcMode}
+          onChange={(e) => handleMtcMode(e.target.value as 'quarter-frame' | 'full-frame')}
+        >
+          <option value="quarter-frame">{t(lang, 'mtcModeQuarterFrame')}</option>
+          <option value="full-frame">{t(lang, 'mtcModeFullFrame')}</option>
+        </select>
+        <span className="ltc-gain-hint">{t(lang, 'mtcModeHint')}</span>
       </div>
 
       {/* Art-Net Timecode */}
