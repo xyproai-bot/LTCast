@@ -700,7 +700,22 @@ export const useStore = create<AppState>()(persist((set) => ({
       })
     }
     saveActivePresetName(preset.name)
-    set({ ...presetData, savedPresets: presets, presetName: preset.name, presetDirty: false })
+    set({
+      ...presetData,
+      loopA: presetData.loopA ?? null, loopB: presetData.loopB ?? null,
+      previousSetlist: null,
+      savedPresets: presets,
+      presetName: preset.name,
+      presetPath: result.projectDir ? `${result.projectDir}/${preset.name}.cuesync` : null,
+      presetDirty: false,
+      // Clear playback state
+      filePath: null, fileName: null, duration: 0,
+      playState: 'stopped', currentTime: 0,
+      timecode: null, detectedFps: null,
+      tappedBpm: null, timecodeLookup: [],
+      videoFileName: null, videoWaveform: null, videoDuration: 0,
+      videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false
+    })
     return true
   }
 }), {

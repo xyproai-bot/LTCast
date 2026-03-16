@@ -456,7 +456,9 @@ app.whenReady().then(() => {
       const audioDir = join(projectDir, 'Audio')
       let audioPaths: string[] = []
       if (existsSync(audioDir)) {
-        audioPaths = readdirSync(audioDir).map(f => join(audioDir, f))
+        audioPaths = readdirSync(audioDir)
+          .map(f => join(audioDir, f))
+          .filter(p => { try { return statSync(p).isFile() } catch { return false } })
       }
 
       return {
