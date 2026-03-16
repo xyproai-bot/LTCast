@@ -91,6 +91,9 @@ export default function App(): React.JSX.Element {
         setPlayState('paused')
         const lang = useStore.getState().lang
         toast.warning(t(lang, 'audioDeviceDisconnected'))
+      },
+      onPlayStarted: (perfNow, audioTime) => {
+        mtc.current?.setPlayStartClocks(perfNow, audioTime)
       }
     })
 
@@ -258,7 +261,8 @@ export default function App(): React.JSX.Element {
   const handleTimecode = useCallback((tc: TimecodeFrame): void => {
     setTimecode(tc)
     setDetectedFps(tc.fps)
-    mtc.current?.sendTimecode(tc)
+    const audioTime = engine.current?.getCurrentAudioContextTime() ?? 0
+    mtc.current?.sendTimecode(tc, audioTime)
     artnet.current?.sendTimecode(tc)
   }, [setTimecode, setDetectedFps])
 

@@ -31,6 +31,7 @@ export interface AudioEngineCallbacks {
   onWaveformData: (music: Float32Array, ltc: Float32Array) => void
   onTimecodeLookup: (lookup: TimecodeLookupEntry[]) => void
   onDeviceDisconnected?: (deviceId: string) => void
+  onPlayStarted?: (perfNow: number, audioTime: number) => void
 }
 
 /**
@@ -307,6 +308,9 @@ export class AudioEngine {
     this.startOffset = startOffset
     this.playing = true
 
+    // Notify clock mapping baseline for MTC quarter-frame scheduling
+    this.callbacks.onPlayStarted?.(performance.now(), this.ctx.currentTime)
+
     this.musicSource.onended = () => {
       if (!this.loop) {
         this._stopPlayback()
@@ -344,6 +348,7 @@ export class AudioEngine {
 
   getDuration(): number { return this.buffer?.duration ?? 0 }
   getSampleRate(): number { return this.buffer?.sampleRate ?? 48000 }
+  getCurrentAudioContextTime(): number { return this.ctx?.currentTime ?? 0 }
 
   getMusicChannelData(): Float32Array | null {
     if (!this.buffer) return null
