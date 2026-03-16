@@ -20,6 +20,8 @@ export class MtcOutput {
   private lastSentFrame = -1
   private mtcMode: MtcMode = 'quarter-frame'
   private lastQfPiece = -1  // tracks which quarter-frame piece (0-7) was last sent
+  private _perfNowAtPlayStart = 0
+  private _audioTimeAtPlayStart = 0
   onPortsChanged: (() => void) | null = null
   onPortDisconnected: ((portName: string) => void) | null = null
 
@@ -79,13 +81,23 @@ export class MtcOutput {
   }
 
   /**
+   * Record clock mapping baseline so quarter-frame messages can be
+   * scheduled precisely via Web MIDI's `send(data, timestamp)`.
+   * Call this from AudioEngine.play() right after musicSource.start().
+   */
+  setPlayStartClocks(perfNow: number, audioTime: number): void {
+    this._perfNowAtPlayStart = perfNow
+    this._audioTimeAtPlayStart = audioTime
+  }
+
+  /**
    * Send MTC timecode based on current mode.
    * - quarter-frame: sends 8 quarter-frame messages per 2 frames (continuous sync)
    * - full-frame: sends SysEx on each frame change (legacy/locate)
    *
    * De-duplicated: only sends when the frame actually changes.
    */
-  sendTimecode(tc: TimecodeFrame): void {
+  sendTimecode(tc: TimecodeFrame, audioContextCurrentTime: number): void {
     if (!this.selectedOutput) return
 
     const frameKey = (tc.hours << 24) | (tc.minutes << 16) | (tc.seconds << 8) | tc.frames
@@ -93,7 +105,7 @@ export class MtcOutput {
     this.lastSentFrame = frameKey
 
     if (this.mtcMode === 'quarter-frame') {
-      this.sendQuarterFrames(tc)
+      this.sendQuarterFrames(tc, audioContextCurrentTime)
     } else {
       this.sendFullFrame(tc)
     }
@@ -111,7 +123,7 @@ export class MtcOutput {
    * advancing the piece counter. This means the receiver gets
    * a complete timecode update every 8 frame changes.
    */
-  private sendQuarterFrames(tc: TimecodeFrame): void {
+  private sendQuarterFrames(tc: TimecodeFrame, audioContextCurrentTime: number): void {
     if (!this.selectedOutput) return
 
     const rc = fpsToRateCode(tc.fps)
@@ -132,8 +144,12 @@ export class MtcOutput {
     this.lastQfPiece = (this.lastQfPiece + 1) % 8
     const piece = this.lastQfPiece
 
+    // Map AudioContext time → performance.now() coordinate for scheduled send
+    const perfTime = this._perfNowAtPlayStart +
+      (audioContextCurrentTime - this._audioTimeAtPlayStart) * 1000
+
     try {
-      this.selectedOutput.send([0xf1, (piece << 4) | nibbles[piece]])
+      this.selectedOutput.send([0xf1, (piece << 4) | nibbles[piece]], perfTime)
     } catch {
       const name = this.selectedOutput?.name ?? 'Unknown'
       this.selectedOutput = null
