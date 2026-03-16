@@ -26,7 +26,7 @@ interface Window {
     addRecentFile(path: string, name: string): Promise<void>
     getRecentFiles(): Promise<Array<{ path: string; name: string }>>
     packageProject(name: string, data: unknown, audioPaths: string[]): Promise<string | null>
-    importProject(): Promise<{ preset: { name: string; data: unknown; updatedAt: string }; audioPaths: string[]; projectDir: string } | null>
+    importProject(): Promise<{ preset: { name: string; data: unknown; updatedAt: string }; audioPaths: string[]; projectDir: string; presetFilePath: string } | null>
 
     // File utilities
     fileExists(path: string): Promise<boolean>
