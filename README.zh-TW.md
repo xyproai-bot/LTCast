@@ -72,6 +72,11 @@ src/
 - **Full-frame MTC SysEx** — 使用全幀訊息而非四分之一幀訊息，因為後者需要 `requestAnimationFrame` 無法提供的精確計時。
 - **Drop-frame 時間碼** — 在解碼器與產生器中完整實作 SMPTE 12M drop-frame 演算法（29.97fps）。
 
+## 問題回報與聯繫
+
+- **GitHub Issues**：[提交問題](https://github.com/xyproai-bot/CueSync/issues)
+- **Email**：xyproai-bot@gmail.com
+
 ## 授權
 
 [MIT](LICENSE)

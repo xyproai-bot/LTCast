@@ -72,6 +72,11 @@ src/
 - **Full-frame MTC SysEx** — Used instead of quarter-frame messages, which require precise timing that `requestAnimationFrame` cannot provide.
 - **Drop-frame timecode** — Full SMPTE 12M drop-frame algorithm (29.97fps) implemented in both decoder and generator.
 
+## Feedback & Bug Reports
+
+- **GitHub Issues**: [Open an issue](https://github.com/xyproai-bot/CueSync/issues)
+- **Email**: xyproai-bot@gmail.com
+
 ## License
 
 [MIT](LICENSE)
