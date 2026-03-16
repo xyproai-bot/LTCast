@@ -83,4 +83,6 @@ src/
 
 ## License
 
-[MIT](LICENSE)
+[Commons Clause + MIT](LICENSE)
+
+Free to use for personal and commercial productions. Redistribution or resale of the software itself is not permitted.

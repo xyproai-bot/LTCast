@@ -83,4 +83,6 @@ src/
 
 ## 授權
 
-[MIT](LICENSE)
+[Commons Clause + MIT](LICENSE)
+
+個人與商業演出使用免費。不允許將本軟體重新包裝販售。
