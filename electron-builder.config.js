@@ -1,0 +1,66 @@
+/** @type {import('electron-builder').Configuration} */
+module.exports = {
+  appId: 'com.cuesync.app',
+  productName: 'CueSync',
+  copyright: 'Copyright © 2024 CueSync',
+  directories: {
+    buildResources: 'resources',
+    output: 'dist'
+  },
+  fileAssociations: [
+    {
+      ext: 'cuesync',
+      name: 'CueSync Project',
+      description: 'CueSync Project File',
+      icon: 'resources/icon',
+      role: 'Editor',
+      mimeType: 'application/x-cuesync'
+    }
+  ],
+  files: [
+    'out/**/*',
+    'resources/**/*',
+    '!resources/installers/**/*'
+  ],
+  asarUnpack: [
+    'node_modules/ffmpeg-static/**'
+  ],
+  extraResources: [
+    {
+      from: 'resources/installers',
+      to: 'installers',
+      filter: ['**/*']
+    }
+  ],
+  mac: {
+    target: [
+      { target: 'dmg', arch: ['x64', 'arm64'] }
+    ],
+    icon: 'resources/icon.png',
+    // No codesign - user must right-click → Open on first launch
+    identity: null
+  },
+  dmg: {
+    title: 'CueSync',
+    contents: [
+      { x: 130, y: 220, type: 'file' },
+      { x: 410, y: 220, type: 'link', path: '/Applications' }
+    ]
+  },
+  win: {
+    target: [
+      { target: 'nsis', arch: ['x64'] }
+    ],
+    icon: 'resources/icon.png'
+  },
+  nsis: {
+    oneClick: false,
+    allowToChangeInstallationDirectory: true,
+    license: 'resources/LICENSE.txt',
+    runAfterFinish: true
+  },
+  linux: {
+    target: ['AppImage'],
+    icon: 'resources/icon.png'
+  }
+}
