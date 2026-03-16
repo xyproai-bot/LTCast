@@ -39,6 +39,8 @@ export default function App(): React.JSX.Element {
     offsetFrames, loopA, loopB,
     tcGeneratorMode, setTcGeneratorMode,
     generatorStartTC, generatorFps,
+    forceFps,
+    ltcChannel,
     setLtcConfidence,
     artnetEnabled, artnetTargetIp,
     setSelectedMidiPort
@@ -207,6 +209,16 @@ export default function App(): React.JSX.Element {
     engine.current?.setGeneratorStartTC(generatorStartTC, generatorFps)
   }, [generatorStartTC, generatorFps])
 
+  // Sync force FPS override to engine
+  useEffect(() => {
+    engine.current?.setForceFps(forceFps)
+  }, [forceFps])
+
+  // Sync manual LTC channel override to engine (takes effect on next play)
+  useEffect(() => {
+    if (ltcChannel !== 'auto') engine.current?.setLtcChannel(ltcChannel)
+  }, [ltcChannel])
+
   // Sync Art-Net settings
   useEffect(() => {
     if (artnetEnabled) {
@@ -291,6 +303,9 @@ export default function App(): React.JSX.Element {
       const arrayBuffer = await window.api.readAudioFile(filePath_)
       if (!arrayBuffer) throw new Error('Empty file')
       await engine.current?.loadFile(arrayBuffer)
+      // Apply manual LTC channel override if set (overrides auto-detect from loadFile)
+      const ch = useStore.getState().ltcChannel
+      if (ch !== 'auto') engine.current?.setLtcChannel(ch)
       const duration = engine.current?.getDuration() ?? 0
       setFilePath(filePath_, name, duration)
     } catch (e) {
@@ -534,6 +549,7 @@ export default function App(): React.JSX.Element {
             onLtcDeviceChange={(id) => engine.current?.setLtcOutputDevice(id)}
             onLtcGainChange={(gain) => engine.current?.setLtcGain(gain)}
             onMtcModeChange={(mode) => mtc.current?.setMode(mode)}
+            onLtcChannelChange={(ch) => { if (ch !== 'auto') engine.current?.setLtcChannel(ch) }}
           />
 
         </div>

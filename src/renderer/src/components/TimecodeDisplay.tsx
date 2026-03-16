@@ -13,7 +13,7 @@ const FPS_OPTIONS = [24, 25, 29.97, 30]
 
 export function TimecodeDisplay({ fullscreen }: Props): React.JSX.Element {
   const {
-    timecode, detectedFps, forceFps, lang,
+    timecode, detectedFps, forceFps, setForceFps, lang,
     tcGeneratorMode, setTcGeneratorMode,
     generatorStartTC, setGeneratorStartTC,
     generatorFps, setGeneratorFps
@@ -65,6 +65,30 @@ export function TimecodeDisplay({ fullscreen }: Props): React.JSX.Element {
       </div>
       <div className="tc-fps">{fpsLabel}</div>
       {!fullscreen && <TapBpm />}
+
+      {/* Force FPS — only shown in LTC Reader mode */}
+      {!tcGeneratorMode && !fullscreen && (
+        <div className="tc-generator-controls">
+          <div className="tc-gen-row">
+            <span className="tc-gen-label">{t(lang, 'forceFpsLabel')}</span>
+            <div className="tc-gen-fps-buttons">
+              <button
+                className={`tc-gen-fps-btn${forceFps === null ? ' active' : ''}`}
+                onClick={() => setForceFps(null)}
+              >{t(lang, 'forceFpsAuto')}</button>
+              {FPS_OPTIONS.map(opt => (
+                <button
+                  key={opt}
+                  className={`tc-gen-fps-btn${forceFps === opt ? ' active' : ''}`}
+                  onClick={() => setForceFps(opt)}
+                >
+                  {opt === 29.97 ? '29.97' : opt}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Generator controls — only shown when in generator mode */}
       {tcGeneratorMode && !fullscreen && (

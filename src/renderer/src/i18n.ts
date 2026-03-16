@@ -100,7 +100,11 @@ export const strings = {
     mtcModeHint: 'Quarter-frame provides continuous sync during playback. Full-frame is for compatibility with older devices.',
     midiPortDisconnected: 'MIDI port disconnected: {name}',
     audioDeviceDisconnected: 'Audio device disconnected. Playback paused.',
-    presetNewerVersion: 'This preset was created with a newer version of CueSync. Some settings may not load correctly.'
+    presetNewerVersion: 'This preset was created with a newer version of CueSync. Some settings may not load correctly.',
+    forceFpsLabel: 'Force FPS',
+    forceFpsAuto: 'Auto',
+    ltcChannelSelect: 'LTC Track',
+    ltcChannelAuto: 'Auto'
   },
   zh: {
     appTitle: 'CueSync',
@@ -203,7 +207,11 @@ export const strings = {
     mtcModeHint: 'Quarter-frame 在播放中持續同步。Full-frame 用於舊設備相容性。',
     midiPortDisconnected: 'MIDI 埠已斷線：{name}',
     audioDeviceDisconnected: '音訊設備已斷線，播放已暫停。',
-    presetNewerVersion: '此 Preset 由較新版本的 CueSync 建立，部分設定可能無法載入。'
+    presetNewerVersion: '此 Preset 由較新版本的 CueSync 建立，部分設定可能無法載入。',
+    forceFpsLabel: '強制 FPS',
+    forceFpsAuto: '自動',
+    ltcChannelSelect: 'LTC 音軌',
+    ltcChannelAuto: '自動'
   }
 }
 

@@ -8,6 +8,7 @@ interface Props {
   onLtcDeviceChange: (deviceId: string) => void
   onLtcGainChange: (gain: number) => void
   onMtcModeChange: (mode: 'quarter-frame' | 'full-frame') => void
+  onLtcChannelChange: (ch: import('../store').LtcChannel) => void
 }
 
 function isValidIpv4(ip: string): boolean {
@@ -22,7 +23,7 @@ function gainToDb(gain: number): string {
   return (db >= 0 ? '+' : '') + db.toFixed(1) + ' dB'
 }
 
-export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDeviceChange, onLtcGainChange, onMtcModeChange }: Props): React.JSX.Element {
+export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDeviceChange, onLtcGainChange, onMtcModeChange, onLtcChannelChange }: Props): React.JSX.Element {
   const {
     audioOutputDevices, setAudioOutputDevices,
     musicOutputDeviceId, setMusicOutputDeviceId,
@@ -31,7 +32,7 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
     midiOutputs,
     selectedMidiPort, setSelectedMidiPort,
     midiConnected,
-    detectedLtcChannel,
+    detectedLtcChannel, ltcChannel, setLtcChannel,
     ltcSignalOk,
     mtcMode, setMtcMode,
     artnetEnabled, setArtnetEnabled,
@@ -79,6 +80,11 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
     onMtcModeChange(mode)
   }
 
+  const handleLtcChannel = (ch: import('../store').LtcChannel): void => {
+    setLtcChannel(ch)
+    onLtcChannelChange(ch)
+  }
+
   return (
     <div className="device-panel">
       {/* LTC Status */}
@@ -91,6 +97,22 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
         </span>
         <span className={`signal-dot${ltcSignalOk ? ' signal-ok' : ' signal-off'}`} />
         <span className="signal-label">{ltcSignalOk ? t(lang, 'ltcSignalOk') : t(lang, 'ltcSignalWeak')}</span>
+      </div>
+
+      {/* LTC Track selector (manual override) */}
+      <div className="device-row">
+        <span className="device-label">{t(lang, 'ltcChannelSelect')}</span>
+        <select
+          className="device-select"
+          value={ltcChannel}
+          onChange={(e) => handleLtcChannel(e.target.value === 'auto' ? 'auto' : Number(e.target.value) as 0 | 1 | 2 | 3)}
+        >
+          <option value="auto">{t(lang, 'ltcChannelAuto')}</option>
+          <option value={0}>CH 1</option>
+          <option value={1}>CH 2</option>
+          <option value={2}>CH 3</option>
+          <option value={3}>CH 4</option>
+        </select>
       </div>
 
       {/* Music Output */}
