@@ -608,8 +608,9 @@ export class AudioEngine {
     this.playing = false
     this.lastGeneratedFrame = -1
 
-    // Clear pending LTC signal timeout
+    // Clear pending LTC signal timeout and reset signal status
     if (this.ltcSignalTimeout) { clearTimeout(this.ltcSignalTimeout); this.ltcSignalTimeout = null }
+    this.callbacks.onLtcSignalStatus(false)
 
     // Stop music
     if (this.musicSource) { try { this.musicSource.stop() } catch { /**/ } this.musicSource = null }

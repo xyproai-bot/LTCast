@@ -39,6 +39,8 @@ export interface PresetData {
   rightTab: 'devices' | 'setlist'
   offsetFrames: number
   loop: boolean
+  loopA?: number | null
+  loopB?: number | null
   musicOutputDeviceId: string
   ltcOutputDeviceId: string
   ltcGain: number
@@ -104,14 +106,15 @@ function migratePreset(data: PresetData): PresetData {
 
 /** Build a PresetData snapshot from the current store state. */
 function buildPresetData(s: Pick<AppState,
-  'lang' | 'rightTab' | 'offsetFrames' | 'loop' | 'musicOutputDeviceId' |
+  'lang' | 'rightTab' | 'offsetFrames' | 'loop' | 'loopA' | 'loopB' | 'musicOutputDeviceId' |
   'ltcOutputDeviceId' | 'ltcGain' | 'selectedMidiPort' | 'forceFps' |
   'ltcChannel' | 'setlist' | 'generatorStartTC' | 'generatorFps' |
   'artnetEnabled' | 'artnetTargetIp' | 'mtcMode'>): PresetData {
   return {
     version: CURRENT_PRESET_VERSION,
     lang: s.lang, rightTab: s.rightTab, offsetFrames: s.offsetFrames,
-    loop: s.loop, musicOutputDeviceId: s.musicOutputDeviceId,
+    loop: s.loop, loopA: s.loopA, loopB: s.loopB,
+    musicOutputDeviceId: s.musicOutputDeviceId,
     ltcOutputDeviceId: s.ltcOutputDeviceId, ltcGain: s.ltcGain,
     selectedMidiPort: s.selectedMidiPort, forceFps: s.forceFps,
     ltcChannel: s.ltcChannel, setlist: s.setlist,
@@ -517,6 +520,7 @@ export const useStore = create<AppState>()(persist((set) => ({
       ltcChannel: 'auto',
       setlist: [],
       activeSetlistIndex: null,
+      previousSetlist: null,
       tcGeneratorMode: false,
       ltcConfidence: 0,
       presetName: null,
