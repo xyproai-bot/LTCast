@@ -4,11 +4,15 @@ import { readFileSync, readFile, existsSync, unlinkSync, mkdirSync, writeFileSyn
 import { tmpdir } from 'os'
 import { is } from '@electron-toolkit/utils'
 import ffmpeg from 'fluent-ffmpeg'
-import ffmpegStatic from 'ffmpeg-static'
 import dgram from 'dgram'
 
 // Point fluent-ffmpeg at the bundled binary
-if (ffmpegStatic) ffmpeg.setFfmpegPath(ffmpegStatic)
+// In production, ffmpeg-static is asarUnpacked so we resolve manually
+const ffmpegBin = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+const ffmpegPath = app.isPackaged
+  ? join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', ffmpegBin)
+  : require('ffmpeg-static')
+if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath)
 
 // ════════════════════════════════════════════════════════════
 // Art-Net Timecode — UDP sender on port 6454
