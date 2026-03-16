@@ -294,6 +294,7 @@ export default function App(): React.JSX.Element {
       const duration = engine.current?.getDuration() ?? 0
       setFilePath(filePath_, name, duration)
     } catch (e) {
+      setFilePath(null, null, 0)  // clear stale file state so UI doesn't show old file as loaded
       toast.error(`${t(lang, 'loadFailed')}: ${e}`)
     }
   }
