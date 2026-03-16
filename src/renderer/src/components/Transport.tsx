@@ -34,6 +34,13 @@ export function Transport({ onPlay, onPause, onStop, onSeek }: Props): React.JSX
     if (!isScrubbing.current) setScrubValue(currentTime)
   }, [currentTime])
 
+  // Reset scrub state if mouse is released outside the slider element
+  useEffect(() => {
+    const onGlobalMouseUp = (): void => { isScrubbing.current = false }
+    window.addEventListener('mouseup', onGlobalMouseUp)
+    return () => window.removeEventListener('mouseup', onGlobalMouseUp)
+  }, [])
+
   const handleScrubStart = (): void => {
     isScrubbing.current = true
     setScrubValue(currentTime)
