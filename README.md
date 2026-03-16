@@ -26,10 +26,12 @@ WAV, AIFF, MP3, FLAC, OGG
 
 ## System Requirements
 
-- Windows 10+ / macOS 12+ / Linux
-- Node.js 18+
+- Windows 10+
+- Node.js 18+ (for development)
 - For MTC output: a virtual MIDI port (e.g., [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html))
 - For LTC output: a virtual audio cable (e.g., [VB-CABLE](https://vb-audio.com/Cable/))
+
+> macOS and Linux support is planned but not yet tested.
 
 ## Development
 

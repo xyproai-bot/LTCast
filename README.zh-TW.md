@@ -26,10 +26,12 @@ WAV、AIFF、MP3、FLAC、OGG
 
 ## 系統需求
 
-- Windows 10+ / macOS 12+ / Linux
-- Node.js 18+
+- Windows 10+
+- Node.js 18+（開發用）
 - MTC 輸出需要虛擬 MIDI 埠（如 [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html)）
 - LTC 輸出需要虛擬音訊線（如 [VB-CABLE](https://vb-audio.com/Cable/)）
+
+> macOS 與 Linux 版本尚在規劃中，尚未測試。
 
 ## 開發
 
