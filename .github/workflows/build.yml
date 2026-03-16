@@ -35,6 +35,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: gh release edit "${{ github.ref_name }}" --draft=false --latest --title "CueSync ${{ github.ref_name }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload Windows artifacts (non-tag runs)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
