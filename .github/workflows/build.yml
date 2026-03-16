@@ -44,37 +44,5 @@ jobs:
             dist/*.exe
             dist/*.yml
 
-  build-mac:
-    runs-on: macos-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build and publish (Mac)
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            npm run build && npx electron-builder --mac --publish always
-          else
-            npm run build && npx electron-builder --mac --publish never
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Mac artifacts (non-tag runs)
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: CueSync-mac
-          path: |
-            dist/*.dmg
-            dist/*.yml
+  # build-mac: disabled until Mac version is tested
+  # Re-enable when Mac support is ready
