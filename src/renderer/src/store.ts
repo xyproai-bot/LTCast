@@ -365,7 +365,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   clearLoop: () => set({ loopA: null, loopB: null }),
   setTimecode: (timecode) => set({ timecode }),
   setDetectedFps: (detectedFps) => set({ detectedFps }),
-  setForceFps: (forceFps) => set({ forceFps }),
+  setForceFps: (forceFps) => set({ forceFps, presetDirty: true }),
   setOffsetFrames: (offsetFrames) => set({ offsetFrames, presetDirty: true }),
   setLtcChannel: (ltcChannel) => set({ ltcChannel, presetDirty: true }),
   setDetectedLtcChannel: (detectedLtcChannel) => set({ detectedLtcChannel }),
@@ -484,7 +484,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     let activeSetlistIndex = s.activeSetlistIndex
     if (activeSetlistIndex !== null) {
       const activeItem = s.setlist[activeSetlistIndex]
-      activeSetlistIndex = sorted.findIndex(item => item.path === activeItem.path)
+      activeSetlistIndex = sorted.findIndex(item => item.id === activeItem.id)
       if (activeSetlistIndex === -1) activeSetlistIndex = null
     }
     return { setlist: sorted, activeSetlistIndex, presetDirty: true }

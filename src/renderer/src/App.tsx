@@ -214,9 +214,16 @@ export default function App(): React.JSX.Element {
     engine.current?.setForceFps(forceFps)
   }, [forceFps])
 
-  // Sync manual LTC channel override to engine (takes effect on next play)
+  // Sync manual LTC channel override to engine
+  // When switching back to 'auto', restore the auto-detected channel index
   useEffect(() => {
-    if (ltcChannel !== 'auto') engine.current?.setLtcChannel(ltcChannel)
+    if (ltcChannel !== 'auto') {
+      engine.current?.setLtcChannel(ltcChannel)
+    } else {
+      // Restore auto-detected channel so the engine isn't stuck on the last manual selection
+      const detected = useStore.getState().detectedLtcChannel
+      if (detected !== null) engine.current?.setLtcChannel(detected)
+    }
   }, [ltcChannel])
 
   // Sync Art-Net settings

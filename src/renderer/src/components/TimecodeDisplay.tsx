@@ -31,7 +31,7 @@ export function TimecodeDisplay({ fullscreen }: Props): React.JSX.Element {
     ? `${timecode.fps % 1 !== 0 ? timecode.fps.toFixed(2) : timecode.fps} ${t(lang, timecode.dropFrame ? 'dropFrame' : 'nonDropFrame')}`
     : tcGeneratorMode
       ? `${generatorFps % 1 !== 0 ? generatorFps.toFixed(2) : generatorFps} ${t(lang, generatorFps === 29.97 ? 'dropFrame' : 'nonDropFrame')}`
-      : `${fps} ${t(lang, 'nonDropFrame')}`
+      : `${fps} ${t(lang, fps === 29.97 ? 'dropFrame' : 'nonDropFrame')}`
 
   return (
     <div className={`tc-display${fullscreen ? ' tc-display--fullscreen' : ''}`}>
