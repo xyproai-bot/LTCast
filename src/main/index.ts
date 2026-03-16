@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 import { is } from '@electron-toolkit/utils'
 import ffmpeg from 'fluent-ffmpeg'
 import dgram from 'dgram'
+import { autoUpdater } from 'electron-updater'
 
 // Point fluent-ffmpeg at the bundled binary
 // In production, ffmpeg-static is asarUnpacked so we resolve manually
@@ -13,6 +14,121 @@ const ffmpegPath = app.isPackaged
   ? join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', ffmpegBin)
   : require('ffmpeg-static')
 if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath)
+
+// ════════════════════════════════════════════════════════════
+// Auto-Updater (electron-updater + GitHub Releases)
+// ════════════════════════════════════════════════════════════
+
+// Don't auto-download — ask user first
+autoUpdater.autoDownload = false
+// Install silently when app quits (if update was downloaded)
+autoUpdater.autoInstallOnAppQuit = true
+// Suppress verbose logging to console
+autoUpdater.logger = null
+
+/** True when the user manually triggered "Check for Updates" — controls whether
+ *  to show a "You're up to date" dialog (auto check is silent on no-update). */
+let isManualUpdateCheck = false
+
+function getUpdateWindow(): BrowserWindow | null {
+  return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
+}
+
+/** Kick off an update check. Pass silent=true for startup auto-check (no dialog if up to date). */
+function checkForUpdates(silent = false): void {
+  if (!app.isPackaged) {
+    // Dev mode — can't use auto-updater (no local installer)
+    if (!silent) {
+      dialog.showMessageBox({
+        type: 'info', title: 'Dev Mode',
+        message: 'Update check is disabled in development mode.',
+        buttons: ['OK']
+      })
+    }
+    return
+  }
+  isManualUpdateCheck = !silent
+  autoUpdater.checkForUpdates().catch((e) => {
+    isManualUpdateCheck = false
+    if (!silent) {
+      const win = getUpdateWindow()
+      const opts = {
+        type: 'error' as const,
+        title: 'Update Error',
+        message: 'Could not check for updates.',
+        detail: String(e),
+        buttons: ['OK']
+      }
+      win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts)
+    }
+  })
+}
+
+// Update available → ask user if they want to download
+autoUpdater.on('update-available', async (info) => {
+  const win = getUpdateWindow()
+  const opts = {
+    type: 'info' as const,
+    title: 'Update Available',
+    message: `CueSync ${info.version} is available`,
+    detail: `You are running v${app.getVersion()}.\nWould you like to download the update now?\nYou can continue using CueSync while it downloads.`,
+    buttons: ['Download', 'Later'],
+    defaultId: 0,
+    cancelId: 1
+  }
+  const result = await (win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts))
+  if (result.response === 0) {
+    autoUpdater.downloadUpdate().catch(() => {})
+  }
+})
+
+// No update available → only show dialog on manual check
+autoUpdater.on('update-not-available', () => {
+  if (!isManualUpdateCheck) return
+  isManualUpdateCheck = false
+  const win = getUpdateWindow()
+  const opts = {
+    type: 'info' as const,
+    title: 'Up to Date',
+    message: 'CueSync is up to date!',
+    detail: `You are running the latest version (v${app.getVersion()}).`,
+    buttons: ['OK']
+  }
+  win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts)
+})
+
+// Error during update check
+autoUpdater.on('error', (err) => {
+  if (!isManualUpdateCheck) return
+  isManualUpdateCheck = false
+  const win = getUpdateWindow()
+  const opts = {
+    type: 'error' as const,
+    title: 'Update Error',
+    message: 'Update check failed.',
+    detail: err.message,
+    buttons: ['OK']
+  }
+  win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts)
+})
+
+// Update fully downloaded → prompt to restart
+autoUpdater.on('update-downloaded', async (info) => {
+  const win = getUpdateWindow()
+  const opts = {
+    type: 'info' as const,
+    title: 'Update Ready',
+    message: `CueSync ${info.version} is ready to install`,
+    detail: 'Restart CueSync now to apply the update. Your presets and settings are preserved.',
+    buttons: ['Restart Now', 'Later'],
+    defaultId: 0,
+    cancelId: 1
+  }
+  const result = await (win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts))
+  if (result.response === 0) {
+    autoUpdater.quitAndInstall()
+  }
+})
 
 // ════════════════════════════════════════════════════════════
 // Art-Net Timecode — UDP sender on port 6454
@@ -181,6 +297,8 @@ function buildMenu(win: BrowserWindow, presetsDir: string): void {
         { type: 'separator' },
         { label: 'Show in Explorer', click: () => { shell.openPath(presetsDir) } },
         { type: 'separator' },
+        { label: 'Check for Updates...', click: () => checkForUpdates(false) },
+        { type: 'separator' },
         ...(isMac ? [] : [{ role: 'quit' as const }])
       ]
     },
@@ -270,6 +388,10 @@ app.whenReady().then(() => {
       pendingOpenFile = null
     }
   })
+
+  // Silent auto-check for updates 5 seconds after startup
+  // Only in production — dev builds can't use the updater
+  setTimeout(() => checkForUpdates(true), 5000)
 
   // IPC: get CueSync base path
   ipcMain.handle('get-cuesync-path', () => cuesyncDir)

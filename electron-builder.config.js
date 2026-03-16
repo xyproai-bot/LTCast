@@ -1,6 +1,11 @@
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
   appId: 'com.cuesync.app',
+  publish: {
+    provider: 'github',
+    owner: 'xyproai-bot',
+    repo: 'CueSync'
+  },
   productName: 'CueSync',
   copyright: 'Copyright © 2024 CueSync',
   directories: {
