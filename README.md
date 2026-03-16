@@ -4,18 +4,22 @@
 
 CueSync reads SMPTE LTC timecode embedded in audio files and forwards it as MTC (MIDI Timecode) and Art-Net Timecode over the network. It also includes a TC Generator mode for files without embedded LTC.
 
+Designed for live show operators, lighting programmers, and AV engineers who need reliable timecode distribution from a single playback machine.
+
+![CueSync Screenshot](resources/screenshot.png)
+
 ---
 
 ## Features
 
 - **LTC Reader** — Auto-detects LTC channel, decodes SMPTE timecode in real time
-- **MTC Output** — Sends MIDI Timecode (full-frame SysEx) to any MIDI port
+- **MTC Output** — Sends MIDI Timecode (quarter-frame and full-frame SysEx) to any MIDI port
 - **Art-Net Timecode** — Broadcasts timecode via UDP (port 6454)
 - **TC Generator** — Generates LTC audio for files without embedded timecode
 - **Dual Audio Output** — Separate devices for music and LTC (e.g., VB-CABLE)
 - **Setlist** — Manage multiple audio files, drag-and-drop reorder
 - **A-B Loop** — Loop a specific section of the audio
-- **Video Import** — Import video files and auto-align with audio waveform
+- **Video Import** — Import a video file; CueSync automatically aligns its audio to the main audio track using waveform cross-correlation. Fine-tune the offset by dragging on the waveform.
 - **Preset System** — Save/load project settings as .cuesync files
 - **Tap BPM** — Manual tap-to-detect BPM tool
 - **Bilingual** — English / Traditional Chinese
@@ -27,9 +31,9 @@ WAV, AIFF, MP3, FLAC, OGG
 ## System Requirements
 
 - Windows 10+
-- Node.js 18+ (for development)
+- Node.js 22+ (for development)
 - For MTC output: a virtual MIDI port (e.g., [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html))
-- For LTC output: a virtual audio cable (e.g., [VB-CABLE](https://vb-audio.com/Cable/))
+- For LTC output: a virtual audio cable (e.g., [VB-CABLE](https://vb-audio.com/Cable/) on Windows, [BlackHole](https://existential.audio/blackhole/) on macOS)
 
 > macOS and Linux support is planned but not yet tested.
 
@@ -69,7 +73,7 @@ src/
 
 - **Dual AudioContext** — Music and LTC use separate AudioContexts with independent device routing. This prevents VB-CABLE handle loss on Windows.
 - **AudioWorklet** — LTC decoding and encoding run in AudioWorklet processors for real-time performance.
-- **Full-frame MTC SysEx** — Used instead of quarter-frame messages, which require precise timing that `requestAnimationFrame` cannot provide.
+- **Quarter-frame MTC** — MTC is sent as quarter-frame messages using Web MIDI's scheduled `send(data, timestamp)` for accurate timing. Full-frame SysEx is used on seek/jump to reset receiver position.
 - **Drop-frame timecode** — Full SMPTE 12M drop-frame algorithm (29.97fps) implemented in both decoder and generator.
 
 ## Feedback & Bug Reports

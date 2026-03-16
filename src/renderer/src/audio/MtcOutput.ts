@@ -5,6 +5,8 @@ export interface MtcPort {
   name: string
 }
 
+export type MtcMode = 'quarter-frame' | 'full-frame'
+
 function fpsToRateCode(fps: number): number {
   if (Math.abs(fps - 24) < 0.1) return 0
   if (Math.abs(fps - 25) < 0.1) return 1
@@ -16,12 +18,26 @@ export class MtcOutput {
   private midiAccess: MIDIAccess | null = null
   private selectedOutput: MIDIOutput | null = null
   private lastSentFrame = -1
+  private mtcMode: MtcMode = 'quarter-frame'
+  private lastQfPiece = -1  // tracks which quarter-frame piece (0-7) was last sent
   onPortsChanged: (() => void) | null = null
+  onPortDisconnected: ((portName: string) => void) | null = null
 
   async init(): Promise<void> {
     if (!navigator.requestMIDIAccess) throw new Error('Web MIDI API not supported')
     this.midiAccess = await navigator.requestMIDIAccess({ sysex: true })
-    this.midiAccess.onstatechange = () => this.onPortsChanged?.()
+    this.midiAccess.onstatechange = (e: MIDIConnectionEvent) => {
+      const port = e.port
+      // If the disconnected port is the one we're using, notify
+      if (port && port.state === 'disconnected' && this.selectedOutput?.id === port.id) {
+        const name = this.selectedOutput.name || port.id
+        this.selectedOutput = null
+        this.lastSentFrame = -1
+        this.lastQfPiece = -1
+        this.onPortDisconnected?.(name)
+      }
+      this.onPortsChanged?.()
+    }
   }
 
   getPorts(): MtcPort[] {
@@ -39,38 +55,92 @@ export class MtcOutput {
     if (!out) return false
     this.selectedOutput = out
     this.lastSentFrame = -1
+    this.lastQfPiece = -1
     return true
   }
 
   deselectPort(): void {
     this.selectedOutput = null
     this.lastSentFrame = -1
+    this.lastQfPiece = -1
   }
 
   isConnected(): boolean {
     return this.selectedOutput !== null
   }
 
+  setMode(mode: MtcMode): void {
+    this.mtcMode = mode
+    this.lastQfPiece = -1
+  }
+
+  getMode(): MtcMode {
+    return this.mtcMode
+  }
+
   /**
-   * Send MTC full-frame SysEx for continuous position updates.
-   *
-   * Quarter-frame messages require precise 1/4-frame timing intervals
-   * which cannot be reliably achieved from requestAnimationFrame callbacks.
-   * Full-frame SysEx is the correct approach for position updates — it sends
-   * the complete timecode in a single message and is widely supported by
-   * receiving software (Resolume Arena, QLab, etc.).
+   * Send MTC timecode based on current mode.
+   * - quarter-frame: sends 8 quarter-frame messages per 2 frames (continuous sync)
+   * - full-frame: sends SysEx on each frame change (legacy/locate)
    *
    * De-duplicated: only sends when the frame actually changes.
    */
   sendTimecode(tc: TimecodeFrame): void {
     if (!this.selectedOutput) return
 
-    // Compute a unique frame key to avoid sending duplicate messages
     const frameKey = (tc.hours << 24) | (tc.minutes << 16) | (tc.seconds << 8) | tc.frames
     if (frameKey === this.lastSentFrame) return
     this.lastSentFrame = frameKey
 
-    this.sendFullFrame(tc)
+    if (this.mtcMode === 'quarter-frame') {
+      this.sendQuarterFrames(tc)
+    } else {
+      this.sendFullFrame(tc)
+    }
+  }
+
+  /**
+   * Send 8 quarter-frame MTC messages for the given timecode.
+   *
+   * Quarter-frame format: [0xF1, (pieceType << 4) | nibble]
+   * A complete timecode is transmitted over 2 frames (8 messages).
+   * Pieces 0-3 are sent on the first frame, pieces 4-7 on the next.
+   *
+   * Per MIDI spec, we cycle through pieces 0→7 sequentially.
+   * Each call to sendTimecode sends 1 piece (not all 8 at once),
+   * advancing the piece counter. This means the receiver gets
+   * a complete timecode update every 8 frame changes.
+   */
+  private sendQuarterFrames(tc: TimecodeFrame): void {
+    if (!this.selectedOutput) return
+
+    const rc = fpsToRateCode(tc.fps)
+
+    // Build the 8 nibble values for the current timecode
+    const nibbles = [
+      tc.frames & 0x0f,                          // 0: frame units
+      (tc.frames >> 4) & 0x01,                    // 1: frame tens
+      tc.seconds & 0x0f,                          // 2: seconds units
+      (tc.seconds >> 4) & 0x07,                   // 3: seconds tens
+      tc.minutes & 0x0f,                          // 4: minutes units
+      (tc.minutes >> 4) & 0x07,                   // 5: minutes tens
+      tc.hours & 0x0f,                            // 6: hours units
+      (rc << 1) | ((tc.hours >> 4) & 0x01)        // 7: rate + hours tens
+    ]
+
+    // Advance to next piece (0-7 cycle)
+    this.lastQfPiece = (this.lastQfPiece + 1) % 8
+    const piece = this.lastQfPiece
+
+    try {
+      this.selectedOutput.send([0xf1, (piece << 4) | nibbles[piece]])
+    } catch {
+      const name = this.selectedOutput?.name ?? 'Unknown'
+      this.selectedOutput = null
+      this.lastSentFrame = -1
+      this.lastQfPiece = -1
+      this.onPortDisconnected?.(name)
+    }
   }
 
   /** Send a full-frame MTC SysEx message (F0 7F 7F 01 01 hh mm ss ff F7) */
@@ -85,9 +155,11 @@ export class MtcOutput {
         0xf7
       ])
     } catch {
-      // Device may have been disconnected — deselect to prevent repeated errors
+      const name = this.selectedOutput?.name ?? 'Unknown'
       this.selectedOutput = null
       this.lastSentFrame = -1
+      this.lastQfPiece = -1
+      this.onPortDisconnected?.(name)
     }
   }
 }

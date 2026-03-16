@@ -30,6 +30,7 @@ export interface AudioEngineCallbacks {
   onLtcConfidence: (confidence: number) => void
   onWaveformData: (music: Float32Array, ltc: Float32Array) => void
   onTimecodeLookup: (lookup: TimecodeLookupEntry[]) => void
+  onDeviceDisconnected?: (deviceId: string) => void
 }
 
 /**
@@ -93,6 +94,29 @@ export class AudioEngine {
 
   constructor(callbacks: AudioEngineCallbacks) {
     this.callbacks = callbacks
+    // Monitor audio device changes (plug/unplug)
+    navigator.mediaDevices.addEventListener('devicechange', () => {
+      this._checkDeviceAvailability()
+    })
+  }
+
+  /** Check if currently-used audio devices are still available */
+  private async _checkDeviceAvailability(): Promise<void> {
+    if (!this.playing) return
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      const outputIds = new Set(
+        devices.filter(d => d.kind === 'audiooutput').map(d => d.deviceId)
+      )
+      // 'default' is always present
+      if (this.musicOutputDeviceId !== 'default' && !outputIds.has(this.musicOutputDeviceId)) {
+        this.pause()
+        this.callbacks.onDeviceDisconnected?.(this.musicOutputDeviceId)
+      } else if (this.ltcOutputDeviceId !== 'default' && !outputIds.has(this.ltcOutputDeviceId)) {
+        this.pause()
+        this.callbacks.onDeviceDisconnected?.(this.ltcOutputDeviceId)
+      }
+    } catch { /* ignore enumerate errors */ }
   }
 
   // ════════════════════════════════════════════════════════════
