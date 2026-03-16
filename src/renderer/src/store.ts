@@ -649,9 +649,9 @@ export const useStore = create<AppState>()(persist((set) => ({
   }),
 
   deletePreset: (name) => {
-    const s = useStore.getState()
     window.api.deletePreset(name).then(() => {
-      const isActive = s.presetName === name
+      // Read current state inside .then() to avoid stale closure
+      const isActive = useStore.getState().presetName === name
       if (isActive) saveActivePresetName(null)
       loadPresetsFromDisk().then(presets => set({
         savedPresets: presets,

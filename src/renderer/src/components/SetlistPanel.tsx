@@ -35,9 +35,22 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
   useEffect(() => {
     if (setlist.length === 0) { setMissingPaths(new Set()); return }
     let cancelled = false
-    checkMissing(setlist).then(() => { /* done */ }, () => { /* ignored */ })
+    const snapshot = setlist
+    const run = async (): Promise<void> => {
+      if (snapshot.length === 0) { if (!cancelled) setMissingPaths(new Set()); return }
+      const missing = new Set<string>()
+      for (const item of snapshot) {
+        if (cancelled) return
+        try {
+          const exists = await window.api.fileExists(item.path)
+          if (!exists) missing.add(item.path)
+        } catch { /* ignore */ }
+      }
+      if (!cancelled) setMissingPaths(missing)
+    }
+    run()
     return () => { cancelled = true }
-  }, [setlist, checkMissing])
+  }, [setlist])
 
   // Re-check file existence when window regains focus
   useEffect(() => {
