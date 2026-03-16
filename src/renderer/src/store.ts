@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { TimecodeLookupEntry } from './audio/LtcDecoder'
 import { t } from './i18n'
+import { toast } from './components/Toast'
 
 export interface TimecodeFrame {
   hours: number
@@ -90,6 +91,13 @@ function ensureSetlistIds(data: PresetData): PresetData {
 }
 
 const CURRENT_PRESET_VERSION = 1
+
+/** Warn once if a preset was created by a newer version of the app. */
+function warnIfNewerVersion(data: PresetData): void {
+  if ((data.version ?? 0) > CURRENT_PRESET_VERSION) {
+    toast.warning(t(useStore.getState().lang, 'presetNewerVersion'))
+  }
+}
 
 /** Migrate old preset data to current version. */
 function migratePreset(data: PresetData): PresetData {
@@ -575,6 +583,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   openProject: async () => {
     const result = await window.api.importPreset()
     if (!result) return
+    warnIfNewerVersion(result.data as PresetData)
     const presetData = ensureSetlistIds(migratePreset(result.data as PresetData))
     const presets = await loadPresetsFromDisk()
     saveActivePresetName(result.name)
@@ -602,6 +611,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     try {
       const result = await window.api.loadPresetFile(path)
       if (!result) return
+      warnIfNewerVersion(result.data as PresetData)
       const presetData = ensureSetlistIds(migratePreset(result.data as PresetData))
       const presets = await loadPresetsFromDisk()
       saveActivePresetName(result.name)
@@ -637,6 +647,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     const preset = s.savedPresets.find(p => p.name === name)
     if (!preset) return s
     saveActivePresetName(name)
+    warnIfNewerVersion(preset.data)
     const data = ensureSetlistIds(migratePreset(preset.data))
     return {
       ...data, presetName: name, presetPath: null, presetDirty: false,
@@ -696,6 +707,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     if (!result) return false
     const { preset } = result
     const presets = await loadPresetsFromDisk()
+    warnIfNewerVersion(preset.data as PresetData)
     const presetData = ensureSetlistIds(migratePreset(preset.data as PresetData))
     // Update setlist paths to point to extracted audio files
     if (presetData.setlist && result.audioPaths.length > 0) {

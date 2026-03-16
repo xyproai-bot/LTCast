@@ -74,6 +74,7 @@ export class AudioEngine {
   private ltcChannelIndex = 1
   private musicChannelIndex = 0
   private offsetFrames = 0
+  private forceFpsValue: number | null = null
   private currentFps = 25
   private loop = false
   private loopA: number | null = null
@@ -177,6 +178,9 @@ export class AudioEngine {
   }
 
   setOffset(frames: number): void { this.offsetFrames = frames }
+
+  /** Override the FPS reported by the LTC decoder. null = use detected fps. */
+  setForceFps(fps: number | null): void { this.forceFpsValue = fps }
 
   setLoop(loop: boolean): void {
     this.loop = loop
@@ -641,7 +645,7 @@ export class AudioEngine {
   // ════════════════════════════════════════════════════════════
 
   private _onLtcFrame(raw: TimecodeFrame & { halfBitPeriod?: number }): void {
-    const fps = raw.fps || this.currentFps
+    const fps = this.forceFpsValue ?? raw.fps ?? this.currentFps
     if (!fps || fps <= 0 || !isFinite(fps)) return  // guard against invalid FPS
     this.currentFps = fps
 
@@ -665,7 +669,8 @@ export class AudioEngine {
       seconds: s % 60,
       frames: Math.min(f, Math.ceil(fps) - 1),
       fps,
-      dropFrame: raw.dropFrame
+      // When forceFps overrides the decoded fps, re-derive dropFrame from the forced value
+      dropFrame: this.forceFpsValue !== null ? this.forceFpsValue === 29.97 : raw.dropFrame
     }
 
     this.callbacks.onTimecode(tc)

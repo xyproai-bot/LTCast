@@ -137,10 +137,10 @@ export function Transport({ onPlay, onPause, onStop, onSeek }: Props): React.JSX
         <input
           type="range"
           className="offset-slider"
-          min={-99}
-          max={99}
+          min={-999}
+          max={999}
           step={1}
-          value={Math.max(-99, Math.min(99, offsetFrames))}
+          value={offsetFrames}
           onChange={handleOffsetSlider}
         />
         <input
