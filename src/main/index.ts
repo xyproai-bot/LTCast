@@ -521,7 +521,7 @@ app.whenReady().then(() => {
     const result = await dialog.showOpenDialog({
       title: 'Open Audio File',
       filters: [
-        { name: 'Audio Files', extensions: ['wav', 'mp3', 'aiff', 'aif', 'flac', 'ogg'] },
+        { name: 'Audio Files', extensions: ['wav', 'mp3', 'aiff', 'aif', 'flac', 'ogg', 'm4a'] },
         { name: 'All Files', extensions: ['*'] }
       ],
       properties: ['openFile']
