@@ -22,6 +22,11 @@ html, body, #root {
 
 .app--drag { background: #1e2a30; }
 
+/* ── macOS traffic-light clearance ───────────────────────── */
+.platform-darwin .header {
+  padding-left: 82px;
+}
+
 /* ── Header ───────────────────────────────────────────────── */
 .header {
   display: flex;
