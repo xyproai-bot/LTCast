@@ -48,7 +48,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
       }
       if (!cancelled) setMissingPaths(missing)
     }
-    run()
+    run().catch(() => {})
     return () => { cancelled = true }
   }, [setlist])
 

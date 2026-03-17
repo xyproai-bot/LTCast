@@ -32,6 +32,7 @@ export interface AudioEngineCallbacks {
   onTimecodeLookup: (lookup: TimecodeLookupEntry[]) => void
   onDeviceDisconnected?: (deviceId: string) => void
   onPlayStarted?: (perfNow: number, audioTime: number) => void
+  onLtcError?: (message: string) => void
 }
 
 /**
@@ -451,6 +452,7 @@ export class AudioEngine {
       console.log('LTC device warmed up:', this.ltcOutputDeviceId)
     } catch (e) {
       console.warn('LTC device warm-up failed, will retry on play:', e)
+      this.callbacks.onLtcError?.('warmup')
       // Don't fail hard — _setupLtcContext will retry on play()
       await this._closeLtcCtx()
     }
@@ -549,6 +551,7 @@ export class AudioEngine {
         this.ltcWorkletNode.port.onmessage = (e) => this._onLtcFrame(e.data)
       } catch (e) {
         console.warn('LTC worklet creation failed:', e)
+        this.callbacks.onLtcError?.('worklet')
       }
     }
 
@@ -730,7 +733,7 @@ export class AudioEngine {
         const currentPlayId = this.playId
         this.seek(targetTime).then(() => {
           // Guard: only update if no other play/seek interrupted
-          if (this.playId === currentPlayId + 1) {
+          if (this.playId > currentPlayId) {
             this.callbacks.onTimeUpdate(targetTime)
           }
         })
