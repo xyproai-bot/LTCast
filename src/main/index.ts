@@ -259,6 +259,22 @@ function addToRecentFiles(filePath: string, name: string): void {
   saveRecentFiles(files.slice(0, 10))
 }
 
+// Register open-file BEFORE whenReady — on macOS the event can fire before the app is ready
+// (e.g. user double-clicks a .cuesync file to launch the app)
+let pendingOpenFile: string | null = null
+
+app.on('open-file', (event, filePath) => {
+  event.preventDefault()
+  if (filePath.toLowerCase().endsWith('.cuesync')) {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win && !win.webContents.isLoading()) {
+      win.webContents.send('open-cuesync-file', filePath)
+    } else {
+      pendingOpenFile = filePath
+    }
+  }
+})
+
 let currentWin: BrowserWindow | null = null
 
 function buildMenu(win: BrowserWindow, presetsDir: string): void {
@@ -375,7 +391,6 @@ app.whenReady().then(() => {
   buildMenu(win, presetsDir)
 
   // ── Handle .cuesync file opened via double-click ──────────
-  let pendingOpenFile: string | null = null
 
   // Windows/Linux: file path passed as command-line argument
   const argv = process.argv
@@ -386,19 +401,8 @@ app.whenReady().then(() => {
     }
   }
 
-  // macOS: open-file event (may fire before or after ready)
-  app.on('open-file', (event, filePath) => {
-    event.preventDefault()
-    if (filePath.toLowerCase().endsWith('.cuesync')) {
-      if (win.webContents.isLoading()) {
-        pendingOpenFile = filePath
-      } else {
-        win.webContents.send('open-cuesync-file', filePath)
-      }
-    }
-  })
-
   // Send pending file to renderer once it finishes loading
+  // (covers both the argv case above and the open-file event registered before whenReady)
   win.webContents.on('did-finish-load', () => {
     if (pendingOpenFile) {
       win.webContents.send('open-cuesync-file', pendingOpenFile)
@@ -819,7 +823,7 @@ app.whenReady().then(() => {
     const safeDefault = escapeHtml(defaultValue)
     const safeTitle = escapeHtml(title)
     const inputWin = new BrowserWindow({
-      width: 360, height: 150,
+      width: 360, height: process.platform === 'darwin' ? 180 : 150,
       parent: focusedWin,
       modal: true,
       resizable: false,
