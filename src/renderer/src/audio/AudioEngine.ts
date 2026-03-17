@@ -7,7 +7,7 @@ import ltcEncoderCode from './ltcEncoderProcessor.js?raw'
 
 // ── Constants ───────────────────────────────────────────────
 /** Minimum LTC confidence to consider the signal valid (0–1) */
-const LTC_CONFIDENCE_THRESHOLD = 0.3
+const LTC_CONFIDENCE_THRESHOLD = 0.5
 /** Milliseconds of silence before LTC signal is considered lost */
 const LTC_SIGNAL_TIMEOUT_MS = 200
 /** Number of waveform peak samples extracted per audio file */
