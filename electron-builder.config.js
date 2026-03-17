@@ -30,13 +30,6 @@ module.exports = {
   asarUnpack: [
     'node_modules/ffmpeg-static/**'
   ],
-  extraResources: [
-    {
-      from: 'resources/installers',
-      to: 'installers',
-      filter: ['**/*']
-    }
-  ],
   mac: {
     target: [
       { target: 'dmg', arch: ['x64', 'arm64'] }
