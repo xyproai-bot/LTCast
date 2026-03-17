@@ -30,12 +30,15 @@ WAV、AIFF、MP3、FLAC、OGG
 
 ## 系統需求
 
-- Windows 10+
+- Windows 10+ / macOS 12+（Apple Silicon）
 - Node.js 22+（開發用）
-- MTC 輸出需要虛擬 MIDI 埠（如 [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html)）
+- MTC 輸出需要虛擬 MIDI 埠（Windows 使用 [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html)，macOS 使用 IAC Driver）
 - LTC 輸出需要虛擬音訊線（Windows 使用 [VB-CABLE](https://vb-audio.com/Cable/)，macOS 使用 [BlackHole](https://existential.audio/blackhole/)）
 
-> macOS 與 Linux 版本尚在規劃中，尚未測試。
+> **macOS 注意：** 首次開啟若出現「無法驗證開發者」警告，請至**系統設定 → 隱私權與安全性**點選**仍要打開**。若出現「已損毀」警告，在終端機執行以下指令，再重新開啟：
+> ```bash
+> xattr -cr /Applications/cuesync.app
+> ```
 
 ## 開發
 

@@ -36,7 +36,7 @@ module.exports = {
       { target: 'zip', arch: ['x64', 'arm64'] }
     ],
     icon: 'resources/icon.png',
-    // No codesign - user must right-click → Open on first launch
+    // Ad-hoc signed via afterPack hook — avoids "damaged" error on macOS 15
     identity: null
   },
   dmg: {
