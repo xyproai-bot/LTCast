@@ -24,20 +24,12 @@ jobs:
         run: npm ci
 
       - name: Build and publish (Windows)
-        # --publish always: builds installer + generates latest.yml + uploads to GitHub Release
-        # --publish never:  builds installer only (manual workflow_dispatch, no release)
         run: |
           if ("${{ github.ref }}" -like "refs/tags/*") {
             npm run build && npx electron-builder --win --publish always
           } else {
             npm run build && npx electron-builder --win --publish never
           }
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        run: gh release edit "${{ github.ref_name }}" --draft=false --latest --title "CueSync ${{ github.ref_name }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -50,5 +42,51 @@ jobs:
             dist/*.exe
             dist/*.yml
 
-  # build-mac: disabled until Mac version is tested
-  # Re-enable when Mac support is ready
+  build-mac:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and publish (macOS)
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            npm run build && npx electron-builder --mac --publish always
+          else
+            npm run build && npx electron-builder --mac --publish never
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS artifacts (non-tag runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: CueSync-mac
+          path: |
+            dist/*.dmg
+            dist/*.yml
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-win, build-mac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish GitHub Release
+        run: gh release edit "${{ github.ref_name }}" --draft=false --latest --title "CueSync ${{ github.ref_name }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

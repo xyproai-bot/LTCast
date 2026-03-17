@@ -46,5 +46,8 @@ interface Window {
 
     // Open .cuesync file (from double-click / OS association)
     onOpenCueSyncFile(callback: (filePath: string) => void): () => void
+
+    // Platform detection
+    platform: NodeJS.Platform
   }
 }

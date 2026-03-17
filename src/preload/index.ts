@@ -56,5 +56,8 @@ contextBridge.exposeInMainWorld('api', {
     const handler = (_event: unknown, filePath: string): void => callback(filePath)
     ipcRenderer.on('open-cuesync-file', handler)
     return () => { ipcRenderer.removeListener('open-cuesync-file', handler) }
-  }
+  },
+
+  // Platform detection (for platform-specific UI text)
+  platform: process.platform
 })

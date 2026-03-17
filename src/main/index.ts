@@ -343,13 +343,21 @@ function rebuildMenu(presetsDir: string): void {
 }
 
 app.whenReady().then(() => {
-  // Allow Web MIDI API (including SysEx) without permission prompt
+  // Allow Web MIDI API (including SysEx) and speaker selection (for setSinkId) without permission prompt
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    if (permission === 'midi' || permission === 'midiSysex') {
+    if (permission === 'midi' || permission === 'midiSysex' || permission === 'speaker-selection') {
       callback(true)
     } else {
       callback(false)
     }
+  })
+
+  // Permission check handler — required for setSinkId() and enumerateDevices() on macOS
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    if (permission === 'midi' || permission === 'midiSysex' || permission === 'speaker-selection' || permission === 'audiooutput') {
+      return true
+    }
+    return false
   })
 
   // ── CueSync Documents folder setup ──────────────────────────

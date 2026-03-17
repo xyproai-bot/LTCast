@@ -239,7 +239,9 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
 
       {/* Help text */}
       <div className="help-text">
-        <span style={{ whiteSpace: 'pre-line' }}>{t(lang, 'virtualDeviceHelp')}</span>
+        <span style={{ whiteSpace: 'pre-line' }}>
+          {t(lang, window.api.platform === 'darwin' ? 'virtualDeviceHelpMac' : 'virtualDeviceHelp')}
+        </span>
       </div>
     </div>
   )
