@@ -30,12 +30,15 @@ WAV, AIFF, MP3, FLAC, OGG
 
 ## System Requirements
 
-- Windows 10+
+- Windows 10+ / macOS 12+ (Apple Silicon)
 - Node.js 22+ (for development)
-- For MTC output: a virtual MIDI port (e.g., [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html))
+- For MTC output: a virtual MIDI port (e.g., [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html) on Windows, IAC Driver on macOS)
 - For LTC output: a virtual audio cable (e.g., [VB-CABLE](https://vb-audio.com/Cable/) on Windows, [BlackHole](https://existential.audio/blackhole/) on macOS)
 
-> macOS and Linux support is planned but not yet tested.
+> **macOS note:** If you see an "unverified developer" warning on first launch, open **System Settings → Privacy & Security** and click **Open Anyway**. If you see a "damaged" warning, run the following in Terminal, then reopen the app:
+> ```bash
+> xattr -cr /Applications/cuesync.app
+> ```
 
 ## Development
 

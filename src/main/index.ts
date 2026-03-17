@@ -198,7 +198,9 @@ function createWindow(): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#1a1a1a',
-    titleBarStyle: 'default',
+    // hiddenInset on Mac: hides the native title bar chrome but keeps the
+    // traffic light buttons inset into the content area (no double-header)
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -364,6 +366,16 @@ function buildMenu(win: BrowserWindow, presetsDir: string): void {
 
 function rebuildMenu(presetsDir: string): void {
   if (currentWin) buildMenu(currentWin, presetsDir)
+}
+
+// Set macOS About panel content (version + copyright)
+if (process.platform === 'darwin') {
+  app.setAboutPanelOptions({
+    applicationName: 'CueSync',
+    applicationVersion: app.getVersion(),
+    copyright: 'Copyright © 2024 CueSync',
+    credits: 'LTC Timecode player and MTC/Art-Net sender'
+  })
 }
 
 app.whenReady().then(() => {
