@@ -133,7 +133,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
             resolvedPaths.add(m.oldPath)
           }
         }
-      } catch { /* scan failed, just relink the single file */ }
+      } catch (e) { console.warn('Folder scan failed:', e) }
     }
 
     // Single store update — triggers one re-render instead of N
