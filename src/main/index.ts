@@ -124,18 +124,26 @@ autoUpdater.on('error', (err) => {
 // Update fully downloaded → prompt to restart
 autoUpdater.on('update-downloaded', async (info) => {
   const win = getUpdateWindow()
+  const isMac = process.platform === 'darwin'
   const opts = {
     type: 'info' as const,
     title: 'Update Ready',
     message: `CueSync ${info.version} is ready to install`,
-    detail: 'Restart CueSync now to apply the update. Your presets and settings are preserved.',
+    detail: isMac
+      ? 'Quit and relaunch CueSync to apply the update. Your presets and settings are preserved.'
+      : 'Restart CueSync now to apply the update. Your presets and settings are preserved.',
     buttons: ['Restart Now', 'Later'],
     defaultId: 0,
     cancelId: 1
   }
   const result = await (win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts))
   if (result.response === 0) {
-    autoUpdater.quitAndInstall()
+    try {
+      autoUpdater.quitAndInstall()
+    } catch {
+      // On unsigned macOS apps quitAndInstall can fail — fall back to opening releases page
+      shell.openExternal('https://github.com/xyproai-bot/CueSync/releases/latest')
+    }
   }
 })
 
@@ -837,7 +845,7 @@ app.whenReady().then(() => {
       autoHideMenuBar: true
     })
 
-    const htmlContent = `<!DOCTYPE html><html><head><style>
+    const htmlContent = `<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><style>
       body{margin:0;padding:20px;background:#1a1a1a;color:#e0e0e0;font-family:'Consolas',monospace;font-size:13px;display:flex;flex-direction:column;gap:12px}
       label{font-size:12px;color:#aaa}
       input{width:100%;box-sizing:border-box;background:#222;color:#fff;border:1px solid #3a3a3a;border-radius:4px;padding:8px;font-size:13px;outline:none;font-family:inherit}

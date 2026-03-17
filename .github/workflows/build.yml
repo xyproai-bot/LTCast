@@ -75,6 +75,7 @@ jobs:
           name: CueSync-mac
           path: |
             dist/*.dmg
+            dist/*.zip
             dist/*.yml
 
   publish-release:
