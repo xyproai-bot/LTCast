@@ -65,6 +65,7 @@ export class AudioEngine {
   private ltcWorkletNode: AudioWorkletNode | null = null
   private ltcEncoderNode: AudioWorkletNode | null = null
   private ltcGainNode: GainNode | null = null
+  private ltcStartupDeadline = 0  // ltcCtx.currentTime before which frames are ignored
 
   // ── Shared state ─────────────────────────────────────────
   private buffer: AudioBuffer | null = null
@@ -564,6 +565,7 @@ export class AudioEngine {
 
     // Start playback
     const when = this.ltcCtx.currentTime + SCHEDULING_DELAY
+    this.ltcStartupDeadline = when + 0.05  // ignore frames for 50ms after scheduled start
     this.ltcSource.start(when, offset)
   }
 
@@ -645,6 +647,11 @@ export class AudioEngine {
   // ════════════════════════════════════════════════════════════
 
   private _onLtcFrame(raw: TimecodeFrame & { halfBitPeriod?: number }): void {
+    // Discard spurious frames from audio buffer position 0 that may fire
+    // during the Chromium audio engine's first render quantum before the
+    // scheduled start time (causing wrong-position LTC to leak to VB-CABLE)
+    if (this.ltcCtx && this.ltcCtx.currentTime < this.ltcStartupDeadline) return
+
     const fps = this.forceFpsValue ?? raw.fps ?? this.currentFps
     if (!fps || fps <= 0 || !isFinite(fps)) return  // guard against invalid FPS
     this.currentFps = fps
