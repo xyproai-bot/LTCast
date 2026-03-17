@@ -17,7 +17,7 @@ const ffmpegPath = app.isPackaged
       // Try arch-specific path first (macOS ARM64: ffmpeg-static/bin/darwin/arm64/ffmpeg)
       if (process.platform === 'darwin') {
         const archPath = join(base, 'bin', 'darwin', process.arch, 'ffmpeg')
-        if (require('fs').existsSync(archPath)) return archPath
+        if (existsSync(archPath)) return archPath
       }
       return join(base, ffmpegBin)
     })()

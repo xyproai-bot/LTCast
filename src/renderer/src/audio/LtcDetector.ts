@@ -17,6 +17,10 @@ interface DetectionResult {
 export function detectLtcChannel(buffer: AudioBuffer): DetectionResult {
   const sampleRate = buffer.sampleRate
   const channels = buffer.numberOfChannels
+
+  // A mono file can never have a dedicated LTC channel separate from music
+  if (channels === 1) return { channelIndex: 0, confidence: 0 }
+
   // Analyze first 2 seconds (or whole buffer if shorter)
   const analyzeLength = Math.min(sampleRate * 2, buffer.length)
 

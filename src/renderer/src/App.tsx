@@ -101,6 +101,7 @@ export default function App(): React.JSX.Element {
         const lang = useStore.getState().lang
         if (type === 'worklet') toast.error(t(lang, 'ltcWorkletError'))
         else if (type === 'warmup') toast.warning(t(lang, 'ltcWarmupError'))
+        else if (type === 'encoder') toast.warning(t(lang, 'ltcEncoderError'))
       }
     })
 
@@ -265,7 +266,7 @@ export default function App(): React.JSX.Element {
             setPlayState('playing')
             const tc = useStore.getState().timecode
             if (tc) mtc.current?.sendFullFrame(tc)
-          })
+          }).catch(() => {})
         }
       }
       // Ctrl+Z / Cmd+Z: undo clear setlist
@@ -565,8 +566,8 @@ export default function App(): React.JSX.Element {
         <div className="right-panel">
           <DevicePanel
             onMidiPortChange={selectMidiPort}
-            onMusicDeviceChange={(id) => engine.current?.setMusicOutputDevice(id)}
-            onLtcDeviceChange={(id) => engine.current?.setLtcOutputDevice(id)}
+            onMusicDeviceChange={(id) => engine.current?.setMusicOutputDevice(id).catch(() => {})}
+            onLtcDeviceChange={(id) => engine.current?.setLtcOutputDevice(id).catch(() => {})}
             onLtcGainChange={(gain) => engine.current?.setLtcGain(gain)}
             onMtcModeChange={(mode) => mtc.current?.setMode(mode)}
             onLtcChannelChange={(ch) => { if (ch !== 'auto') engine.current?.setLtcChannel(ch) }}

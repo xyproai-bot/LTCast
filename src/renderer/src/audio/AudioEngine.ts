@@ -174,10 +174,10 @@ export class AudioEngine {
   // ════════════════════════════════════════════════════════════
 
   setLtcChannel(channelIndex: number): void {
-    this.ltcChannelIndex = channelIndex
-    // For mono files, both channels point to 0
+    // Clamp to valid channel range — prevents out-of-bounds on mono files
     const maxCh = this.buffer ? this.buffer.numberOfChannels - 1 : 1
-    this.musicChannelIndex = channelIndex === 0 ? Math.min(1, maxCh) : 0
+    this.ltcChannelIndex = Math.min(channelIndex, maxCh)
+    this.musicChannelIndex = this.ltcChannelIndex === 0 ? Math.min(1, maxCh) : 0
   }
 
   setOffset(frames: number): void { this.offsetFrames = frames }
@@ -506,6 +506,7 @@ export class AudioEngine {
   private async _loadWorklet(code: string, label: string): Promise<boolean> {
     if (!this.ltcCtx) return false
     for (let attempt = 0; attempt < 2; attempt++) {
+      if (!this.ltcCtx) return false  // context may have been closed during retry wait
       const blob = new Blob([code], { type: 'application/javascript' })
       const url = URL.createObjectURL(blob)
       try {
@@ -592,7 +593,11 @@ export class AudioEngine {
    * The encoder creates LTC from timecode parameters (no input audio needed).
    */
   private _startLtcEncoder(offset: number): void {
-    if (!this.ltcCtx || !this.ltcEncoderReady) return
+    if (!this.ltcCtx) return
+    if (!this.ltcEncoderReady) {
+      this.callbacks.onLtcError?.('encoder')
+      return
+    }
 
     try {
       this.ltcEncoderNode = new AudioWorkletNode(this.ltcCtx, 'ltc-encoder', {
@@ -604,7 +609,17 @@ export class AudioEngine {
 
       // Gain node for output level control
       this.ltcGainNode = this.ltcCtx.createGain()
-      this.ltcGainNode.gain.value = this.ltcGainValue
+
+      // Mute for 250ms on seek (same protection as _startLtcSource)
+      // Prevents encoder from outputting wrong-position LTC before it settles
+      const when = this.ltcCtx.currentTime + SCHEDULING_DELAY
+      const isResume = Math.abs(offset - this.ltcLastStopOffset) < 0.5
+      if (isResume) {
+        this.ltcGainNode.gain.value = this.ltcGainValue
+      } else {
+        this.ltcGainNode.gain.setValueAtTime(0, this.ltcCtx.currentTime)
+        this.ltcGainNode.gain.setValueAtTime(this.ltcGainValue, when + 0.25)
+      }
 
       // Encoder → gain → destination (VB-CABLE / BlackHole)
       this.ltcEncoderNode.connect(this.ltcGainNode)

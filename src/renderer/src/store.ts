@@ -416,6 +416,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   setActiveSetlistIndex: (activeSetlistIndex) => set({ activeSetlistIndex }),
   reorderSetlist: (from, to) => set((s) => {
     if (from < 0 || from >= s.setlist.length || to < 0 || to >= s.setlist.length) return s
+    if (from === to) return s
     const setlist = [...s.setlist]
     const [item] = setlist.splice(from, 1)
     setlist.splice(to, 0, item)
@@ -483,9 +484,13 @@ export const useStore = create<AppState>()(persist((set) => ({
     // Track where active item ended up
     let activeSetlistIndex = s.activeSetlistIndex
     if (activeSetlistIndex !== null) {
-      const activeItem = s.setlist[activeSetlistIndex]
-      activeSetlistIndex = sorted.findIndex(item => item.id === activeItem.id)
-      if (activeSetlistIndex === -1) activeSetlistIndex = null
+      if (activeSetlistIndex >= s.setlist.length) {
+        activeSetlistIndex = null
+      } else {
+        const activeItem = s.setlist[activeSetlistIndex]
+        activeSetlistIndex = sorted.findIndex(item => item.id === activeItem.id)
+        if (activeSetlistIndex === -1) activeSetlistIndex = null
+      }
     }
     return { setlist: sorted, activeSetlistIndex, presetDirty: true }
   }),
@@ -562,7 +567,7 @@ export const useStore = create<AppState>()(persist((set) => ({
         const presets = await loadPresetsFromDisk()
         set({ savedPresets: presets, presetName: name, presetPath: chosenPath, presetDirty: false })
       }
-    } catch (e) { console.error('Save preset failed:', e) }
+    } catch (e) { console.error('Save preset failed:', e); toast.error(t(useStore.getState().lang, 'autoSaveFailed')) }
   },
 
   savePresetAs: async () => {
@@ -577,7 +582,7 @@ export const useStore = create<AppState>()(persist((set) => ({
       window.api.addRecentFile(chosenPath, name)
       const presets = await loadPresetsFromDisk()
       set({ savedPresets: presets, presetName: name, presetPath: chosenPath, presetDirty: false })
-    } catch (e) { console.error('Save preset failed:', e) }
+    } catch (e) { console.error('Save preset failed:', e); toast.error(t(useStore.getState().lang, 'autoSaveFailed')) }
   },
 
   openProject: async () => {
@@ -603,7 +608,8 @@ export const useStore = create<AppState>()(persist((set) => ({
       timecode: null, detectedFps: null,
       tappedBpm: null, timecodeLookup: [],
       videoFileName: null, videoWaveform: null, videoDuration: 0,
-      videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false
+      videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false,
+      tcGeneratorMode: false, ltcConfidence: 0, ltcSignalOk: false, detectedLtcChannel: null
     })
   },
 
@@ -630,7 +636,8 @@ export const useStore = create<AppState>()(persist((set) => ({
         timecode: null, detectedFps: null,
         tappedBpm: null, timecodeLookup: [],
         videoFileName: null, videoWaveform: null, videoDuration: 0,
-        videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false
+        videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false,
+        tcGeneratorMode: false, ltcConfidence: 0, ltcSignalOk: false, detectedLtcChannel: null
       })
     } catch { /* file may no longer exist */ }
   },
@@ -662,7 +669,9 @@ export const useStore = create<AppState>()(persist((set) => ({
       timecode: null, detectedFps: null,
       tappedBpm: null, timecodeLookup: [],
       videoFileName: null, videoWaveform: null, videoDuration: 0,
-      videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false
+      videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false,
+      // Reset runtime detection state so old session state doesn't bleed into new preset
+      tcGeneratorMode: false, ltcConfidence: 0, ltcSignalOk: false, detectedLtcChannel: null
     }
   }),
 
@@ -733,7 +742,8 @@ export const useStore = create<AppState>()(persist((set) => ({
       timecode: null, detectedFps: null,
       tappedBpm: null, timecodeLookup: [],
       videoFileName: null, videoWaveform: null, videoDuration: 0,
-      videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false
+      videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false,
+      tcGeneratorMode: false, ltcConfidence: 0, ltcSignalOk: false, detectedLtcChannel: null
     })
     return true
   }

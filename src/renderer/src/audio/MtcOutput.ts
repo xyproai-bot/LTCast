@@ -145,8 +145,9 @@ export class MtcOutput {
     const piece = this.lastQfPiece
 
     // Map AudioContext time → performance.now() coordinate for scheduled send
+    // Clamp to 0 to avoid negative timestamps (Web MIDI rejects them)
     const perfTime = this._perfNowAtPlayStart +
-      (audioContextCurrentTime - this._audioTimeAtPlayStart) * 1000
+      Math.max(0, audioContextCurrentTime - this._audioTimeAtPlayStart) * 1000
 
     try {
       this.selectedOutput.send([0xf1, (piece << 4) | nibbles[piece]], perfTime)
