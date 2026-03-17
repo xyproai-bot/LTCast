@@ -298,6 +298,7 @@ export default function App(): React.JSX.Element {
     const filePath_ = path ?? await window.api.openFileDialog()
     if (!filePath_) return
 
+    engine.current?.pause()  // stop audio immediately — don't let old file keep playing during file read
     setPlayState('stopped')
     setTimecode(null)
     setMusicWaveform(null)
