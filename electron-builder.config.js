@@ -35,7 +35,7 @@ module.exports = {
       { target: 'dmg', arch: ['x64', 'arm64'] },
       { target: 'zip', arch: ['x64', 'arm64'] }
     ],
-    icon: 'resources/icon.png',
+    icon: 'icon.icns',
     // Ad-hoc signed via afterPack hook — avoids "damaged" error on macOS 15
     identity: null
   },

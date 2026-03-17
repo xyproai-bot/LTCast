@@ -338,7 +338,8 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     // Drag hint
     ctx.fillStyle = 'rgba(255,255,255,0.2)'
     ctx.font = '10px sans-serif'
-    ctx.fillText(t(useStore.getState().lang, 'dragHint'), W / 2 - 120, H - 4)
+    const hintKey = window.api?.platform === 'darwin' ? 'dragHintMac' : 'dragHint'
+    ctx.fillText(t(useStore.getState().lang, hintKey), W / 2 - 120, H - 4)
   }, [])
 
   const redrawVideo = useCallback((): void => {
