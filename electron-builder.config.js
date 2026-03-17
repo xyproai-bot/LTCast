@@ -32,7 +32,8 @@ module.exports = {
   ],
   mac: {
     target: [
-      { target: 'dmg', arch: ['x64', 'arm64'] }
+      { target: 'dmg', arch: ['x64', 'arm64'] },
+      { target: 'zip', arch: ['x64', 'arm64'] }
     ],
     icon: 'resources/icon.png',
     // No codesign - user must right-click → Open on first launch
