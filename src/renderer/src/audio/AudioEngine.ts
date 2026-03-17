@@ -66,6 +66,7 @@ export class AudioEngine {
   private ltcEncoderNode: AudioWorkletNode | null = null
   private ltcGainNode: GainNode | null = null
   private ltcStartupDeadline = 0  // ltcCtx.currentTime before which frames are ignored
+  private ltcLastStopOffset = 0   // audio position (seconds) where playback last stopped
 
   // ── Shared state ─────────────────────────────────────────
   private buffer: AudioBuffer | null = null
@@ -555,7 +556,6 @@ export class AudioEngine {
     // The destination output is controlled by the context's setSinkId:
     //   { type: 'none' } = silent    |    deviceId = routes to that device
     this.ltcGainNode = this.ltcCtx.createGain()
-    this.ltcGainNode.gain.value = this.ltcGainValue
 
     const merger = this.ltcCtx.createChannelMerger(2)
     splitter.connect(merger, this.ltcChannelIndex, 0)
@@ -565,7 +565,22 @@ export class AudioEngine {
 
     // Start playback
     const when = this.ltcCtx.currentTime + SCHEDULING_DELAY
-    this.ltcStartupDeadline = when + 0.05  // ignore frames for 50ms after scheduled start
+    this.ltcStartupDeadline = when + 0.05
+
+    // If seeking to a position far from where we last stopped, mute the LTC output
+    // for 250ms after the scheduled start. This prevents spurious audio from position 0
+    // (or from a previous file) reaching VB-CABLE before the correct position audio arrives.
+    // EASY_TRIGGER reads raw audio from VB-CABLE directly, so muting the gain is the only
+    // reliable way to suppress wrong-position triggers.
+    // Pause/resume (offset ≈ ltcLastStopOffset) skips the mute to avoid LTC gaps.
+    const isResume = Math.abs(offset - this.ltcLastStopOffset) < 0.5
+    if (isResume) {
+      this.ltcGainNode.gain.value = this.ltcGainValue
+    } else {
+      this.ltcGainNode.gain.setValueAtTime(0, this.ltcCtx.currentTime)
+      this.ltcGainNode.gain.setValueAtTime(this.ltcGainValue, when + 0.25)
+    }
+
     this.ltcSource.start(when, offset)
   }
 
@@ -629,6 +644,7 @@ export class AudioEngine {
   private _stopPlayback(): void {
     this.playing = false
     this.lastGeneratedFrame = -1
+    this.ltcLastStopOffset = this.getCurrentTime()  // record before ctx closes
 
     // Clear pending LTC signal timeout and reset signal status
     if (this.ltcSignalTimeout) { clearTimeout(this.ltcSignalTimeout); this.ltcSignalTimeout = null }
