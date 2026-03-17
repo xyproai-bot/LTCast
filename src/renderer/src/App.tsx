@@ -16,7 +16,7 @@ import { t } from './i18n'
 import { toast } from './components/Toast'
 
 /** Minimum LTC confidence to consider the signal valid (0–1) */
-const LTC_CONFIDENCE_THRESHOLD = 0.3
+const LTC_CONFIDENCE_THRESHOLD = 0.5
 
 export default function App(): React.JSX.Element {
   const engine = useRef<AudioEngine | null>(null)
