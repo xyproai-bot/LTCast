@@ -300,6 +300,7 @@ export default function App(): React.JSX.Element {
     }
     const ok = mtc.current.selectPort(portId)
     setMidiConnected(ok)
+    setSelectedMidiPort(ok ? portId : null)
     // Send full frame immediately so receiving software syncs
     if (ok) {
       const tc = useStore.getState().timecode
