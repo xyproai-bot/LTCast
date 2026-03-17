@@ -96,6 +96,11 @@ export default function App(): React.JSX.Element {
       },
       onPlayStarted: (perfNow, audioTime) => {
         mtc.current?.setPlayStartClocks(perfNow, audioTime)
+      },
+      onLtcError: (type) => {
+        const lang = useStore.getState().lang
+        if (type === 'worklet') toast.error(t(lang, 'ltcWorkletError'))
+        else if (type === 'warmup') toast.warning(t(lang, 'ltcWarmupError'))
       }
     })
 
@@ -159,8 +164,10 @@ export default function App(): React.JSX.Element {
     const autoSaveInterval = setInterval(() => {
       const s = useStore.getState()
       if (s.presetDirty && s.presetPath && s.presetName) {
-        s.savePreset()
-        toast.info(t(s.lang, 'autoSaved'))
+        s.savePreset().then(() => {
+          if (!useStore.getState().presetDirty) toast.info(t(s.lang, 'autoSaved'))
+          else toast.error(t(s.lang, 'autoSaveFailed'))
+        }).catch(() => toast.error(t(s.lang, 'autoSaveFailed')))
       }
     }, 5 * 60 * 1000)
 
@@ -285,6 +292,12 @@ export default function App(): React.JSX.Element {
 
   const selectMidiPort = useCallback((portId: string): void => {
     if (!mtc.current) return
+    if (!portId) {
+      mtc.current.deselectPort()
+      setMidiConnected(false)
+      setSelectedMidiPort(null)
+      return
+    }
     const ok = mtc.current.selectPort(portId)
     setMidiConnected(ok)
     // Send full frame immediately so receiving software syncs
@@ -292,7 +305,7 @@ export default function App(): React.JSX.Element {
       const tc = useStore.getState().timecode
       if (tc) mtc.current.sendFullFrame(tc)
     }
-  }, [setMidiConnected])
+  }, [setMidiConnected, setSelectedMidiPort])
 
   const openFile = async (path?: string): Promise<void> => {
     const filePath_ = path ?? await window.api.openFileDialog()

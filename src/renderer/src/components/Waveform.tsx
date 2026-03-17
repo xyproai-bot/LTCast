@@ -360,6 +360,7 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     const padding = 0.1 // 10% padding on each side
     const vDur = videoDuration
     const viewDur = vDur * (1 + padding * 2)
+    if (!viewDur) return
     const zoom = Math.max(1, Math.min(50, duration / viewDur))
     const viewStart = Math.max(0, videoOffsetSeconds - vDur * padding)
     videoZoomRef.current = zoom

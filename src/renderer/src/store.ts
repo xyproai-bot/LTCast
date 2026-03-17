@@ -366,7 +366,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   setTimecode: (timecode) => set({ timecode }),
   setDetectedFps: (detectedFps) => set({ detectedFps }),
   setForceFps: (forceFps) => set({ forceFps, presetDirty: true }),
-  setOffsetFrames: (offsetFrames) => set({ offsetFrames, presetDirty: true }),
+  setOffsetFrames: (offsetFrames) => set({ offsetFrames: Math.max(-999, Math.min(999, offsetFrames)), presetDirty: true }),
   setLtcChannel: (ltcChannel) => set({ ltcChannel, presetDirty: true }),
   setDetectedLtcChannel: (detectedLtcChannel) => set({ detectedLtcChannel }),
   setLtcSignalOk: (ltcSignalOk) => set({ ltcSignalOk }),
