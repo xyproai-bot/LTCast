@@ -60,11 +60,24 @@ jobs:
 
       - name: Build and publish (macOS)
         run: |
+          PUBLISH_FLAG="never"
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            npm run build && npx electron-builder --mac --publish always
-          else
-            npm run build && npx electron-builder --mac --publish never
+            PUBLISH_FLAG="always"
           fi
+          # Step 1: pack to directory (no installer yet)
+          npm run build && npx electron-builder --mac --dir
+          # Step 2: ad-hoc sign each arch
+          for app_dir in dist/mac dist/mac-arm64 dist/mac-universal; do
+            if [ -d "$app_dir/CueSync.app" ]; then
+              bash scripts/sign-mac.sh "$app_dir/CueSync.app" || true
+            fi
+          done
+          # Step 3: create installers from signed apps and publish
+          for app_dir in dist/mac dist/mac-arm64 dist/mac-universal; do
+            if [ -d "$app_dir/CueSync.app" ]; then
+              npx electron-builder --mac dmg zip --pd "$app_dir" --publish "$PUBLISH_FLAG" || true
+            fi
+          done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
