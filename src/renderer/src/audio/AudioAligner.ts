@@ -4,6 +4,13 @@
  * to quickly find where a video's audio best matches in the main audio.
  */
 
+interface AlignResult {
+  /** Position in the main audio where the video starts (seconds) */
+  offset: number
+  /** Normalized cross-correlation score, 0–1. < 0.7 means unreliable match. */
+  confidence: number
+}
+
 /**
  * Find the best alignment offset (in seconds) using waveform peak data.
  *
@@ -11,15 +18,15 @@
  * @param videoPeaks - Waveform peak data from the video audio
  * @param mainDuration  - Duration of the main audio in seconds
  * @param videoDuration - Duration of the video audio in seconds
- * @returns offsetSeconds - Position in the main audio where the video starts
+ * @returns AlignResult with offsetSeconds and confidence score
  */
 export function alignAudio(
   mainPeaks: Float32Array,
   videoPeaks: Float32Array,
   mainDuration: number,
   videoDuration: number
-): number {
-  if (mainDuration <= 0 || videoDuration <= 0) return 0
+): AlignResult {
+  if (mainDuration <= 0 || videoDuration <= 0) return { offset: 0, confidence: 0 }
 
   // Scale video peaks to same points-per-second as main peaks
   const mainPPS = mainPeaks.length / mainDuration
@@ -28,7 +35,7 @@ export function alignAudio(
   // Resample video peaks to match main's resolution
   const videoRS = resample(videoPeaks, videoPointsNeeded)
   const maxLag = mainPeaks.length - videoRS.length
-  if (maxLag <= 0) return 0
+  if (maxLag <= 0) return { offset: 0, confidence: 0 }
 
   // Pre-compute video stats
   let videoMean = 0
@@ -41,7 +48,7 @@ export function alignAudio(
     videoEnergy += d * d
   }
   const videoStd = Math.sqrt(videoEnergy)
-  if (videoStd < 1e-10) return 0
+  if (videoStd < 1e-10) return { offset: 0, confidence: 0 }
 
   // Slide and compute normalized cross-correlation
   let bestCorr = -Infinity
@@ -65,7 +72,9 @@ export function alignAudio(
   }
 
   // Convert lag in peak-points back to seconds
-  return (bestLag / mainPeaks.length) * mainDuration
+  // Normalize bestCorr from [-1, 1] to [0, 1] for confidence
+  const confidence = (bestCorr + 1) / 2
+  return { offset: (bestLag / mainPeaks.length) * mainDuration, confidence }
 }
 
 function computeCorrelation(

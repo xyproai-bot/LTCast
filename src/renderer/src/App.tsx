@@ -424,16 +424,18 @@ export default function App(): React.JSX.Element {
 
       // Auto-align using waveform peaks (fast)
       if (musicWaveform) {
-        const offset = alignAudio(
+        const { offset, confidence } = alignAudio(
           musicWaveform, videoData,
           useStore.getState().duration,
           videoBuffer.duration
         )
-        setVideoOffsetSeconds(offset)
+        const finalOffset = confidence >= 0.7 ? offset : 0
+        if (confidence < 0.7) toast.warning(t(lang, 'videoAlignPoor'))
+        setVideoOffsetSeconds(finalOffset)
 
         // Look up timecode at alignment point
         const lookup = useStore.getState().timecodeLookup
-        const tc = getTimecodeAtTime(lookup, offset)
+        const tc = getTimecodeAtTime(lookup, finalOffset)
         setVideoStartTimecode(tc ? formatTimecode(tc) : null)
       }
     } catch (e: unknown) {
@@ -446,6 +448,19 @@ export default function App(): React.JSX.Element {
     } finally {
       setVideoLoading(false)
     }
+  }
+
+  const resyncVideo = (): void => {
+    const s = useStore.getState()
+    if (!musicWaveform || !s.videoWaveform || !s.duration || !s.videoDuration) return
+    const { offset, confidence } = alignAudio(
+      musicWaveform, s.videoWaveform, s.duration, s.videoDuration
+    )
+    const finalOffset = confidence >= 0.7 ? offset : 0
+    if (confidence < 0.7) toast.warning(t(lang, 'videoAlignPoor'))
+    setVideoOffsetSeconds(finalOffset)
+    const tc = getTimecodeAtTime(s.timecodeLookup, finalOffset)
+    setVideoStartTimecode(tc ? formatTimecode(tc) : null)
   }
 
   const handlePlay = async (): Promise<void> => {
@@ -552,6 +567,7 @@ export default function App(): React.JSX.Element {
               setVideoStartTimecode(tc ? formatTimecode(tc) : null)
             }}
             onClearVideo={clearVideo}
+            onResyncVideo={resyncVideo}
           />
 
           <Transport
