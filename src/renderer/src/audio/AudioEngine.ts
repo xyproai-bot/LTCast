@@ -747,8 +747,8 @@ export class AudioEngine {
         const targetTime = this.loopA
         const currentPlayId = this.playId
         this.seek(targetTime).then(() => {
-          // Guard: only update if no other play/seek interrupted
-          if (this.playId > currentPlayId) {
+          // Guard: only update if exactly our seek completed (playId incremented by 1)
+          if (this.playId === currentPlayId + 1) {
             this.callbacks.onTimeUpdate(targetTime)
           }
         })
@@ -807,8 +807,11 @@ export class AudioEngine {
         remaining -= (mInBlock - 1) * framesPerMin
       }
       m = tenMinBlocks * 10 + mInBlock
-      s = Math.floor(remaining / fpsInt)
-      f = remaining - s * fpsInt
+      // Drop minutes (mInBlock > 0) skip frame labels 00 and 01 in second 0.
+      // Add D=2 before dividing so that remaining=0 → frame 02, remaining=28 → second 1 frame 00, etc.
+      const dropAdjusted = mInBlock > 0 ? remaining + D : remaining
+      s = Math.floor(dropAdjusted / fpsInt)
+      f = dropAdjusted - s * fpsInt
     } else {
       h = Math.floor(totalFrames / (3600 * fps))
       totalFrames -= h * 3600 * fps

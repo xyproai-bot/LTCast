@@ -11,9 +11,10 @@ interface Props {
   onSeek:    (time: number) => void
   onVideoOffsetChange?: (offset: number) => void
   onClearVideo?: () => void
+  onResyncVideo?: () => void
 }
 
-export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onClearVideo }: Props): React.JSX.Element {
+export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onClearVideo, onResyncVideo }: Props): React.JSX.Element {
   const musicContainerRef = useRef<HTMLDivElement>(null)
   const ltcWrapRef        = useRef<HTMLDivElement>(null)
   const ltcCanvasRef      = useRef<HTMLCanvasElement>(null)
@@ -480,6 +481,7 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
                   {t(lang, 'videoStartTC')}: <strong>{videoStartTimecode}</strong>
                 </span>
               )}
+              <button className="btn-nudge" onClick={onResyncVideo} title={t(lang, 'resyncVideo')}>⟳</button>
               <button className="btn-nudge btn-clear-video" onClick={onClearVideo} title={t(lang, 'clearVideo')}>✕</button>
             </div>
           </div>
