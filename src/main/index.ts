@@ -142,7 +142,7 @@ autoUpdater.on('update-downloaded', async (info) => {
       autoUpdater.quitAndInstall()
     } catch {
       // On unsigned macOS apps quitAndInstall can fail — fall back to opening releases page
-      shell.openExternal('https://github.com/xyproai-bot/CueSync/releases/latest')
+      shell.openExternal('https://github.com/xyproai-bot/LTCast/releases/latest')
     }
   }
 })

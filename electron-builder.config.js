@@ -4,7 +4,7 @@ module.exports = {
   publish: {
     provider: 'github',
     owner: 'xyproai-bot',
-    repo: 'CueSync'
+    repo: 'LTCast'
   },
   productName: 'LTCast',
   copyright: 'Copyright © 2024 LTCast',

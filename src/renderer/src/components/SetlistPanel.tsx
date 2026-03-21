@@ -91,11 +91,14 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     if (items.length > 0) addToSetlist(items)
   }, [addToSetlist])
 
+  const handleRelinkRef = useRef(handleRelink)
+  handleRelinkRef.current = handleRelink
+
   const handleItemClick = useCallback((index: number): void => {
     const item = setlist[index]
     if (missingPaths.has(item.path)) {
       // File is missing — offer to relink
-      handleRelink(index)
+      handleRelinkRef.current(index)
       return
     }
     setActiveSetlistIndex(index)

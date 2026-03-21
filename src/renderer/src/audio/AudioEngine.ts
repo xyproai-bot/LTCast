@@ -743,7 +743,7 @@ export class AudioEngine {
         return
       }
 
-      if (this.loopA !== null && this.loopB !== null && ct >= this.loopB) {
+      if (this.loopA !== null && this.loopB !== null && this.loopA < this.loopB && ct >= this.loopB) {
         const targetTime = this.loopA
         const currentPlayId = this.playId
         this.seek(targetTime).then(() => {

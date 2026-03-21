@@ -263,9 +263,12 @@ export default function App(): React.JSX.Element {
           setPlayState('paused')
         } else {
           engine.current?.play().then(() => {
-            setPlayState('playing')
-            const tc = useStore.getState().timecode
-            if (tc) mtc.current?.sendFullFrame(tc)
+            // Guard: don't override if user paused during the async play()
+            if (useStore.getState().playState !== 'paused') {
+              setPlayState('playing')
+              const tc = useStore.getState().timecode
+              if (tc) mtc.current?.sendFullFrame(tc)
+            }
           }).catch(() => {})
         }
       }
@@ -465,9 +468,12 @@ export default function App(): React.JSX.Element {
 
   const handlePlay = async (): Promise<void> => {
     await engine.current?.play()
-    setPlayState('playing')
-    const tc = useStore.getState().timecode
-    if (tc) mtc.current?.sendFullFrame(tc)
+    // Guard: don't override if user paused during the async play()
+    if (useStore.getState().playState !== 'paused') {
+      setPlayState('playing')
+      const tc = useStore.getState().timecode
+      if (tc) mtc.current?.sendFullFrame(tc)
+    }
   }
 
   const handlePause = (): void => {
