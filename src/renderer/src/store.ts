@@ -543,7 +543,12 @@ export const useStore = create<AppState>()(persist((set) => ({
       ltcConfidence: 0,
       presetName: null,
       presetPath: null,
-      presetDirty: false
+      presetDirty: false,
+      generatorStartTC: '01:00:00:00',
+      generatorFps: 25,
+      mtcMode: 'quarter-frame',
+      artnetEnabled: false,
+      artnetTargetIp: '255.255.255.255'
     })
   },
 
@@ -699,7 +704,9 @@ export const useStore = create<AppState>()(persist((set) => ({
       musicOutputDeviceId: 'default', ltcOutputDeviceId: 'default',
       ltcGain: 1.0, selectedMidiPort: null, forceFps: null,
       ltcChannel: 'auto', setlist: [], activeSetlistIndex: null,
-      presetName: null, presetPath: null, presetDirty: false
+      presetName: null, presetPath: null, presetDirty: false,
+      generatorStartTC: '01:00:00:00', generatorFps: 25,
+      mtcMode: 'quarter-frame', artnetEnabled: false, artnetTargetIp: '255.255.255.255'
     })
   },
 
