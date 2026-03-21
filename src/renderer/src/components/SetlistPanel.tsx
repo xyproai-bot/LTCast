@@ -22,13 +22,10 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
   // Check which setlist files are missing on disk
   const checkMissing = useCallback(async (items: typeof setlist): Promise<void> => {
     if (items.length === 0) { setMissingPaths(new Set()); return }
-    const missing = new Set<string>()
-    for (const item of items) {
-      try {
-        const exists = await window.api.fileExists(item.path)
-        if (!exists) missing.add(item.path)
-      } catch { /* ignore */ }
-    }
+    const results = await Promise.all(
+      items.map(item => window.api.fileExists(item.path).then(exists => ({ path: item.path, exists })).catch(() => ({ path: item.path, exists: true })))
+    )
+    const missing = new Set(results.filter(r => !r.exists).map(r => r.path))
     setMissingPaths(missing)
   }, [])
 
@@ -36,19 +33,12 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     if (setlist.length === 0) { setMissingPaths(new Set()); return }
     let cancelled = false
     const snapshot = setlist
-    const run = async (): Promise<void> => {
-      if (snapshot.length === 0) { if (!cancelled) setMissingPaths(new Set()); return }
-      const missing = new Set<string>()
-      for (const item of snapshot) {
-        if (cancelled) return
-        try {
-          const exists = await window.api.fileExists(item.path)
-          if (!exists) missing.add(item.path)
-        } catch { /* ignore */ }
-      }
-      if (!cancelled) setMissingPaths(missing)
-    }
-    run().catch(() => {})
+    Promise.all(
+      snapshot.map(item => window.api.fileExists(item.path).then(exists => ({ path: item.path, exists })).catch(() => ({ path: item.path, exists: true })))
+    ).then(results => {
+      if (cancelled) return
+      setMissingPaths(new Set(results.filter(r => !r.exists).map(r => r.path)))
+    }).catch(() => {})
     return () => { cancelled = true }
   }, [setlist])
 
