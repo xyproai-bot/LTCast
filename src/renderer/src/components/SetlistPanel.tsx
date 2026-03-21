@@ -91,20 +91,6 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     if (items.length > 0) addToSetlist(items)
   }, [addToSetlist])
 
-  const handleRelinkRef = useRef(handleRelink)
-  handleRelinkRef.current = handleRelink
-
-  const handleItemClick = useCallback((index: number): void => {
-    const item = setlist[index]
-    if (missingPaths.has(item.path)) {
-      // File is missing — offer to relink
-      handleRelinkRef.current(index)
-      return
-    }
-    setActiveSetlistIndex(index)
-    onLoadFile(item.path)
-  }, [setlist, missingPaths, setActiveSetlistIndex, onLoadFile])
-
   const handleRelink = useCallback(async (index: number): Promise<void> => {
     const item = setlist[index]
     const newPath = await window.api.relinkFile(item.path)
@@ -156,6 +142,17 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
       toast.success(t(lang, 'filesAutoRelinked').replace('{n}', String(count)))
     }
   }, [setlist, missingPaths, lang])
+
+  const handleItemClick = useCallback((index: number): void => {
+    const item = setlist[index]
+    if (missingPaths.has(item.path)) {
+      // File is missing — offer to relink
+      handleRelink(index)
+      return
+    }
+    setActiveSetlistIndex(index)
+    onLoadFile(item.path)
+  }, [setlist, missingPaths, setActiveSetlistIndex, onLoadFile, handleRelink])
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, index: number): void => {
     dragIdx.current = index
