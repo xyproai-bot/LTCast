@@ -262,14 +262,13 @@ export default function App(): React.JSX.Element {
           engine.current?.pause()
           setPlayState('paused')
         } else {
+          setPlayState('playing')
           engine.current?.play().then(() => {
-            // Guard: don't override if user paused during the async play()
-            if (useStore.getState().playState !== 'paused') {
-              setPlayState('playing')
-              const tc = useStore.getState().timecode
-              if (tc) mtc.current?.sendFullFrame(tc)
-            }
-          }).catch(() => {})
+            const tc = useStore.getState().timecode
+            if (tc) mtc.current?.sendFullFrame(tc)
+          }).catch(() => {
+            setPlayState('paused')
+          })
         }
       }
       // Ctrl+Z / Cmd+Z: undo clear setlist
