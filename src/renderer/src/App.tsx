@@ -59,6 +59,15 @@ export default function App(): React.JSX.Element {
     return cleanup
   }, [])
 
+  // Art-Net socket failure — main process UDP socket died, disable Art-Net in UI
+  useEffect(() => {
+    const cleanup = window.api.onArtnetSocketFailed(() => {
+      useStore.getState().setArtnetEnabled(false)
+      toast.error(t(useStore.getState().lang, 'artnetSocketError'))
+    })
+    return cleanup
+  }, [])
+
   // Init engine + MIDI once
   useEffect(() => {
     engine.current = new AudioEngine({
@@ -465,14 +474,14 @@ export default function App(): React.JSX.Element {
     setVideoStartTimecode(tc ? formatTimecode(tc) : null)
   }
 
-  const handlePlay = async (): Promise<void> => {
-    await engine.current?.play()
-    // Guard: don't override if user paused during the async play()
-    if (useStore.getState().playState !== 'paused') {
-      setPlayState('playing')
+  const handlePlay = (): void => {
+    setPlayState('playing')
+    engine.current?.play().then(() => {
       const tc = useStore.getState().timecode
       if (tc) mtc.current?.sendFullFrame(tc)
-    }
+    }).catch(() => {
+      setPlayState('paused')
+    })
   }
 
   const handlePause = (): void => {

@@ -234,10 +234,11 @@ export class AudioEngine {
 
   async setMusicOutputDevice(deviceId: string): Promise<void> {
     this.musicOutputDeviceId = deviceId
-    if (this.ctx && deviceId && deviceId !== 'default') {
+    if (this.ctx) {
       try {
         // @ts-expect-error - setSinkId newer API
-        await this.ctx.setSinkId(deviceId)
+        // Pass '' to revert to system default when deviceId is 'default'
+        await this.ctx.setSinkId(deviceId !== 'default' ? deviceId : '')
       } catch { /**/ }
     }
   }
@@ -832,6 +833,13 @@ export class AudioEngine {
 
     this.callbacks.onTimecode(tc)
     this.callbacks.onLtcSignalStatus(true)
+
+    // Reset signal-lost timeout (same as _onLtcFrame) so the dot turns off
+    // when generator mode is paused or stopped
+    if (this.ltcSignalTimeout) clearTimeout(this.ltcSignalTimeout)
+    this.ltcSignalTimeout = setTimeout(() => {
+      this.callbacks.onLtcSignalStatus(false)
+    }, LTC_SIGNAL_TIMEOUT_MS)
   }
 
   // ════════════════════════════════════════════════════════════
