@@ -8,6 +8,7 @@ module.exports = {
   },
   productName: 'LTCast',
   copyright: 'Copyright © 2024 LTCast',
+  icon: 'resources/icon',
   directories: {
     buildResources: 'resources',
     output: 'dist'
@@ -49,8 +50,7 @@ module.exports = {
   win: {
     target: [
       { target: 'nsis', arch: ['x64'] }
-    ],
-    icon: 'resources/icon.png'
+    ]
   },
   nsis: {
     oneClick: false,
