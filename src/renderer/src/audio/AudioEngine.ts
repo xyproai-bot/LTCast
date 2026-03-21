@@ -97,12 +97,12 @@ export class AudioEngine {
   private generatorFps = 25
   private lastGeneratedFrame = -1
 
+  private _deviceChangeHandler = (): void => { this._checkDeviceAvailability() }
+
   constructor(callbacks: AudioEngineCallbacks) {
     this.callbacks = callbacks
     // Monitor audio device changes (plug/unplug)
-    navigator.mediaDevices.addEventListener('devicechange', () => {
-      this._checkDeviceAvailability()
-    })
+    navigator.mediaDevices.addEventListener('devicechange', this._deviceChangeHandler)
   }
 
   /** Check if currently-used audio devices are still available */
@@ -380,6 +380,7 @@ export class AudioEngine {
   }
 
   async dispose(): Promise<void> {
+    navigator.mediaDevices.removeEventListener('devicechange', this._deviceChangeHandler)
     cancelAnimationFrame(this.rafId)
     this._stopPlayback()
     await this._closeLtcCtx()
