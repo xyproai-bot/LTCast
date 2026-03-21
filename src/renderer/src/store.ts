@@ -598,6 +598,7 @@ export const useStore = create<AppState>()(persist((set) => ({
       ...presetData,
       loopA: presetData.loopA ?? null, loopB: presetData.loopB ?? null,
       previousSetlist: null,
+      activeSetlistIndex: null,
       savedPresets: presets,
       presetName: result.name,
       presetPath: result.path ?? null,
@@ -627,6 +628,7 @@ export const useStore = create<AppState>()(persist((set) => ({
         ...presetData,
         loopA: presetData.loopA ?? null, loopB: presetData.loopB ?? null,
         previousSetlist: null,
+        activeSetlistIndex: null,
         savedPresets: presets,
         presetName: result.name,
         presetPath: path,
@@ -663,6 +665,8 @@ export const useStore = create<AppState>()(persist((set) => ({
       // Explicitly reset loop points in case old preset doesn't have them
       loopA: data.loopA ?? null, loopB: data.loopB ?? null,
       previousSetlist: null,
+      // Reset active index — old index may be out of bounds for the new setlist
+      activeSetlistIndex: null,
       // Clear playback state
       filePath: null, fileName: null, duration: 0,
       playState: 'stopped', currentTime: 0,
@@ -723,7 +727,12 @@ export const useStore = create<AppState>()(persist((set) => ({
     // Update setlist paths to point to extracted audio files
     if (presetData.setlist && result.audioPaths.length > 0) {
       presetData.setlist = presetData.setlist.map(item => {
-        const extracted = result.audioPaths.find(p => p.endsWith(item.name) || p.endsWith(item.path.split(/[/\\]/).pop()!))
+        const nameLower = item.name.toLowerCase()
+        const basenameOldLower = item.path.split(/[/\\]/).pop()!.toLowerCase()
+        const extracted = result.audioPaths.find(p => {
+          const pLower = p.toLowerCase()
+          return pLower.endsWith(nameLower) || pLower.endsWith(basenameOldLower)
+        })
         return extracted ? { ...item, path: extracted } : item
       })
     }
@@ -732,6 +741,7 @@ export const useStore = create<AppState>()(persist((set) => ({
       ...presetData,
       loopA: presetData.loopA ?? null, loopB: presetData.loopB ?? null,
       previousSetlist: null,
+      activeSetlistIndex: null,
       savedPresets: presets,
       presetName: preset.name,
       presetPath: result.presetFilePath ?? null,
