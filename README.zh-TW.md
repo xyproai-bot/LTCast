@@ -85,7 +85,7 @@ src/
 
 ## 問題回報與聯繫
 
-- **GitHub Issues**：[提交問題](https://github.com/xyproai-bot/CueSync/issues)
+- **GitHub Issues**：[提交問題](https://github.com/xyproai-bot/LTCast/issues)
 - **Email**：xyproai-bot@gmail.com
 
 ## 授權
