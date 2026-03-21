@@ -1,6 +1,6 @@
 {
   "name": "ltcast",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "LTC Timecode player and MTC/Art-Net sender for live shows",
   "license": "MIT",
   "author": "LTCast",
