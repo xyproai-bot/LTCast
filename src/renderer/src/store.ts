@@ -63,7 +63,7 @@ export interface SavedPreset {
   updatedAt: string
 }
 
-const ACTIVE_PRESET_KEY = 'cuesync-active-preset'
+const ACTIVE_PRESET_KEY = 'ltcast-active-preset'
 
 function loadActivePresetName(): string | null {
   return localStorage.getItem(ACTIVE_PRESET_KEY)
@@ -206,7 +206,7 @@ export interface AppState {
 
   // Project
   presetName: string | null
-  presetPath: string | null   // filesystem path of the current .cuesync file
+  presetPath: string | null   // filesystem path of the current .ltcast file
   presetDirty: boolean
   savedPresets: SavedPreset[]
   recentFiles: Array<{ path: string; name: string }>
@@ -560,7 +560,7 @@ export const useStore = create<AppState>()(persist((set) => ({
       } else {
         const chosenPath = await window.api.savePresetDialog(s.presetName ?? 'Untitled')
         if (!chosenPath) return
-        const name = chosenPath.split(/[/\\]/).pop()!.replace(/\.cuesync$/i, '')
+        const name = chosenPath.split(/[/\\]/).pop()!.replace(/\.ltcast$/i, '')
         await window.api.savePreset(name, data, chosenPath)
         saveActivePresetName(name)
         window.api.addRecentFile(chosenPath, name)
@@ -576,7 +576,7 @@ export const useStore = create<AppState>()(persist((set) => ({
       const data = buildPresetData(s)
       const chosenPath = await window.api.savePresetDialog(s.presetName ?? 'Untitled')
       if (!chosenPath) return
-      const name = chosenPath.split(/[/\\]/).pop()!.replace(/\.cuesync$/i, '')
+      const name = chosenPath.split(/[/\\]/).pop()!.replace(/\.ltcast$/i, '')
       await window.api.savePreset(name, data, chosenPath)
       saveActivePresetName(name)
       window.api.addRecentFile(chosenPath, name)
@@ -748,7 +748,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     return true
   }
 }), {
-  name: 'cuesync-settings',
+  name: 'ltcast-settings',
   partialize: (state) => ({
     // Only persist user preferences, not transient playback state
     lang: state.lang,

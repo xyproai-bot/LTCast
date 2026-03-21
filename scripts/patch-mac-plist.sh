@@ -10,9 +10,9 @@ RESOURCES_DIR="$(cd "$(dirname "$0")/.." && pwd)/resources"
 echo "[patch-plist] Patching: $PLIST"
 
 # Fix app identity
-plutil -replace CFBundleIdentifier   -string "com.cuesync.app"  "$PLIST"
-plutil -replace CFBundleDisplayName  -string "CueSync"          "$PLIST"
-plutil -replace CFBundleName         -string "CueSync"          "$PLIST"
+plutil -replace CFBundleIdentifier   -string "com.ltcast.app"  "$PLIST"
+plutil -replace CFBundleDisplayName  -string "LTCast"          "$PLIST"
+plutil -replace CFBundleName         -string "LTCast"          "$PLIST"
 
 # Fix icon
 ICNS_SRC="$RESOURCES_DIR/icon.icns"

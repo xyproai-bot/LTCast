@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('show-confirm-dialog', message),
 
   // Preset / project management (filesystem-based)
-  getCueSyncPath: () => ipcRenderer.invoke('get-cuesync-path'),
+  getLTCastPath: () => ipcRenderer.invoke('get-ltcast-path'),
   listPresets: () => ipcRenderer.invoke('list-presets'),
   savePreset: (name: string, data: unknown, filePath?: string) => ipcRenderer.invoke('save-preset', name, data, filePath),
   savePresetDialog: (defaultName: string) => ipcRenderer.invoke('save-preset-dialog', defaultName),
@@ -51,11 +51,11 @@ contextBridge.exposeInMainWorld('api', {
     return () => { ipcRenderer.removeListener(channel, handler) }
   },
 
-  // Open .cuesync file (from double-click / OS association)
-  onOpenCueSyncFile: (callback: (filePath: string) => void) => {
+  // Open .ltcast file (from double-click / OS association)
+  onOpenLTCastFile: (callback: (filePath: string) => void) => {
     const handler = (_event: unknown, filePath: string): void => callback(filePath)
-    ipcRenderer.on('open-cuesync-file', handler)
-    return () => { ipcRenderer.removeListener('open-cuesync-file', handler) }
+    ipcRenderer.on('open-ltcast-file', handler)
+    return () => { ipcRenderer.removeListener('open-ltcast-file', handler) }
   },
 
   // Platform detection (for platform-specific UI text)
