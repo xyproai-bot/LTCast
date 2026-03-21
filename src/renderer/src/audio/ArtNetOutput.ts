@@ -22,8 +22,15 @@ export class ArtNetOutput {
     await window.api.artnetStop()
   }
 
+  private isValidIp(ip: string): boolean {
+    const parts = ip.split('.')
+    if (parts.length !== 4) return false
+    return parts.every(p => { const n = Number(p); return p !== '' && Number.isInteger(n) && n >= 0 && n <= 255 })
+  }
+
   setTargetIp(ip: string): void {
-    this.targetIp = ip || '255.255.255.255'
+    // Only update if the IP is valid — ignore partial input while the user is still typing
+    if (this.isValidIp(ip)) this.targetIp = ip
   }
 
   isEnabled(): boolean {

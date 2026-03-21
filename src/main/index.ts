@@ -178,6 +178,10 @@ function ensureArtnetSocket(): void {
     console.error('Art-Net socket error:', err)
     artnetSocket?.close()
     artnetSocket = null
+    // Notify all renderer windows so they can disable Art-Net in the UI
+    BrowserWindow.getAllWindows().forEach(w => {
+      if (!w.isDestroyed()) w.webContents.send('artnet-socket-failed')
+    })
   })
   artnetSocket.bind(() => {
     artnetSocket?.setBroadcast(true)

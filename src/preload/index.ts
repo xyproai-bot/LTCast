@@ -58,6 +58,13 @@ contextBridge.exposeInMainWorld('api', {
     return () => { ipcRenderer.removeListener('open-ltcast-file', handler) }
   },
 
+  // Art-Net socket failure notification (main process UDP socket died)
+  onArtnetSocketFailed: (callback: () => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('artnet-socket-failed', handler)
+    return () => { ipcRenderer.removeListener('artnet-socket-failed', handler) }
+  },
+
   // Platform detection (for platform-specific UI text)
   platform: process.platform
 })

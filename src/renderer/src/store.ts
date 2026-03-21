@@ -438,7 +438,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     if (s.setlist.length === 0) return
     window.api.showConfirmDialog(
       t(s.lang, 'confirmClearSetlist')
-    ).catch(() => {}).then(ok => {
+    ).then(ok => {
       if (!ok) return
       // Re-read state in case it changed during the dialog
       const current = useStore.getState()
@@ -449,7 +449,7 @@ export const useStore = create<AppState>()(persist((set) => ({
         activeSetlistIndex: null,
         presetDirty: true
       })
-    })
+    }).catch(() => {})
   },
   undoClearSetlist: () => set((s) => {
     if (!s.previousSetlist) return s

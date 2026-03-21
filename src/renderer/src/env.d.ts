@@ -47,6 +47,9 @@ interface Window {
     // Open .ltcast file (from double-click / OS association)
     onOpenLTCastFile(callback: (filePath: string) => void): () => void
 
+    // Art-Net socket failure notification
+    onArtnetSocketFailed(callback: () => void): () => void
+
     // Platform detection
     platform: NodeJS.Platform
   }
