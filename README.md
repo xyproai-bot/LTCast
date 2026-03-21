@@ -1,12 +1,16 @@
-# CueSync
+# LTCast
+
+<p align="center">
+  <img src="resources/icon.png" width="128" height="128" alt="LTCast"/>
+</p>
 
 **LTC Timecode player and MTC/Art-Net sender for live shows.**
 
-CueSync reads SMPTE LTC timecode embedded in audio files and forwards it as MTC (MIDI Timecode) and Art-Net Timecode over the network. It also includes a TC Generator mode for files without embedded LTC.
+LTCast reads SMPTE LTC timecode embedded in audio files and forwards it as MTC (MIDI Timecode) and Art-Net Timecode over the network. It also includes a TC Generator mode for files without embedded LTC.
 
 Designed for live show operators, lighting programmers, and AV engineers who need reliable timecode distribution from a single playback machine.
 
-![CueSync Screenshot](resources/screenshot.png)
+![LTCast Screenshot](resources/screenshot.png)
 
 ---
 
@@ -19,8 +23,8 @@ Designed for live show operators, lighting programmers, and AV engineers who nee
 - **Dual Audio Output** — Separate devices for music and LTC (e.g., VB-CABLE)
 - **Setlist** — Manage multiple audio files, drag-and-drop reorder
 - **A-B Loop** — Loop a specific section of the audio
-- **Video Import** — Import a video file; CueSync automatically aligns its audio to the main audio track using waveform cross-correlation. Fine-tune the offset by dragging on the waveform.
-- **Preset System** — Save/load project settings as .cuesync files
+- **Video Import** — Import a video file; LTCast automatically aligns its audio to the main audio track using waveform cross-correlation. Fine-tune the offset by dragging on the waveform.
+- **Preset System** — Save/load project settings as .ltcast files
 - **Tap BPM** — Manual tap-to-detect BPM tool
 - **Bilingual** — English / Traditional Chinese
 
@@ -37,7 +41,7 @@ WAV, AIFF, MP3, FLAC, OGG
 
 > **macOS note:** If you see an "unverified developer" warning on first launch, open **System Settings → Privacy & Security** and click **Open Anyway**. If you see a "damaged" warning, run the following in Terminal, then reopen the app:
 > ```bash
-> xattr -cr /Applications/cuesync.app
+> xattr -cr /Applications/LTCast.app
 > ```
 
 ## Development

@@ -48,12 +48,12 @@ export default function App(): React.JSX.Element {
 
   // Sync window title bar with preset name
   useEffect(() => {
-    document.title = presetName ? `CueSync - ${presetName}` : 'CueSync'
+    document.title = presetName ? `LTCast - ${presetName}` : 'LTCast'
   }, [presetName])
 
-  // Handle .cuesync file opened via double-click / OS association
+  // Handle .ltcast file opened via double-click / OS association
   useEffect(() => {
-    const cleanup = window.api.onOpenCueSyncFile((filePath: string) => {
+    const cleanup = window.api.onOpenLTCastFile((filePath: string) => {
       useStore.getState().openRecentFile(filePath)
     })
     return cleanup
@@ -343,7 +343,7 @@ export default function App(): React.JSX.Element {
     setDragging(false)
 
     // Handle drag from setlist panel → load the file
-    const setlistData = e.dataTransfer.getData('application/x-cuesync-setlist')
+    const setlistData = e.dataTransfer.getData('application/x-ltcast-setlist')
     if (setlistData) {
       try {
         const { index, path } = JSON.parse(setlistData) as { index: number; path: string }
@@ -511,7 +511,7 @@ export default function App(): React.JSX.Element {
     >
       {/* Header */}
       <div className="header">
-        <span className="app-title">CueSync{fileName ? ` — ${fileName}` : ''}</span>
+        <span className="app-title">LTCast{fileName ? ` — ${fileName}` : ''}</span>
         <PresetBar />
         <button className="btn-open" onClick={() => openFile()}>
           {t(lang, 'openFile')}

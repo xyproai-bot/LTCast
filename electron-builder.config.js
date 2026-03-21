@@ -1,25 +1,25 @@
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
-  appId: 'com.cuesync.app',
+  appId: 'com.ltcast.app',
   publish: {
     provider: 'github',
     owner: 'xyproai-bot',
     repo: 'CueSync'
   },
-  productName: 'CueSync',
-  copyright: 'Copyright © 2024 CueSync',
+  productName: 'LTCast',
+  copyright: 'Copyright © 2024 LTCast',
   directories: {
     buildResources: 'resources',
     output: 'dist'
   },
   fileAssociations: [
     {
-      ext: 'cuesync',
-      name: 'CueSync Project',
-      description: 'CueSync Project File',
+      ext: 'ltcast',
+      name: 'LTCast Project',
+      description: 'LTCast Project File',
       icon: 'resources/icon',
       role: 'Editor',
-      mimeType: 'application/x-cuesync'
+      mimeType: 'application/x-ltcast'
     }
   ],
   files: [
@@ -40,7 +40,7 @@ module.exports = {
     identity: null
   },
   dmg: {
-    title: 'CueSync',
+    title: 'LTCast',
     contents: [
       { x: 130, y: 220, type: 'file' },
       { x: 410, y: 220, type: 'link', path: '/Applications' }

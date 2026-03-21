@@ -1,12 +1,16 @@
-# CueSync
+# LTCast
+
+<p align="center">
+  <img src="resources/icon.png" width="128" height="128" alt="LTCast"/>
+</p>
 
 **用於現場演出的 LTC 時間碼播放器與 MTC / Art-Net 時間碼發送工具。**
 
-CueSync 可讀取音訊檔案中內嵌的 SMPTE LTC 時間碼，並轉發為 MTC（MIDI 時間碼）與 Art-Net Timecode。對於無內嵌 LTC 的檔案，也提供 TC 產生器模式。
+LTCast 可讀取音訊檔案中內嵌的 SMPTE LTC 時間碼，並轉發為 MTC（MIDI 時間碼）與 Art-Net Timecode。對於無內嵌 LTC 的檔案，也提供 TC 產生器模式。
 
 專為現場演出操作人員、燈光程式設計師與 AV 工程師設計，讓你從單一播放機器可靠地分發時間碼。
 
-![CueSync 截圖](resources/screenshot.png)
+![LTCast 截圖](resources/screenshot.png)
 
 ---
 
@@ -19,8 +23,8 @@ CueSync 可讀取音訊檔案中內嵌的 SMPTE LTC 時間碼，並轉發為 MTC
 - **雙音訊輸出** — 音樂與 LTC 可分別路由至不同裝置（如 VB-CABLE）
 - **曲目列表** — 管理多個音訊檔案，支援拖放排序
 - **A-B 循環** — 循環播放指定區段
-- **影片匯入** — 匯入影片後，CueSync 使用波形互相關演算法自動對齊影片音訊與主音軌。可在波形上拖曳進行精細調整。
-- **預設系統** — 儲存/載入專案設定為 .cuesync 檔案
+- **影片匯入** — 匯入影片後，LTCast 使用波形互相關演算法自動對齊影片音訊與主音軌。可在波形上拖曳進行精細調整。
+- **預設系統** — 儲存/載入專案設定為 .ltcast 檔案
 - **Tap BPM** — 手動拍點偵測 BPM 工具
 - **雙語介面** — English / 繁體中文
 
@@ -37,7 +41,7 @@ WAV、AIFF、MP3、FLAC、OGG
 
 > **macOS 注意：** 首次開啟若出現「無法驗證開發者」警告，請至**系統設定 → 隱私權與安全性**點選**仍要打開**。若出現「已損毀」警告，在終端機執行以下指令，再重新開啟：
 > ```bash
-> xattr -cr /Applications/cuesync.app
+> xattr -cr /Applications/LTCast.app
 > ```
 
 ## 開發

@@ -23,7 +23,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error('CueSync error boundary caught:', error, info.componentStack)
+    console.error('LTCast error boundary caught:', error, info.componentStack)
   }
 
   handleReload = (): void => {

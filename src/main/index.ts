@@ -79,8 +79,8 @@ autoUpdater.on('update-available', async (info) => {
   const opts = {
     type: 'info' as const,
     title: 'Update Available',
-    message: `CueSync ${info.version} is available`,
-    detail: `You are running v${app.getVersion()}.\nWould you like to download the update now?\nYou can continue using CueSync while it downloads.`,
+    message: `LTCast ${info.version} is available`,
+    detail: `You are running v${app.getVersion()}.\nWould you like to download the update now?\nYou can continue using LTCast while it downloads.`,
     buttons: ['Download', 'Later'],
     defaultId: 0,
     cancelId: 1
@@ -99,7 +99,7 @@ autoUpdater.on('update-not-available', () => {
   const opts = {
     type: 'info' as const,
     title: 'Up to Date',
-    message: 'CueSync is up to date!',
+    message: 'LTCast is up to date!',
     detail: `You are running the latest version (v${app.getVersion()}).`,
     buttons: ['OK']
   }
@@ -128,10 +128,10 @@ autoUpdater.on('update-downloaded', async (info) => {
   const opts = {
     type: 'info' as const,
     title: 'Update Ready',
-    message: `CueSync ${info.version} is ready to install`,
+    message: `LTCast ${info.version} is ready to install`,
     detail: isMac
-      ? 'Quit and relaunch CueSync to apply the update. Your presets and settings are preserved.'
-      : 'Restart CueSync now to apply the update. Your presets and settings are preserved.',
+      ? 'Quit and relaunch LTCast to apply the update. Your presets and settings are preserved.'
+      : 'Restart LTCast now to apply the update. Your presets and settings are preserved.',
     buttons: ['Restart Now', 'Later'],
     defaultId: 0,
     cancelId: 1
@@ -208,7 +208,7 @@ function createWindow(): BrowserWindow {
       sandbox: true
     },
     show: false,
-    title: 'CueSync'
+    title: 'LTCast'
   })
 
   win.on('ready-to-show', () => {
@@ -272,15 +272,15 @@ function addToRecentFiles(filePath: string, name: string): void {
 }
 
 // Register open-file BEFORE whenReady — on macOS the event can fire before the app is ready
-// (e.g. user double-clicks a .cuesync file to launch the app)
+// (e.g. user double-clicks a .ltcast file to launch the app)
 let pendingOpenFile: string | null = null
 
 app.on('open-file', (event, filePath) => {
   event.preventDefault()
-  if (filePath.toLowerCase().endsWith('.cuesync')) {
+  if (filePath.toLowerCase().endsWith('.ltcast')) {
     const win = BrowserWindow.getAllWindows()[0]
     if (win && !win.webContents.isLoading()) {
-      win.webContents.send('open-cuesync-file', filePath)
+      win.webContents.send('open-ltcast-file', filePath)
     } else {
       pendingOpenFile = filePath
     }
@@ -373,9 +373,9 @@ function rebuildMenu(presetsDir: string): void {
 // Set macOS About panel content (version + copyright)
 if (process.platform === 'darwin') {
   app.setAboutPanelOptions({
-    applicationName: 'CueSync',
+    applicationName: 'LTCast',
     applicationVersion: app.getVersion(),
-    copyright: 'Copyright © 2024 CueSync',
+    copyright: 'Copyright © 2024 LTCast',
     credits: 'LTC Timecode player and MTC/Art-Net sender'
   })
 }
@@ -398,26 +398,26 @@ app.whenReady().then(() => {
     return false
   })
 
-  // ── CueSync Documents folder setup ──────────────────────────
+  // ── LTCast Documents folder setup ──────────────────────────
   const documentsDir = app.getPath('documents')
-  const cuesyncDir = join(documentsDir, 'CueSync')
-  const presetsDir = join(cuesyncDir, 'Presets')
-  const projectsDir = join(cuesyncDir, 'Projects')
+  const ltcastDir = join(documentsDir, 'LTCast')
+  const presetsDir = join(ltcastDir, 'Presets')
+  const projectsDir = join(ltcastDir, 'Projects')
 
   // Ensure directories exist on startup
-  for (const dir of [cuesyncDir, presetsDir, projectsDir]) {
+  for (const dir of [ltcastDir, presetsDir, projectsDir]) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   }
 
   const win = createWindow()
   buildMenu(win, presetsDir)
 
-  // ── Handle .cuesync file opened via double-click ──────────
+  // ── Handle .ltcast file opened via double-click ──────────
 
   // Windows/Linux: file path passed as command-line argument
   const argv = process.argv
   for (const arg of argv) {
-    if (arg.toLowerCase().endsWith('.cuesync') && existsSync(arg)) {
+    if (arg.toLowerCase().endsWith('.ltcast') && existsSync(arg)) {
       pendingOpenFile = arg
       break
     }
@@ -427,7 +427,7 @@ app.whenReady().then(() => {
   // (covers both the argv case above and the open-file event registered before whenReady)
   win.webContents.on('did-finish-load', () => {
     if (pendingOpenFile) {
-      win.webContents.send('open-cuesync-file', pendingOpenFile)
+      win.webContents.send('open-ltcast-file', pendingOpenFile)
       pendingOpenFile = null
     }
   })
@@ -443,10 +443,10 @@ app.whenReady().then(() => {
         const result = await dialog.showMessageBox(win, {
           type: 'info',
           title: 'Virtual Audio Cable Recommended',
-          message: 'CueSync requires a virtual audio cable to output LTC via software.',
+          message: 'LTCast requires a virtual audio cable to output LTC via software.',
           detail: isMacPrompt
-            ? 'BlackHole is a free virtual audio device that lets CueSync send LTC timecode to other software on your Mac.\n\nIf you\'re using a physical audio interface to output LTC, you can skip this.'
-            : 'VB-CABLE is a free virtual audio device that lets CueSync send LTC timecode to other software on your computer.\n\nIf you\'re using a physical audio interface to output LTC, you can skip this.',
+            ? 'BlackHole is a free virtual audio device that lets LTCast send LTC timecode to other software on your Mac.\n\nIf you\'re using a physical audio interface to output LTC, you can skip this.'
+            : 'VB-CABLE is a free virtual audio device that lets LTCast send LTC timecode to other software on your computer.\n\nIf you\'re using a physical audio interface to output LTC, you can skip this.',
           buttons: [isMacPrompt ? 'Download BlackHole (Free)' : 'Download VB-CABLE (Free)', 'Skip'],
           defaultId: 0,
           cancelId: 1
@@ -465,8 +465,8 @@ app.whenReady().then(() => {
   // Only in production — dev builds can't use the updater
   setTimeout(() => checkForUpdates(true), 5000)
 
-  // IPC: get CueSync base path
-  ipcMain.handle('get-cuesync-path', () => cuesyncDir)
+  // IPC: get LTCast base path
+  ipcMain.handle('get-ltcast-path', () => ltcastDir)
 
   // IPC: add to recent files and rebuild menu
   ipcMain.handle('add-recent-file', (_event, filePath: string, name: string) => {
@@ -480,13 +480,13 @@ app.whenReady().then(() => {
   // IPC: list presets from filesystem
   ipcMain.handle('list-presets', () => {
     try {
-      const files = readdirSync(presetsDir).filter(f => f.endsWith('.cuesync'))
+      const files = readdirSync(presetsDir).filter(f => f.endsWith('.ltcast'))
       const results = []
       for (const f of files) {
         try {
           const raw = readFileSync(join(presetsDir, f), 'utf-8')
           const data = JSON.parse(raw)
-          results.push({ name: data.name ?? f.replace('.cuesync', ''), data: data.data, updatedAt: data.updatedAt ?? '' })
+          results.push({ name: data.name ?? f.replace('.ltcast', ''), data: data.data, updatedAt: data.updatedAt ?? '' })
         } catch { /* skip corrupted preset file */ }
       }
       return results
@@ -495,7 +495,7 @@ app.whenReady().then(() => {
 
   // IPC: save preset to a specific path (used when path is already known)
   ipcMain.handle('save-preset', (_event, name: string, data: unknown, filePath?: string) => {
-    const dest = filePath ?? join(presetsDir, name.replace(/[<>:"/\\|?*]/g, '_') + '.cuesync')
+    const dest = filePath ?? join(presetsDir, name.replace(/[<>:"/\\|?*]/g, '_') + '.ltcast')
     const dir = dirname(dest)
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     const content = JSON.stringify({ name, data, updatedAt: new Date().toISOString() }, null, 2)
@@ -507,9 +507,9 @@ app.whenReady().then(() => {
   ipcMain.handle('save-preset-dialog', async (_event, defaultName: string) => {
     const result = await dialog.showSaveDialog({
       title: 'Save Preset',
-      defaultPath: join(presetsDir, defaultName + '.cuesync'),
+      defaultPath: join(presetsDir, defaultName + '.ltcast'),
       filters: [
-        { name: 'CueSync Preset', extensions: ['cuesync'] },
+        { name: 'LTCast Preset', extensions: ['ltcast'] },
         { name: 'All Files', extensions: ['*'] }
       ]
     })
@@ -520,7 +520,7 @@ app.whenReady().then(() => {
   // IPC: delete preset from filesystem
   ipcMain.handle('delete-preset', (_event, name: string) => {
     const safeName = name.replace(/[<>:"/\\|?*]/g, '_')
-    const filePath = join(presetsDir, safeName + '.cuesync')
+    const filePath = join(presetsDir, safeName + '.ltcast')
     if (existsSync(filePath)) unlinkSync(filePath)
     return true
   })
@@ -530,13 +530,13 @@ app.whenReady().then(() => {
     shell.openPath(presetsDir)
   })
 
-  // IPC: open a .cuesync file via dialog
+  // IPC: open a .ltcast file via dialog
   ipcMain.handle('import-preset', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Open',
       defaultPath: presetsDir,
       filters: [
-        { name: 'CueSync File', extensions: ['cuesync'] },
+        { name: 'LTCast File', extensions: ['ltcast'] },
         { name: 'All Files', extensions: ['*'] }
       ],
       properties: ['openFile']
@@ -555,7 +555,7 @@ app.whenReady().then(() => {
     } catch { return null }
   })
 
-  // IPC: load a .cuesync file by path (for Open Recent)
+  // IPC: load a .ltcast file by path (for Open Recent)
   ipcMain.handle('load-preset-file', (_event, filePath: string) => {
     try {
       if (!existsSync(filePath)) return null
@@ -613,7 +613,7 @@ app.whenReady().then(() => {
     }
 
     // Save preset file in project root
-    const presetFilePath = join(projectDir, safeName + '.cuesync')
+    const presetFilePath = join(projectDir, safeName + '.ltcast')
     const content = JSON.stringify({
       name: presetName,
       data: updatedData,
@@ -627,13 +627,13 @@ app.whenReady().then(() => {
     return projectDir
   })
 
-  // IPC: import project — open a .cuesync file from any location
+  // IPC: import project — open a .ltcast file from any location
   ipcMain.handle('import-project', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Open Project',
       defaultPath: projectsDir,
       filters: [
-        { name: 'CueSync Preset', extensions: ['cuesync'] },
+        { name: 'LTCast Preset', extensions: ['ltcast'] },
         { name: 'All Files', extensions: ['*'] }
       ],
       properties: ['openFile']
@@ -771,7 +771,7 @@ app.whenReady().then(() => {
   ipcMain.handle('extract-audio-from-video', async (_event, filePath: string) => {
     if (!filePath || !existsSync(filePath)) throw new Error('File not found: ' + filePath)
 
-    const outPath = join(tmpdir(), `cuesync-video-audio-${Date.now()}.wav`)
+    const outPath = join(tmpdir(), `ltcast-video-audio-${Date.now()}.wav`)
 
     try {
       await new Promise<void>((resolve, reject) => {
@@ -931,7 +931,7 @@ app.whenReady().then(() => {
       // Deliver any file that was opened while the window was closed
       newWin.webContents.on('did-finish-load', () => {
         if (pendingOpenFile) {
-          newWin.webContents.send('open-cuesync-file', pendingOpenFile)
+          newWin.webContents.send('open-ltcast-file', pendingOpenFile)
           pendingOpenFile = null
         }
       })

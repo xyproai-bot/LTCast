@@ -1,9 +1,9 @@
 {
-  "name": "cuesync",
-  "version": "0.1.6",
+  "name": "ltcast",
+  "version": "0.1.7",
   "description": "LTC Timecode player and MTC/Art-Net sender for live shows",
   "license": "MIT",
-  "author": "CueSync",
+  "author": "LTCast",
   "private": true,
   "main": "out/main/index.js",
   "engines": {
@@ -13,7 +13,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "package": "npm run build && electron-builder",
-    "package:mac": "npm run build && electron-builder --mac --dir && bash scripts/patch-mac-plist.sh dist/mac-arm64/cuesync.app && bash scripts/sign-mac.sh dist/mac-arm64/cuesync.app && electron-builder --mac --pd dist/mac-arm64 --publish never",
+    "package:mac": "npm run build && electron-builder --mac --dir && bash scripts/patch-mac-plist.sh dist/mac-arm64/LTCast.app && bash scripts/sign-mac.sh dist/mac-arm64/LTCast.app && electron-builder --mac --pd dist/mac-arm64 --publish never",
     "package:win": "npm run build && electron-builder --win"
   },
   "dependencies": {

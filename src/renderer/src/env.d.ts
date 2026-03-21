@@ -15,7 +15,7 @@ interface Window {
     showConfirmDialog(message: string): Promise<boolean>
 
     // Preset / project management (filesystem)
-    getCueSyncPath(): Promise<string>
+    getLTCastPath(): Promise<string>
     listPresets(): Promise<Array<{ name: string; data: unknown; updatedAt: string }>>
     savePreset(name: string, data: unknown, filePath?: string): Promise<string>
     savePresetDialog(defaultName: string): Promise<string | null>
@@ -44,8 +44,8 @@ interface Window {
     // Menu command listeners
     onMenuCommand(channel: string, callback: (...args: unknown[]) => void): () => void
 
-    // Open .cuesync file (from double-click / OS association)
-    onOpenCueSyncFile(callback: (filePath: string) => void): () => void
+    // Open .ltcast file (from double-click / OS association)
+    onOpenLTCastFile(callback: (filePath: string) => void): () => void
 
     // Platform detection
     platform: NodeJS.Platform

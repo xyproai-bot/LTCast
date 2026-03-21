@@ -158,7 +158,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     dragIdx.current = index
     e.dataTransfer.effectAllowed = 'move'
     // Set custom data so the center panel can detect setlist drags
-    e.dataTransfer.setData('application/x-cuesync-setlist', JSON.stringify({ index, path: setlist[index].path }))
+    e.dataTransfer.setData('application/x-ltcast-setlist', JSON.stringify({ index, path: setlist[index].path }))
   }, [setlist])
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>, index: number): void => {

@@ -37,7 +37,7 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
         with:
-          name: CueSync-win
+          name: LTCast-win
           path: |
             dist/*.exe
             dist/*.yml
@@ -68,13 +68,13 @@ jobs:
           npm run build && npx electron-builder --mac --dir
           # Step 2: ad-hoc sign each arch
           for app_dir in dist/mac dist/mac-arm64 dist/mac-universal; do
-            if [ -d "$app_dir/CueSync.app" ]; then
-              bash scripts/sign-mac.sh "$app_dir/CueSync.app" || true
+            if [ -d "$app_dir/LTCast.app" ]; then
+              bash scripts/sign-mac.sh "$app_dir/LTCast.app" || true
             fi
           done
           # Step 3: create installers from signed apps and publish
           for app_dir in dist/mac dist/mac-arm64 dist/mac-universal; do
-            if [ -d "$app_dir/CueSync.app" ]; then
+            if [ -d "$app_dir/LTCast.app" ]; then
               npx electron-builder --mac dmg zip --pd "$app_dir" --publish "$PUBLISH_FLAG" || true
             fi
           done
@@ -85,7 +85,7 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
         with:
-          name: CueSync-mac
+          name: LTCast-mac
           path: |
             dist/*.dmg
             dist/*.zip
@@ -101,6 +101,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Publish GitHub Release
-        run: gh release edit "${{ github.ref_name }}" --draft=false --latest --title "CueSync ${{ github.ref_name }}"
+        run: gh release edit "${{ github.ref_name }}" --draft=false --latest --title "LTCast ${{ github.ref_name }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
