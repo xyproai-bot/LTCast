@@ -18,13 +18,13 @@ while IFS= read -r f; do
   sign_target "$f"
 done < <(find "$APP" -name "*.dylib")
 
-# 2. Sign framework internal binaries (Versions/A/<Binary>)
+# 2. Sign all executables inside framework Versions/A/ (including nested Helpers)
 while IFS= read -r fw; do
   bin_dir="$fw/Versions/A"
   if [ -d "$bin_dir" ]; then
     while IFS= read -r b; do
       sign_target "$b"
-    done < <(find "$bin_dir" -maxdepth 1 -type f -perm +111)
+    done < <(find "$bin_dir" -type f -perm +111 ! -name "*.dylib")
   fi
 done < <(find "$APP/Contents/Frameworks" -maxdepth 1 -name "*.framework")
 
@@ -39,7 +39,10 @@ while IFS= read -r helper; do
 done < <(find "$APP/Contents/Frameworks" -maxdepth 1 -name "*.app")
 
 # 5. Sign main app bundle last
-codesign --force --sign - --timestamp=none --options runtime --entitlements "$ENTITLEMENTS" "$APP"
+codesign --force --sign - --timestamp=none --options runtime --entitlements "$ENTITLEMENTS" "$APP" || {
+  echo "[sign-mac] Retrying with --deep..."
+  codesign --force --deep --sign - --timestamp=none --options runtime --entitlements "$ENTITLEMENTS" "$APP"
+}
 
 echo "[sign-mac] Done. Verifying..."
 codesign --verify --deep --strict "$APP" && echo "[sign-mac] Signature OK" || echo "[sign-mac] WARNING: verify failed (expected without Developer ID)"
