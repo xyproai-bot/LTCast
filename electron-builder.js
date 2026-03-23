@@ -33,8 +33,8 @@ module.exports = {
   ],
   mac: {
     target: [
-      { target: 'dmg', arch: ['x64', 'arm64'] },
-      { target: 'zip', arch: ['x64', 'arm64'] }
+      { target: 'dmg', arch: ['universal'] },
+      { target: 'zip', arch: ['universal'] }
     ],
     icon: 'resources/icon.icns',
     // Ad-hoc signed via afterPack hook — avoids "damaged" error on macOS 15
