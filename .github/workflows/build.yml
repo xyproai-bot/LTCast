@@ -18,10 +18,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build and publish (Windows)
         run: |
@@ -53,31 +52,28 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
-      - name: Build and publish (macOS)
+      - name: Build Universal macOS app
         run: |
           PUBLISH_FLAG="never"
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             PUBLISH_FLAG="always"
           fi
-          # Step 1: pack to directory (no installer yet)
-          npm run build && npx electron-builder --mac --dir
-          # Step 2: ad-hoc sign each arch
-          for app_dir in dist/mac dist/mac-arm64 dist/mac-universal; do
-            if [ -d "$app_dir/LTCast.app" ]; then
-              bash scripts/sign-mac.sh "$app_dir/LTCast.app" || true
-            fi
-          done
-          # Step 3: create installers from signed apps and publish
-          for app_dir in dist/mac dist/mac-arm64 dist/mac-universal; do
-            if [ -d "$app_dir/LTCast.app" ]; then
-              npx electron-builder --mac dmg zip --pd "$app_dir" --publish "$PUBLISH_FLAG" || true
-            fi
-          done
+          # Build JS
+          npm run build
+          # Pack x64 and arm64 separately
+          npx electron-builder --mac --dir --x64
+          npx electron-builder --mac --dir --arm64
+          # Merge into Universal binary
+          node scripts/create-universal.js
+          # Patch plist and ad-hoc sign
+          bash scripts/patch-mac-plist.sh dist/mac-universal/LTCast.app
+          bash scripts/sign-mac.sh dist/mac-universal/LTCast.app
+          # Create Universal DMG + zip and publish
+          npx electron-builder --mac --pd dist/mac-universal --publish "$PUBLISH_FLAG"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
