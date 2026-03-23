@@ -42,9 +42,14 @@ module.exports = {
   },
   dmg: {
     title: 'LTCast',
+    window: {
+      width: 540,
+      height: 380
+    },
+    iconSize: 100,
     contents: [
-      { x: 130, y: 220, type: 'file' },
-      { x: 410, y: 220, type: 'link', path: '/Applications' }
+      { x: 130, y: 190, type: 'file' },
+      { x: 410, y: 190, type: 'link', path: '/Applications' }
     ]
   },
   win: {
