@@ -783,7 +783,6 @@ app.whenReady().then(() => {
           .noVideo()
           .audioCodec('pcm_s16le')
           .audioFrequency(48000)
-          .audioChannels(1)
           .output(outPath)
           .on('end', () => resolve())
           .on('error', (err: Error) => {
