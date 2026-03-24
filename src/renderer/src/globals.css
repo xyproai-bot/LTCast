@@ -450,6 +450,8 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
+  min-height: 0;
 }
 
 .waveform-label {
@@ -459,6 +461,8 @@ html, body, #root {
 }
 
 .waveform-ws {
+  flex: 1;
+  min-height: 0;
   border-radius: 4px;
   overflow: hidden;
   background: #1e1e1e;
@@ -466,6 +470,9 @@ html, body, #root {
 
 .waveform-ltc-wrap {
   display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   border-radius: 4px;
   overflow: hidden;
   background: #1e1e1e;
@@ -536,6 +543,9 @@ html, body, #root {
 
 .waveform-video-wrap {
   display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   border-radius: 4px;
   overflow: hidden;
   background: #1a2e1a;
