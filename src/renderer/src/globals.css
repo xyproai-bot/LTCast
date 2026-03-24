@@ -1294,10 +1294,3 @@ html, body, #root {
 ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #444; }
 
-/* ── Compact layout for small screens (175% DPI / short windows) ── */
-@media (max-height: 640px) {
-  .tc-display { padding: 4px 0; }
-  .tc-seg { font-size: 38px; min-width: 54px; }
-  .tc-colon { font-size: 34px; }
-  .waveform-section { gap: 1px; }
-}
