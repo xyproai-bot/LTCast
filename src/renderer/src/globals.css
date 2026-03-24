@@ -482,6 +482,8 @@ html, body, #root {
   flex: 1;
   display: block;
   width: 100%;
+  min-height: 0;
+  height: 0;
 }
 
 /* ── Video waveform ─────────────────────────────────────── */
