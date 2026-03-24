@@ -196,12 +196,14 @@ function closeArtnetSocket(): void {
 }
 
 function createWindow(): BrowserWindow {
+  // Adapt to available screen size (handles high-DPI scaling, e.g. 175% on 1080p)
   const { workArea } = require('electron').screen.getPrimaryDisplay()
-  const initHeight = Math.min(700, Math.floor(workArea.height * 0.85))
+  const winW = Math.min(1100, Math.max(900, workArea.width))
+  const winH = Math.min(700, Math.max(520, Math.floor(workArea.height * 0.85)))
   const win = new BrowserWindow({
-    width: 1100,
-    height: initHeight,
-    minWidth: 900,
+    width: winW,
+    height: winH,
+    minWidth: 860,
     minHeight: 500,
     backgroundColor: '#1a1a1a',
     // hiddenInset on Mac: hides the native title bar chrome but keeps the
