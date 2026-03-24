@@ -38,6 +38,9 @@ autoUpdater.logger = null
 /** True when the user manually triggered "Check for Updates" — controls whether
  *  to show a "You're up to date" dialog (auto check is silent on no-update). */
 let isManualUpdateCheck = false
+/** True while a download triggered by the user is in progress — ensures download
+ *  errors are always surfaced even when the original check was silent. */
+let isDownloadInProgress = false
 
 function getUpdateWindow(): BrowserWindow | null {
   return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
@@ -87,6 +90,7 @@ autoUpdater.on('update-available', async (info) => {
   }
   const result = await (win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts))
   if (result.response === 0) {
+    isDownloadInProgress = true
     autoUpdater.downloadUpdate().catch(() => {})
   }
 })
@@ -106,23 +110,43 @@ autoUpdater.on('update-not-available', () => {
   win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts)
 })
 
-// Error during update check
-autoUpdater.on('error', (err) => {
-  if (!isManualUpdateCheck) return
+// Error during update check or download
+autoUpdater.on('error', async (err) => {
+  const wasDownload = isDownloadInProgress
+  const wasManual = isManualUpdateCheck
   isManualUpdateCheck = false
+  isDownloadInProgress = false
+  if (!wasManual && !wasDownload) return
+
   const win = getUpdateWindow()
-  const opts = {
-    type: 'error' as const,
-    title: 'Update Error',
-    message: 'Update check failed.',
-    detail: err.message,
-    buttons: ['OK']
+  if (wasDownload) {
+    // Download failed — offer to open the releases page as fallback
+    const opts = {
+      type: 'error' as const,
+      title: 'Download Failed',
+      message: 'Could not download the update.',
+      detail: `${err.message}\n\nYou can download the latest version manually from the releases page.`,
+      buttons: ['Open Download Page', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1
+    }
+    const r = await (win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts))
+    if (r.response === 0) shell.openExternal('https://github.com/xyproai-bot/LTCast/releases/latest')
+  } else {
+    const opts = {
+      type: 'error' as const,
+      title: 'Update Error',
+      message: 'Update check failed.',
+      detail: err.message,
+      buttons: ['OK']
+    }
+    win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts)
   }
-  win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts)
 })
 
 // Update fully downloaded → prompt to restart
 autoUpdater.on('update-downloaded', async (info) => {
+  isDownloadInProgress = false
   const win = getUpdateWindow()
   const isMac = process.platform === 'darwin'
   const opts = {
