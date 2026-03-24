@@ -96,6 +96,22 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     ws.on('zoom', (px: number) => { zoomRef.current = px })
 
     wsRef.current = ws
+
+    // Dynamic height: resize WaveSurfer when its container changes size
+    const el = musicContainerRef.current
+    if (el) {
+      const obs = new ResizeObserver((entries) => {
+        const h = entries[0].contentRect.height
+        // Subtract minimap (20px) + timeline (~16px) + small buffer
+        const waveH = Math.max(20, Math.round(h - 40))
+        ws.setOptions({ height: waveH })
+      })
+      obs.observe(el)
+      // Cleanup in the same effect
+      const origDestroy = ws.destroy.bind(ws)
+      ws.destroy = () => { obs.disconnect(); origDestroy() }
+    }
+
     return () => { ws.destroy(); wsRef.current = null }
   }, [])
 
@@ -464,7 +480,7 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       <div className="waveform-section">
         <span className="waveform-label" style={{ color: '#ff9800' }}>{t(lang, 'ltcWaveform')}</span>
         <div className="waveform-ltc-wrap" ref={ltcWrapRef}>
-          <canvas ref={ltcCanvasRef} className="waveform-canvas" height={40} />
+          <canvas ref={ltcCanvasRef} className="waveform-canvas" />
         </div>
       </div>
 
@@ -492,7 +508,6 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
               <canvas
                 ref={videoCanvasRef}
                 className="waveform-canvas waveform-canvas--draggable"
-                style={{ height: 56 }}
                 onMouseDown={onVideoMouseDown}
               />
             </div>
