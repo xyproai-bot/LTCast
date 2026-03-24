@@ -795,7 +795,9 @@ app.whenReady().then(() => {
           .on('error', (err: Error) => {
             // Check for no audio stream
             if (err.message.includes('does not contain any stream') ||
-                err.message.includes('Output file #0 does not contain any stream')) {
+                err.message.includes('Output file #0 does not contain any stream') ||
+                err.message.toLowerCase().includes('no audio') ||
+                err.message.includes('Invalid data found when processing input')) {
               reject(new Error('NO_AUDIO_TRACK'))
             } else {
               reject(err)

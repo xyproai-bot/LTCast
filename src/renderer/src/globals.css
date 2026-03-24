@@ -126,7 +126,6 @@ html, body, #root {
   flex-direction: column;
   gap: 6px;
   position: relative;
-  resize: horizontal;
 }
 
 .setlist-sidebar-title {

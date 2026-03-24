@@ -508,7 +508,8 @@ export const useStore = create<AppState>()(persist((set) => ({
   setSetlistItemOffset: (index: number, offsetFrames: number | undefined) => set((s) => {
     if (index < 0 || index >= s.setlist.length) return s
     const setlist = [...s.setlist]
-    setlist[index] = { ...setlist[index], offsetFrames }
+    const clamped = offsetFrames !== undefined ? Math.max(-9999, Math.min(9999, offsetFrames)) : undefined
+    setlist[index] = { ...setlist[index], offsetFrames: clamped }
     return { setlist, presetDirty: true }
   }),
   setLang: (lang) => set({ lang, presetDirty: true }),
