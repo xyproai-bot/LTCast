@@ -17,6 +17,7 @@ html, body, #root {
   flex-direction: column;
   height: 100vh;
   background: #1a1a1a;
+  /* No background transition — causes GPU-layer flicker on Windows Electron */
 }
 
 .app--drag { background: #1e2a30; }
@@ -533,6 +534,23 @@ html, body, #root {
 }
 .waveform-canvas--draggable:active {
   cursor: grabbing;
+}
+
+/* ── Compact layout for small viewport heights ────────────────
+   Triggered at ≤640px — covers 175% DPI on 1080p (≈617px logical)
+   and other small/scaled screens.
+   ─────────────────────────────────────────────────────────── */
+@media (max-height: 640px) {
+  .center-panel        { padding: 6px 12px; gap: 5px; }
+  .tc-display          { padding: 3px 0; }
+  .tc-seg              { font-size: 36px; min-width: 50px; }
+  .tc-colon            { font-size: 32px; }
+  .tc-fps              { margin-top: 0; font-size: 10px; }
+  .tc-label            { margin-bottom: 2px; }
+  .tap-bpm-bar         { margin-top: 2px; padding: 2px 5px; }
+  .waveform-container  { gap: 4px; }
+  .waveform-section    { gap: 1px; }
+  .waveform-label      { font-size: 9px; }
 }
 
 /* ── A-B Loop controls ────────────────────────────────────── */
