@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, session, Menu } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, session, Menu, screen } from 'electron'
 import { join, basename, dirname } from 'path'
 import { readFileSync, readFile, existsSync, unlinkSync, mkdirSync, writeFileSync, readdirSync, copyFileSync, statSync } from 'fs'
 import { tmpdir } from 'os'
@@ -197,7 +197,7 @@ function closeArtnetSocket(): void {
 
 function createWindow(): BrowserWindow {
   // Adapt to available screen size (handles high-DPI scaling, e.g. 175% on 1080p)
-  const { workArea } = require('electron').screen.getPrimaryDisplay()
+  const { workArea } = screen.getPrimaryDisplay()
   const winW = Math.min(1100, Math.max(900, workArea.width))
   const winH = Math.min(700, Math.max(520, Math.floor(workArea.height * 0.85)))
   const win = new BrowserWindow({

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 
 interface Props {
@@ -22,6 +22,11 @@ export function Tooltip({ text, children, delay = 700 }: Props): React.JSX.Eleme
   const onLeave = useCallback((): void => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
     setPos(null)
+  }, [])
+
+  // Clear timer on unmount to prevent state update on unmounted component
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
   }, [])
 
   return (
