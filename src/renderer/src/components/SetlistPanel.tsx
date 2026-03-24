@@ -33,6 +33,14 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     }
   }, [editingOffsetIdx])
 
+  // Clear hold timer/interval on unmount
+  useEffect(() => {
+    return () => {
+      if (holdTimerRef.current) clearTimeout(holdTimerRef.current)
+      if (holdIntervalRef.current) clearInterval(holdIntervalRef.current)
+    }
+  }, [])
+
   // Check which setlist files are missing on disk
   const checkMissing = useCallback(async (items: typeof setlist): Promise<void> => {
     if (items.length === 0) { setMissingPaths(new Set()); return }
