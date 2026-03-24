@@ -112,6 +112,10 @@ autoUpdater.on('update-not-available', () => {
 
 // Error during update check or download
 autoUpdater.on('error', async (err) => {
+  // Suppress ENOENT for app-update.yml — happens when running a local build
+  // that wasn't published (no app-update.yml injected into bundle)
+  if ((err as NodeJS.ErrnoException).code === 'ENOENT' &&
+      err.message.includes('app-update.yml')) return
   const wasDownload = isDownloadInProgress
   const wasManual = isManualUpdateCheck
   isManualUpdateCheck = false
