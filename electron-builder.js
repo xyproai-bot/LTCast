@@ -55,7 +55,8 @@ module.exports = {
   win: {
     target: [
       { target: 'nsis', arch: ['x64'] }
-    ]
+    ],
+    artifactName: '${productName}-Setup-${version}.${ext}'
   },
   nsis: {
     oneClick: false,
