@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, session, Menu, screen } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, session, Menu, screen, nativeTheme } from 'electron'
 import { join, basename, dirname } from 'path'
 import { readFileSync, readFile, existsSync, unlinkSync, mkdirSync, writeFileSync, readdirSync, copyFileSync, statSync } from 'fs'
 import { tmpdir } from 'os'
@@ -389,6 +389,9 @@ if (process.platform === 'darwin') {
 }
 
 app.whenReady().then(() => {
+  // Force dark mode — prevents Windows title bar from flickering between light/dark
+  nativeTheme.themeSource = 'dark'
+
   // Allow Web MIDI API (including SysEx) and speaker selection (for setSinkId) without permission prompt
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     if (permission === 'midi' || permission === 'midiSysex' || permission === 'speaker-selection') {
