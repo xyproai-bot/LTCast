@@ -11,7 +11,7 @@
 
 **規則：**
 - 改 Mac 的東西不准動到 Windows 專屬檔案（installer、NSIS 設定等）
-- commit message 不加 `Co-Authored-By`
+- **絕對禁止**在 commit message 加任何 `Co-Authored-By`、`co-authored-by`、`Generated with Claude`、或任何提及 AI/Claude 的署名文字
 - 版本號不能擅自升級，要等主人說
 
 ## 簡單指令對照表
@@ -35,6 +35,17 @@ bash scripts/patch-mac-plist.sh dist/mac-universal/LTCast.app
 bash scripts/sign-mac.sh dist/mac-universal/LTCast.app
 electron-builder --mac --pd dist/mac-universal --publish never
 ```
+
+## ⚠️ Commit 署名規範（Mac 和 Windows 都必須遵守）
+
+**任何 commit 都不能包含以下內容：**
+- `Co-Authored-By: Claude ...`
+- `Co-authored-by:` 任何形式
+- `Generated with Claude Code`
+- `🤖 Generated with`
+- 任何提及 AI、Claude、Anthropic 的署名
+
+Git commit message 只寫改了什麼，不加任何 AI 工具的署名。
 
 ## 重要提醒
 
