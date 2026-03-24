@@ -28,6 +28,8 @@ export default function App(): React.JSX.Element {
   const [dragging, setDragging]           = useState(false)
   const dragCounter = useRef(0)
   const [fullscreenTc, setFullscreenTc]   = useState(false)
+  const [sidebarWidth, setSidebarWidth]   = useState(200)
+  const isResizingSidebar = useRef(false)
 
   const {
     filePath, fileName, presetName, lang, loop,
@@ -466,6 +468,25 @@ export default function App(): React.JSX.Element {
     }
   }
 
+  const handleSidebarResizeStart = (e: React.MouseEvent): void => {
+    e.preventDefault()
+    isResizingSidebar.current = true
+    const startX = e.clientX
+    const startWidth = sidebarWidth
+    const onMouseMove = (ev: MouseEvent): void => {
+      if (!isResizingSidebar.current) return
+      const newWidth = Math.max(140, Math.min(450, startWidth + (ev.clientX - startX)))
+      setSidebarWidth(newWidth)
+    }
+    const onMouseUp = (): void => {
+      isResizingSidebar.current = false
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }
+
   const resyncVideo = (): void => {
     const s = useStore.getState()
     if (!musicWaveform || !s.videoWaveform || !s.duration || !s.videoDuration) return
@@ -543,7 +564,7 @@ export default function App(): React.JSX.Element {
       {/* Main content */}
       <div className="main-content">
         {/* Left: Setlist sidebar */}
-        <div className="setlist-sidebar">
+        <div className="setlist-sidebar" style={{ width: sidebarWidth }}>
           <div className="setlist-sidebar-title">{t(lang, 'setlist')}</div>
           <SetlistPanel
             onLoadFile={(path, offsetFrames) => openFile(path, offsetFrames)}
@@ -559,6 +580,7 @@ export default function App(): React.JSX.Element {
               }
             }}
           />
+          <div className="sidebar-resize-handle" onMouseDown={handleSidebarResizeStart} />
         </div>
 
         {/* Center: TC + waveform */}
