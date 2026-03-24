@@ -46,7 +46,7 @@ export const strings = {
     videoAlignPoor: 'Audio does not match the video well — placed at 0:00',
     extractingAudio: 'Extracting audio...',
     aligning: 'Aligning...',
-    noAudioTrack: 'No audio track found in video file',
+    noAudioTrack: 'This video has no audio track. Please import a video that contains audio.',
     setlist: 'Setlist',
     clearAll: 'Clear All',
     loopA: 'Loop A',
@@ -114,7 +114,10 @@ export const strings = {
     forceFpsLabel: 'Force FPS',
     forceFpsAuto: 'Auto',
     ltcChannelSelect: 'LTC Track',
-    ltcChannelAuto: 'Auto'
+    ltcChannelAuto: 'Auto',
+    songOffset: 'Song Offset',
+    songOffsetHint: 'Override global offset for this song (blank = use global)',
+    songOffsetClear: 'Clear song offset'
   },
   zh: {
     appTitle: 'LTCast',
@@ -163,7 +166,7 @@ export const strings = {
     videoAlignPoor: '音訊與影片對不上，已放置到第0秒',
     extractingAudio: '正在擷取音訊…',
     aligning: '正在對齊…',
-    noAudioTrack: '影片中無音軌',
+    noAudioTrack: '此影片沒有音軌，請匯入含有音訊的影片。',
     setlist: '曲目列表',
     clearAll: '全部清除',
     loopA: '循環 A',
@@ -231,7 +234,10 @@ export const strings = {
     forceFpsLabel: '強制 FPS',
     forceFpsAuto: '自動',
     ltcChannelSelect: 'LTC 音軌',
-    ltcChannelAuto: '自動'
+    ltcChannelAuto: '自動',
+    songOffset: '曲目偏移',
+    songOffsetHint: '覆蓋此曲目的全域偏移（留白使用全域設定）',
+    songOffsetClear: '清除曲目偏移'
   }
 }
 

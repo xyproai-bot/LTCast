@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore, SortMode } from '../store'
 import { t } from '../i18n'
 import { toast } from './Toast'
+import { Tooltip } from './Tooltip'
 
 interface Props {
-  onLoadFile: (path: string) => void
+  onLoadFile: (path: string, offsetFrames?: number) => void
   onImportFiles?: () => void
 }
 
@@ -17,7 +18,20 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
 
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [missingPaths, setMissingPaths] = useState<Set<string>>(new Set())
+  const [editingOffsetIdx, setEditingOffsetIdx] = useState<number | null>(null)
+  const [editingOffsetStr, setEditingOffsetStr] = useState('')
+  const offsetInputRef = useRef<HTMLInputElement>(null)
   const sortRef = useRef<HTMLDivElement>(null)
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Auto-focus offset input when it appears
+  useEffect(() => {
+    if (editingOffsetIdx !== null) {
+      offsetInputRef.current?.focus()
+      offsetInputRef.current?.select()
+    }
+  }, [editingOffsetIdx])
 
   // Check which setlist files are missing on disk
   const checkMissing = useCallback(async (items: typeof setlist): Promise<void> => {
@@ -134,6 +148,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
   }, [setlist, missingPaths, lang])
 
   const handleItemClick = useCallback((index: number): void => {
+    if (editingOffsetIdx === index) return  // Don't load while editing offset
     const item = setlist[index]
     if (missingPaths.has(item.path)) {
       // File is missing — offer to relink
@@ -141,8 +156,52 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
       return
     }
     setActiveSetlistIndex(index)
-    onLoadFile(item.path)
-  }, [setlist, missingPaths, setActiveSetlistIndex, onLoadFile, handleRelink])
+    onLoadFile(item.path, item.offsetFrames)
+  }, [setlist, missingPaths, setActiveSetlistIndex, onLoadFile, handleRelink, editingOffsetIdx])
+
+  const handleToggleOffsetEdit = useCallback((e: React.MouseEvent, index: number): void => {
+    e.stopPropagation()
+    if (editingOffsetIdx === index) {
+      setEditingOffsetIdx(null)
+    } else {
+      const item = setlist[index]
+      setEditingOffsetIdx(index)
+      setEditingOffsetStr(item.offsetFrames !== undefined ? String(item.offsetFrames) : '')
+    }
+  }, [editingOffsetIdx, setlist])
+
+  const commitOffset = useCallback((index: number): void => {
+    const { setSetlistItemOffset } = useStore.getState()
+    const val = editingOffsetStr.trim()
+    if (val === '' || val === '-') {
+      setSetlistItemOffset(index, undefined)
+    } else {
+      const num = parseInt(val, 10)
+      if (!isNaN(num)) {
+        setSetlistItemOffset(index, Math.max(-9999, Math.min(9999, num)))
+      }
+    }
+  }, [editingOffsetStr])
+
+  const adjustOffset = useCallback((delta: number): void => {
+    setEditingOffsetStr(prev => {
+      const cur = parseInt(prev, 10)
+      const base = isNaN(cur) ? 0 : cur
+      return String(Math.max(-9999, Math.min(9999, base + delta)))
+    })
+  }, [])
+
+  const startHold = useCallback((delta: number): void => {
+    adjustOffset(delta)
+    holdTimerRef.current = setTimeout(() => {
+      holdIntervalRef.current = setInterval(() => adjustOffset(delta), 80)
+    }, 500)
+  }, [adjustOffset])
+
+  const stopHold = useCallback((): void => {
+    if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null }
+    if (holdIntervalRef.current) { clearInterval(holdIntervalRef.current); holdIntervalRef.current = null }
+  }, [])
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, index: number): void => {
     dragIdx.current = index
@@ -186,24 +245,91 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
           <div className="setlist-list">
             {setlist.map((item, i) => {
               const isMissing = missingPaths.has(item.path)
+              const hasOffset = item.offsetFrames !== undefined
+              const isEditingOffset = editingOffsetIdx === i
               return (
-                <div
-                  key={item.id}
-                  className={`setlist-item${i === activeSetlistIndex ? ' active' : ''}${isMissing ? ' missing' : ''}`}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, i)}
-                  onDragOver={(e) => handleDragOver(e, i)}
-                  onDragEnd={handleDragEnd}
-                  onClick={() => handleItemClick(i)}
-                  title={isMissing ? t(lang, 'fileMissing') : item.name}
-                >
-                  <span className="setlist-index">{i + 1}</span>
-                  <span className="setlist-name">{isMissing ? '⚠ ' : ''}{item.name}</span>
-                  <button
-                    className="setlist-remove"
-                    onClick={(e) => { e.stopPropagation(); removeFromSetlist(i) }}
-                    title={t(lang, 'remove')}
-                  >✕</button>
+                <div key={item.id} className="setlist-item-wrap">
+                  <div
+                    className={`setlist-item${i === activeSetlistIndex ? ' active' : ''}${isMissing ? ' missing' : ''}${isEditingOffset ? ' offset-open' : ''}`}
+                    draggable={!isEditingOffset}
+                    onDragStart={(e) => handleDragStart(e, i)}
+                    onDragOver={(e) => handleDragOver(e, i)}
+                    onDragEnd={handleDragEnd}
+                    onClick={() => handleItemClick(i)}
+                    title={isMissing ? t(lang, 'fileMissing') : item.name}
+                  >
+                    <span className="setlist-index">{i + 1}</span>
+                    <span className="setlist-name">{isMissing ? '⚠ ' : ''}{item.name}</span>
+                    {hasOffset && (
+                      <span className="setlist-offset-badge" title={t(lang, 'songOffset')}>
+                        {(item.offsetFrames ?? 0) >= 0 ? '+' : ''}{item.offsetFrames}f
+                      </span>
+                    )}
+                    <Tooltip text={t(lang, 'songOffset')}>
+                      <button
+                        className={`setlist-offset-btn${isEditingOffset ? ' active' : ''}`}
+                        onClick={(e) => handleToggleOffsetEdit(e, i)}
+                      >⊕</button>
+                    </Tooltip>
+                    <Tooltip text={t(lang, 'remove')}>
+                      <button
+                        className="setlist-remove"
+                        onClick={(e) => { e.stopPropagation(); removeFromSetlist(i) }}
+                      >✕</button>
+                    </Tooltip>
+                  </div>
+                  {isEditingOffset && (
+                    <div className="setlist-offset-editor" onClick={(e) => e.stopPropagation()}>
+                      <Tooltip text="-1 frame">
+                        <button
+                          className="offset-adj-btn"
+                          onMouseDown={(e) => { e.preventDefault(); startHold(-1) }}
+                          onMouseUp={stopHold}
+                          onMouseLeave={stopHold}
+                        >−</button>
+                      </Tooltip>
+                      <input
+                        ref={offsetInputRef}
+                        type="text"
+                        inputMode="numeric"
+                        className="setlist-offset-input"
+                        value={editingOffsetStr}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const v = e.target.value
+                          if (v === '' || v === '-' || /^-?\d+$/.test(v)) setEditingOffsetStr(v)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); commitOffset(i); setEditingOffsetIdx(null) }
+                          if (e.key === 'Escape') { e.stopPropagation(); setEditingOffsetIdx(null) }
+                          if (e.key === 'ArrowUp') { e.preventDefault(); adjustOffset(1) }
+                          if (e.key === 'ArrowDown') { e.preventDefault(); adjustOffset(-1) }
+                        }}
+                        onBlur={() => { stopHold(); commitOffset(i); setEditingOffsetIdx(null) }}
+                      />
+                      <Tooltip text="+1 frame">
+                        <button
+                          className="offset-adj-btn"
+                          onMouseDown={(e) => { e.preventDefault(); startHold(1) }}
+                          onMouseUp={stopHold}
+                          onMouseLeave={stopHold}
+                        >+</button>
+                      </Tooltip>
+                      {hasOffset && (
+                        <Tooltip text={t(lang, 'songOffsetClear')}>
+                          <button
+                            className="setlist-offset-clear"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              useStore.getState().setSetlistItemOffset(i, undefined)
+                              setEditingOffsetIdx(null)
+                            }}
+                          >✕</button>
+                        </Tooltip>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}

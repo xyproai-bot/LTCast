@@ -33,6 +33,7 @@ export interface SetlistItem {
   id: string
   path: string
   name: string
+  offsetFrames?: number  // per-song offset override; undefined = use global
 }
 
 export interface PresetData {
@@ -254,6 +255,7 @@ export interface AppState {
   undoClearSetlist: () => void
   sortSetlist: (mode: SortMode) => void
   batchUpdateSetlistPaths: (updates: Array<{ index: number; newPath: string }>) => void
+  setSetlistItemOffset: (index: number, offsetFrames: number | undefined) => void
   setLang: (lang: 'en' | 'zh') => void
 
   // Project actions
@@ -501,6 +503,12 @@ export const useStore = create<AppState>()(persist((set) => ({
       const newName = newPath.split(/[/\\]/).pop() ?? setlist[index].name
       setlist[index] = { ...setlist[index], path: newPath, name: newName }
     }
+    return { setlist, presetDirty: true }
+  }),
+  setSetlistItemOffset: (index: number, offsetFrames: number | undefined) => set((s) => {
+    if (index < 0 || index >= s.setlist.length) return s
+    const setlist = [...s.setlist]
+    setlist[index] = { ...setlist[index], offsetFrames }
     return { setlist, presetDirty: true }
   }),
   setLang: (lang) => set({ lang, presetDirty: true }),

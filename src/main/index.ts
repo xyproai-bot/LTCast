@@ -196,11 +196,13 @@ function closeArtnetSocket(): void {
 }
 
 function createWindow(): BrowserWindow {
+  const { workArea } = require('electron').screen.getPrimaryDisplay()
+  const initHeight = Math.min(700, Math.floor(workArea.height * 0.85))
   const win = new BrowserWindow({
     width: 1100,
-    height: 700,
+    height: initHeight,
     minWidth: 900,
-    minHeight: 600,
+    minHeight: 500,
     backgroundColor: '#1a1a1a',
     // hiddenInset on Mac: hides the native title bar chrome but keeps the
     // traffic light buttons inset into the content area (no double-header)

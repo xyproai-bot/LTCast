@@ -320,7 +320,7 @@ export default function App(): React.JSX.Element {
     }
   }, [setMidiConnected, setSelectedMidiPort])
 
-  const openFile = async (path?: string): Promise<void> => {
+  const openFile = async (path?: string, songOffsetFrames?: number): Promise<void> => {
     const filePath_ = path ?? await window.api.openFileDialog()
     if (!filePath_) return
 
@@ -340,6 +340,11 @@ export default function App(): React.JSX.Element {
       // Apply manual LTC channel override if set (overrides auto-detect from loadFile)
       const ch = useStore.getState().ltcChannel
       if (ch !== 'auto') engine.current?.setLtcChannel(ch)
+      // Apply per-song offset override, or fall back to global offset
+      const effectiveOffset = songOffsetFrames !== undefined
+        ? songOffsetFrames
+        : useStore.getState().offsetFrames
+      engine.current?.setOffset(effectiveOffset)
       const duration = engine.current?.getDuration() ?? 0
       setFilePath(filePath_, name, duration)
     } catch (e) {
@@ -358,9 +363,9 @@ export default function App(): React.JSX.Element {
     if (setlistData) {
       try {
         const { index, path } = JSON.parse(setlistData) as { index: number; path: string }
-        const { setActiveSetlistIndex } = useStore.getState()
+        const { setActiveSetlistIndex, setlist } = useStore.getState()
         setActiveSetlistIndex(index)
-        openFile(path)
+        openFile(path, setlist[index]?.offsetFrames)
       } catch { /* ignore malformed data */ }
       return
     }
@@ -454,7 +459,7 @@ export default function App(): React.JSX.Element {
       if (msg === 'NO_AUDIO_TRACK') {
         toast.error(t(lang, 'noAudioTrack'))
       } else {
-        toast.error(`${t(lang, 'videoImportFailed')}: ${msg}`)
+        toast.error(t(lang, 'videoImportFailed'))
       }
     } finally {
       setVideoLoading(false)
@@ -541,7 +546,7 @@ export default function App(): React.JSX.Element {
         <div className="setlist-sidebar">
           <div className="setlist-sidebar-title">{t(lang, 'setlist')}</div>
           <SetlistPanel
-            onLoadFile={(path) => openFile(path)}
+            onLoadFile={(path, offsetFrames) => openFile(path, offsetFrames)}
             onImportFiles={async () => {
               const files = await window.api.openMultipleAudioDialog()
               if (files && files.length > 0) {

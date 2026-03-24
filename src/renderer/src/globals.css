@@ -17,7 +17,6 @@ html, body, #root {
   flex-direction: column;
   height: 100vh;
   background: #1a1a1a;
-  transition: background 0.15s;
 }
 
 .app--drag { background: #1e2a30; }
@@ -997,6 +996,118 @@ html, body, #root {
 .setlist-item:hover .setlist-remove { opacity: 1; }
 .setlist-remove:hover { color: #f44336; background: #3a1111; }
 
+/* Setlist item wrapper (contains row + expandable offset editor) */
+.setlist-item-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Per-song offset toggle button */
+.setlist-offset-btn {
+  background: transparent;
+  border: none;
+  color: #444;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+  line-height: 1;
+}
+.setlist-item:hover .setlist-offset-btn { opacity: 1; }
+.setlist-offset-btn:hover { color: #00d4ff; }
+.setlist-offset-btn.active { opacity: 1; color: #00d4ff; }
+
+/* Per-song offset badge (shown when offset is set) */
+.setlist-offset-badge {
+  font-size: 9px;
+  color: #00d4ff;
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  border-radius: 3px;
+  padding: 1px 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Offset editor row (expands below setlist-item) */
+.setlist-offset-editor {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 4px 22px;
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+}
+.setlist-offset-input {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  background: #0d0d0d;
+  border: 1px solid #333;
+  color: #e0e0e0;
+  font-size: 11px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  outline: none;
+}
+.setlist-offset-input:focus { border-color: #00d4ff; }
+.setlist-offset-input::placeholder { color: #444; font-size: 10px; }
+
+/* +/- adjustment buttons */
+.offset-adj-btn {
+  background: #222;
+  border: 1px solid #333;
+  color: #aaa;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0 6px;
+  height: 22px;
+  border-radius: 3px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+}
+.offset-adj-btn:hover { background: #2a2a2a; color: #00d4ff; border-color: #00d4ff; }
+.offset-adj-btn:active { background: #003340; }
+
+.setlist-offset-clear {
+  background: transparent;
+  border: none;
+  color: #555;
+  font-size: 10px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.setlist-offset-clear:hover { color: #f44336; background: #3a1111; }
+
+/* Tooltip host wrapper */
+.tooltip-host {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Tooltip bubble (rendered via portal at document.body) */
+.tooltip-bubble {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 8px));
+  background: #1c1c1c;
+  color: #d0d0d0;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #333;
+  pointer-events: none;
+  z-index: 99999;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+
 .setlist-actions {
   display: flex;
   gap: 4px;
@@ -1164,3 +1275,11 @@ html, body, #root {
 ::-webkit-scrollbar-track { background: #1a1a1a; }
 ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #444; }
+
+/* ── Compact layout for small screens (175% DPI / short windows) ── */
+@media (max-height: 640px) {
+  .tc-display { padding: 4px 0; }
+  .tc-seg { font-size: 38px; min-width: 54px; }
+  .tc-colon { font-size: 34px; }
+  .waveform-section { gap: 1px; }
+}
