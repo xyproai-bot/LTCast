@@ -25,4 +25,14 @@ if [ -f "$ICNS_SRC" ]; then
   echo "[patch-plist] Icon installed: icon.icns"
 fi
 
+# Inject app-update.yml so electron-updater knows where to check for updates
+# (electron-builder only generates this during full publish; --pd skips it)
+cat > "$APP/Contents/Resources/app-update.yml" << 'EOF'
+owner: xyproai-bot
+repo: LTCast
+provider: github
+updaterCacheDirName: LTCast-updater
+EOF
+echo "[patch-plist] app-update.yml injected."
+
 echo "[patch-plist] Done."
