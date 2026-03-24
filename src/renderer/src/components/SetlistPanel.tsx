@@ -151,7 +151,6 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     if (editingOffsetIdx === index) return  // Don't load while editing offset
     const item = setlist[index]
     if (missingPaths.has(item.path)) {
-      // File is missing — offer to relink
       handleRelink(index)
       return
     }
