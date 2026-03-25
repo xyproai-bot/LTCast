@@ -2,6 +2,7 @@ import { detectLtcChannel } from './LtcDetector'
 import { buildTimecodeLookup, TimecodeLookupEntry } from './LtcDecoder'
 import { TimecodeFrame } from '../store'
 import { LTC_CONFIDENCE_THRESHOLD } from '../constants'
+import { tcToFrames, framesToTC } from './timecodeConvert'
 
 import ltcProcessorCode from './ltcProcessor.js?raw'
 import ltcEncoderCode from './ltcEncoderProcessor.js?raw'
@@ -216,30 +217,7 @@ export class AudioEngine {
     const parts = tcString.split(/[:;]/).map(Number)
     if (parts.length === 4 && parts.every(p => !isNaN(p))) {
       const [h, m, s, f] = parts
-      if (fps === 29.97) {
-        // #10 fix: Drop-frame TC→frames using standard SMPTE formula
-        // Must be exact inverse of _generateTimecode's DF frames→TC conversion.
-        // In non-10th minutes, frame labels 00 and 01 at second 0 are skipped,
-        // so we subtract D=2 to get the actual frame count within that minute.
-        const fpsInt = 30
-        const D = 2
-        const framesPerMin = fpsInt * 60 - D   // 1798
-        const framesPer10Min = framesPerMin * 10 + D  // 17982
-        const framesPerHour = framesPer10Min * 6      // 107892
-        const tenMinBlocks = Math.floor(m / 10)
-        const mInBlock = m % 10
-        let frames = h * framesPerHour + tenMinBlocks * framesPer10Min
-        if (mInBlock === 0) {
-          frames += s * fpsInt + f
-        } else {
-          // Subtract D: label "02" at s=0 is actually frame 0 of this minute
-          frames += fpsInt * 60 + (mInBlock - 1) * framesPerMin + Math.max(0, s * fpsInt + f - D)
-        }
-        this.generatorStartFrames = frames
-      } else {
-        const fpsInt = Math.round(fps)
-        this.generatorStartFrames = h * 3600 * fpsInt + m * 60 * fpsInt + s * fpsInt + f
-      }
+      this.generatorStartFrames = tcToFrames(h, m, s, f, fps)
     } else {
       this.generatorStartFrames = 0
     }
@@ -857,49 +835,13 @@ export class AudioEngine {
 
     totalFrames = Math.max(0, totalFrames)
     const isDropFrame = fps === 29.97
-    const fpsInt = Math.round(fps)  // 30 for 29.97
-    let h: number, m: number, s: number, f: number
-
-    if (isDropFrame) {
-      // Drop-frame: skip frames 0,1 at start of each minute except every 10th
-      const D = 2
-      const framesPerMin = fpsInt * 60 - D           // 1798
-      const framesPer10Min = framesPerMin * 10 + D   // 17982
-      const framesPerHour = framesPer10Min * 6        // 107892
-
-      h = Math.floor(totalFrames / framesPerHour) % 24
-      let remaining = totalFrames - h * framesPerHour
-      const tenMinBlocks = Math.floor(remaining / framesPer10Min)
-      remaining -= tenMinBlocks * framesPer10Min
-
-      let mInBlock: number
-      if (remaining < fpsInt * 60) {
-        mInBlock = 0
-      } else {
-        remaining -= fpsInt * 60
-        mInBlock = 1 + Math.floor(remaining / framesPerMin)
-        remaining -= (mInBlock - 1) * framesPerMin
-      }
-      m = tenMinBlocks * 10 + mInBlock
-      // Drop minutes (mInBlock > 0) skip frame labels 00 and 01 in second 0.
-      // Add D=2 before dividing so that remaining=0 → frame 02, remaining=28 → second 1 frame 00, etc.
-      const dropAdjusted = mInBlock > 0 ? remaining + D : remaining
-      s = Math.floor(dropAdjusted / fpsInt)
-      f = dropAdjusted - s * fpsInt
-    } else {
-      h = Math.floor(totalFrames / (3600 * fps))
-      totalFrames -= h * 3600 * fps
-      m = Math.floor(totalFrames / (60 * fps))
-      totalFrames -= m * 60 * fps
-      s = Math.floor(totalFrames / fps)
-      f = Math.round(totalFrames - s * fps)
-    }
+    const { h, m, s, f } = framesToTC(totalFrames, fps)
 
     const tc: TimecodeFrame = {
-      hours: h % 24,
-      minutes: m % 60,
-      seconds: s % 60,
-      frames: Math.min(f, Math.ceil(fps) - 1),
+      hours: h,
+      minutes: m,
+      seconds: s,
+      frames: f,
       fps,
       dropFrame: isDropFrame
     }
