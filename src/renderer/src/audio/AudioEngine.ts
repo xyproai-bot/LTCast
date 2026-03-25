@@ -176,8 +176,18 @@ export class AudioEngine {
   setLtcChannel(channelIndex: number): void {
     // Clamp to valid channel range — prevents out-of-bounds on mono files
     const maxCh = this.buffer ? this.buffer.numberOfChannels - 1 : 1
-    this.ltcChannelIndex = Math.min(channelIndex, maxCh)
+    const newLtc = Math.min(channelIndex, maxCh)
+    const changed = newLtc !== this.ltcChannelIndex
+    this.ltcChannelIndex = newLtc
     this.musicChannelIndex = this.ltcChannelIndex === 0 ? Math.min(1, maxCh) : 0
+
+    // #9 fix: rebuild timecode lookup and waveform when channel changes
+    if (changed && this.buffer) {
+      this._extractWaveformData()
+      const ltcData = this.buffer.getChannelData(this.ltcChannelIndex)
+      const lookup = buildTimecodeLookup(ltcData, this.buffer.sampleRate)
+      this.callbacks.onTimecodeLookup(lookup)
+    }
   }
 
   setOffset(frames: number): void { this.offsetFrames = frames }
@@ -208,10 +218,14 @@ export class AudioEngine {
     if (parts.length === 4 && parts.every(p => !isNaN(p))) {
       const [h, m, s, f] = parts
       if (fps === 29.97) {
-        // Drop-frame: mirror of _generateTimecode DF inverse calculation
+        // #10 fix: Drop-frame TC→frames using standard SMPTE formula
+        // Must be exact inverse of _generateTimecode's DF frames→TC conversion.
+        // In non-10th minutes, frame labels 00 and 01 at second 0 are skipped,
+        // so we subtract D=2 to get the actual frame count within that minute.
         const fpsInt = 30
-        const framesPerMin = fpsInt * 60 - 2   // 1798
-        const framesPer10Min = framesPerMin * 10 + 2  // 17982
+        const D = 2
+        const framesPerMin = fpsInt * 60 - D   // 1798
+        const framesPer10Min = framesPerMin * 10 + D  // 17982
         const framesPerHour = framesPer10Min * 6      // 107892
         const tenMinBlocks = Math.floor(m / 10)
         const mInBlock = m % 10
@@ -219,7 +233,8 @@ export class AudioEngine {
         if (mInBlock === 0) {
           frames += s * fpsInt + f
         } else {
-          frames += fpsInt * 60 + (mInBlock - 1) * framesPerMin + s * fpsInt + f
+          // Subtract D: label "02" at s=0 is actually frame 0 of this minute
+          frames += fpsInt * 60 + (mInBlock - 1) * framesPerMin + Math.max(0, s * fpsInt + f - D)
         }
         this.generatorStartFrames = frames
       } else {
@@ -382,6 +397,8 @@ export class AudioEngine {
   async dispose(): Promise<void> {
     navigator.mediaDevices.removeEventListener('devicechange', this._deviceChangeHandler)
     cancelAnimationFrame(this.rafId)
+    // #15 fix: clear pending signal timeout before teardown to prevent stale callback
+    if (this.ltcSignalTimeout) { clearTimeout(this.ltcSignalTimeout); this.ltcSignalTimeout = null }
     this._stopPlayback()
     await this._closeLtcCtx()
     this.buffer = null
@@ -662,9 +679,12 @@ export class AudioEngine {
   // ════════════════════════════════════════════════════════════
 
   private _stopPlayback(): void {
+    // #3 fix: snapshot current position BEFORE closing ctx (prevents negative/stale values)
+    const snapshotTime = this.ctx ? Math.max(0, this.ctx.currentTime - this.startTime) : this.startOffset
+    this.startOffset = snapshotTime
     this.playing = false
     this.lastGeneratedFrame = -1
-    this.ltcLastStopOffset = this.getCurrentTime()  // record before ctx closes
+    this.ltcLastStopOffset = snapshotTime
 
     // Clear pending LTC signal timeout and reset signal status
     if (this.ltcSignalTimeout) { clearTimeout(this.ltcSignalTimeout); this.ltcSignalTimeout = null }
@@ -692,28 +712,78 @@ export class AudioEngine {
     if (!fps || fps <= 0 || !isFinite(fps)) return  // guard against invalid FPS
     this.currentFps = fps
 
-    let totalFrames = raw.hours * 3600 * fps
-      + raw.minutes * 60 * fps
-      + raw.seconds * fps
-      + raw.frames
-      + this.offsetFrames
+    // #1 fix: use integer arithmetic for 29.97 DF to avoid floating-point drift
+    const isDropFrame = this.forceFpsValue !== null
+      ? this.forceFpsValue === 29.97
+      : raw.dropFrame
+    const fpsInt = Math.round(fps)  // 30 for 29.97, 25 for 25, etc.
 
+    // Convert raw HH:MM:SS:FF to absolute frame count using integer math
+    let totalFrames: number
+    if (isDropFrame) {
+      const D = 2
+      const framesPerMin = fpsInt * 60 - D           // 1798
+      const framesPer10Min = framesPerMin * 10 + D   // 17982
+      const framesPerHour = framesPer10Min * 6        // 107892
+      const tenMinBlocks = Math.floor(raw.minutes / 10)
+      const mInBlock = raw.minutes % 10
+      totalFrames = raw.hours * framesPerHour + tenMinBlocks * framesPer10Min
+      if (mInBlock === 0) {
+        totalFrames += raw.seconds * fpsInt + raw.frames
+      } else {
+        totalFrames += fpsInt * 60 + (mInBlock - 1) * framesPerMin + raw.seconds * fpsInt + raw.frames
+      }
+    } else {
+      totalFrames = raw.hours * 3600 * fpsInt
+        + raw.minutes * 60 * fpsInt
+        + raw.seconds * fpsInt
+        + raw.frames
+    }
+
+    totalFrames += this.offsetFrames
     totalFrames = Math.max(0, totalFrames)
-    const h = Math.floor(totalFrames / (3600 * fps))
-    totalFrames -= h * 3600 * fps
-    const m = Math.floor(totalFrames / (60 * fps))
-    totalFrames -= m * 60 * fps
-    const s = Math.floor(totalFrames / fps)
-    const f = Math.round(totalFrames - s * fps)
+
+    // Convert back to HH:MM:SS:FF using integer math
+    let h: number, m: number, s: number, f: number
+    if (isDropFrame) {
+      const D = 2
+      const framesPerMin = fpsInt * 60 - D
+      const framesPer10Min = framesPerMin * 10 + D
+      const framesPerHour = framesPer10Min * 6
+
+      h = Math.floor(totalFrames / framesPerHour) % 24
+      let remaining = totalFrames - h * framesPerHour
+      const tenMinBlk = Math.floor(remaining / framesPer10Min)
+      remaining -= tenMinBlk * framesPer10Min
+
+      let mInBlk: number
+      if (remaining < fpsInt * 60) {
+        mInBlk = 0
+      } else {
+        remaining -= fpsInt * 60
+        mInBlk = 1 + Math.floor(remaining / framesPerMin)
+        remaining -= (mInBlk - 1) * framesPerMin
+      }
+      m = tenMinBlk * 10 + mInBlk
+      const dropAdj = mInBlk > 0 ? remaining + D : remaining
+      s = Math.floor(dropAdj / fpsInt)
+      f = dropAdj - s * fpsInt
+    } else {
+      h = Math.floor(totalFrames / (3600 * fpsInt)) % 24
+      let rem = totalFrames - h * 3600 * fpsInt
+      m = Math.floor(rem / (60 * fpsInt))
+      rem -= m * 60 * fpsInt
+      s = Math.floor(rem / fpsInt)
+      f = rem - s * fpsInt
+    }
 
     const tc: TimecodeFrame = {
       hours: h % 24,
       minutes: m % 60,
       seconds: s % 60,
-      frames: Math.min(f, Math.ceil(fps) - 1),
+      frames: Math.min(f, fpsInt - 1),
       fps,
-      // When forceFps overrides the decoded fps, re-derive dropFrame from the forced value
-      dropFrame: this.forceFpsValue !== null ? this.forceFpsValue === 29.97 : raw.dropFrame
+      dropFrame: isDropFrame
     }
 
     this.callbacks.onTimecode(tc)

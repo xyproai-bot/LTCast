@@ -112,16 +112,14 @@ export class MtcOutput {
   }
 
   /**
-   * Send 8 quarter-frame MTC messages for the given timecode.
+   * Send 4 quarter-frame MTC messages per frame change.
+   *
+   * #4 fix: MIDI spec requires 8 quarter-frame pieces over 2 frames,
+   * meaning 4 pieces per frame. Each piece is spaced at 1/4 frame intervals
+   * using scheduled MIDI timestamps for precise timing.
    *
    * Quarter-frame format: [0xF1, (pieceType << 4) | nibble]
-   * A complete timecode is transmitted over 2 frames (8 messages).
-   * Pieces 0-3 are sent on the first frame, pieces 4-7 on the next.
-   *
-   * Per MIDI spec, we cycle through pieces 0→7 sequentially.
-   * Each call to sendTimecode sends 1 piece (not all 8 at once),
-   * advancing the piece counter. This means the receiver gets
-   * a complete timecode update every 8 frame changes.
+   * Pieces cycle 0→7 continuously. Complete TC update every 2 frames.
    */
   private sendQuarterFrames(tc: TimecodeFrame, audioContextCurrentTime: number): void {
     if (!this.selectedOutput) return
@@ -140,17 +138,21 @@ export class MtcOutput {
       (rc << 1) | ((tc.hours >> 4) & 0x01)        // 7: rate + hours tens
     ]
 
-    // Advance to next piece (0-7 cycle)
-    this.lastQfPiece = (this.lastQfPiece + 1) % 8
-    const piece = this.lastQfPiece
+    // Quarter-frame interval in ms (1/4 of one frame duration)
+    const qfIntervalMs = 1000 / (tc.fps * 4)
 
-    // Map AudioContext time → performance.now() coordinate for scheduled send
-    // Clamp to 0 to avoid negative timestamps (Web MIDI rejects them)
-    const perfTime = this._perfNowAtPlayStart +
+    // Map AudioContext time → performance.now() coordinate
+    const basePerfTime = this._perfNowAtPlayStart +
       Math.max(0, audioContextCurrentTime - this._audioTimeAtPlayStart) * 1000
 
+    // Send 4 pieces per frame, scheduled at quarter-frame intervals
     try {
-      this.selectedOutput.send([0xf1, (piece << 4) | nibbles[piece]], perfTime)
+      for (let i = 0; i < 4; i++) {
+        this.lastQfPiece = (this.lastQfPiece + 1) % 8
+        const piece = this.lastQfPiece
+        const timestamp = basePerfTime + i * qfIntervalMs
+        this.selectedOutput!.send([0xf1, (piece << 4) | nibbles[piece]], timestamp)
+      }
     } catch {
       const name = this.selectedOutput?.name ?? 'Unknown'
       this.selectedOutput = null
