@@ -83,6 +83,7 @@ export function Transport({ onPlay, onPause, onStop, onSeek }: Props): React.JSX
           onMouseUp={handleScrubEnd}
           disabled={!duration}
         />
+        <span className={`scrub-time scrub-time--remaining${duration > 0 && (duration - scrubValue) <= 30 ? ' scrub-time--warn' : ''}`}>{duration > 0 ? `-${formatTime(Math.max(0, duration - scrubValue))}` : formatTime(0)}</span>
         <span className="scrub-time scrub-time--right">{formatTime(duration)}</span>
       </div>
 
