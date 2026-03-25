@@ -262,13 +262,14 @@ export default function App(): React.JSX.Element {
     artnet.current?.setTargetIp(artnetTargetIp)
   }, [artnetTargetIp])
 
-  // Keyboard shortcuts (Space = play/pause, Ctrl+Z = undo clear setlist)
+  // Keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       // Don't intercept shortcuts when typing in input fields
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
+      // Space: play/pause
       if (e.code === 'Space') {
         e.preventDefault()
         const state = useStore.getState()
@@ -286,6 +287,69 @@ export default function App(): React.JSX.Element {
           })
         }
       }
+
+      // Escape: stop
+      if (e.code === 'Escape') {
+        e.preventDefault()
+        if (fullscreenTc) {
+          setFullscreenTc(false)
+        } else {
+          engine.current?.pause()
+          engine.current?.seek(0)
+          setPlayState('stopped')
+          setTimecode(null)
+        }
+      }
+
+      // F11: toggle fullscreen timecode
+      if (e.code === 'F11') {
+        e.preventDefault()
+        setFullscreenTc(prev => !prev)
+      }
+
+      // ArrowUp: previous song in setlist
+      if (e.code === 'ArrowUp' && !e.ctrlKey && !e.metaKey) {
+        const state = useStore.getState()
+        if (state.setlist.length === 0) return
+        const idx = state.activeSetlistIndex
+        const prevIdx = idx !== null && idx > 0 ? idx - 1 : null
+        if (prevIdx !== null) {
+          e.preventDefault()
+          state.setActiveSetlistIndex(prevIdx)
+          const item = state.setlist[prevIdx]
+          openFile(item.path, item.offsetFrames)
+        }
+      }
+
+      // ArrowDown: next song in setlist
+      if (e.code === 'ArrowDown' && !e.ctrlKey && !e.metaKey) {
+        const state = useStore.getState()
+        if (state.setlist.length === 0) return
+        const idx = state.activeSetlistIndex
+        const nextIdx = idx !== null && idx < state.setlist.length - 1 ? idx + 1
+                      : idx === null ? 0 : null
+        if (nextIdx !== null) {
+          e.preventDefault()
+          state.setActiveSetlistIndex(nextIdx)
+          const item = state.setlist[nextIdx]
+          openFile(item.path, item.offsetFrames)
+        }
+      }
+
+      // [ : set loop A at current time
+      if (e.code === 'BracketLeft' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        const state = useStore.getState()
+        if (state.duration > 0) state.setLoopA(state.currentTime)
+      }
+
+      // ] : set loop B at current time
+      if (e.code === 'BracketRight' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        const state = useStore.getState()
+        if (state.duration > 0) state.setLoopB(state.currentTime)
+      }
+
       // Ctrl+Z / Cmd+Z: undo clear setlist
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         const state = useStore.getState()
@@ -298,7 +362,7 @@ export default function App(): React.JSX.Element {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [fullscreenTc])
 
   const handleTimecode = useCallback((tc: TimecodeFrame): void => {
     setTimecode(tc)

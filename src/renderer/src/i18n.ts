@@ -117,7 +117,12 @@ export const strings = {
     ltcChannelAuto: 'Auto',
     songOffset: 'Song Offset',
     songOffsetHint: 'Override global offset for this song (blank = use global)',
-    songOffsetClear: 'Clear song offset'
+    songOffsetClear: 'Clear song offset',
+    ltcSignalLost: 'LTC SIGNAL LOST',
+    ltcSignalLostZh: 'LTC 信號丟失',
+    remaining: 'Remaining',
+    noNextSong: 'No next song in setlist',
+    noPrevSong: 'No previous song in setlist'
   },
   zh: {
     appTitle: 'LTCast',
@@ -237,7 +242,12 @@ export const strings = {
     ltcChannelAuto: '自動',
     songOffset: '曲目偏移',
     songOffsetHint: '覆蓋此曲目的全域偏移（留白使用全域設定）',
-    songOffsetClear: '清除曲目偏移'
+    songOffsetClear: '清除曲目偏移',
+    ltcSignalLost: 'LTC 信號丟失',
+    ltcSignalLostZh: 'LTC 信號丟失',
+    remaining: '剩餘',
+    noNextSong: '曲目列表中沒有下一首',
+    noPrevSong: '曲目列表中沒有上一首'
   }
 }
 
