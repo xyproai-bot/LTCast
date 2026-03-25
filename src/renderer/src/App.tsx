@@ -101,16 +101,17 @@ export default function App(): React.JSX.Element {
       onDeviceDisconnected: () => {
         setPlayState('paused')
         const lang = useStore.getState().lang
-        toast.warning(t(lang, 'audioDeviceDisconnected'))
+        toast.warning(t(useStore.getState().lang, 'audioDeviceDisconnected'))
       },
       onPlayStarted: (perfNow, audioTime) => {
         mtc.current?.setPlayStartClocks(perfNow, audioTime)
       },
       onLtcError: (type) => {
         const lang = useStore.getState().lang
-        if (type === 'worklet') toast.error(t(lang, 'ltcWorkletError'))
-        else if (type === 'warmup') toast.warning(t(lang, 'ltcWarmupError'))
-        else if (type === 'encoder') toast.warning(t(lang, 'ltcEncoderError'))
+        const l = useStore.getState().lang
+        if (type === 'worklet') toast.error(t(l, 'ltcWorkletError'))
+        else if (type === 'warmup') toast.warning(t(l, 'ltcWarmupError'))
+        else if (type === 'encoder') toast.warning(t(l, 'ltcEncoderError'))
       }
     })
 
@@ -419,7 +420,7 @@ export default function App(): React.JSX.Element {
       setFilePath(filePath_, name, duration)
     } catch (e) {
       setFilePath(null, null, 0)  // clear stale file state so UI doesn't show old file as loaded
-      toast.error(`${t(lang, 'loadFailed')}: ${e}`)
+      toast.error(`${t(useStore.getState().lang, 'loadFailed')}: ${e}`)
     }
   }
 
@@ -468,7 +469,7 @@ export default function App(): React.JSX.Element {
 
   const openVideo = async (): Promise<void> => {
     if (!engine.current || !useStore.getState().duration) {
-      toast.warning(t(lang, 'noFile'))
+      toast.warning(t(useStore.getState().lang, 'noFile'))
       return
     }
 
@@ -516,7 +517,7 @@ export default function App(): React.JSX.Element {
           videoBuffer.duration
         )
         const finalOffset = confidence >= 0.7 ? offset : 0
-        if (confidence < 0.7) toast.warning(t(lang, 'videoAlignPoor'))
+        if (confidence < 0.7) toast.warning(t(useStore.getState().lang, 'videoAlignPoor'))
         setVideoOffsetSeconds(finalOffset)
 
         // Look up timecode at alignment point
@@ -526,10 +527,11 @@ export default function App(): React.JSX.Element {
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
+      const l = useStore.getState().lang
       if (msg === 'NO_AUDIO_TRACK') {
-        toast.error(t(lang, 'noAudioTrack'))
+        toast.error(t(l, 'noAudioTrack'))
       } else {
-        toast.error(t(lang, 'videoImportFailed'))
+        toast.error(t(l, 'videoImportFailed'))
       }
     } finally {
       setVideoLoading(false)
@@ -562,7 +564,7 @@ export default function App(): React.JSX.Element {
       musicWaveform, s.videoWaveform, s.duration, s.videoDuration
     )
     const finalOffset = confidence >= 0.7 ? offset : 0
-    if (confidence < 0.7) toast.warning(t(lang, 'videoAlignPoor'))
+    if (confidence < 0.7) toast.warning(t(useStore.getState().lang, 'videoAlignPoor'))
     setVideoOffsetSeconds(finalOffset)
     const tc = getTimecodeAtTime(s.timecodeLookup, finalOffset)
     setVideoStartTimecode(tc ? formatTimecode(tc) : null)
