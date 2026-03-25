@@ -1,13 +1,12 @@
 import { detectLtcChannel } from './LtcDetector'
 import { buildTimecodeLookup, TimecodeLookupEntry } from './LtcDecoder'
 import { TimecodeFrame } from '../store'
+import { LTC_CONFIDENCE_THRESHOLD } from '../constants'
 
 import ltcProcessorCode from './ltcProcessor.js?raw'
 import ltcEncoderCode from './ltcEncoderProcessor.js?raw'
 
 // ── Constants ───────────────────────────────────────────────
-/** Minimum LTC confidence to consider the signal valid (0–1) */
-const LTC_CONFIDENCE_THRESHOLD = 0.5
 /** Milliseconds of silence before LTC signal is considered lost */
 const LTC_SIGNAL_TIMEOUT_MS = 200
 /** Number of waveform peak samples extracted per audio file */
@@ -395,7 +394,8 @@ export class AudioEngine {
   }
 
   async dispose(): Promise<void> {
-    navigator.mediaDevices.removeEventListener('devicechange', this._deviceChangeHandler)
+    // Don't remove devicechange listener here — loadFile() calls dispose() to reset,
+    // and the listener must persist across file loads. Removed only in forceCleanup().
     cancelAnimationFrame(this.rafId)
     // #15 fix: clear pending signal timeout before teardown to prevent stale callback
     if (this.ltcSignalTimeout) { clearTimeout(this.ltcSignalTimeout); this.ltcSignalTimeout = null }
@@ -423,6 +423,7 @@ export class AudioEngine {
    * are released before the process exits.
    */
   forceCleanup(): void {
+    navigator.mediaDevices.removeEventListener('devicechange', this._deviceChangeHandler)
     cancelAnimationFrame(this.rafId)
     if (this.ltcSignalTimeout) { clearTimeout(this.ltcSignalTimeout); this.ltcSignalTimeout = null }
     this._teardownLtcNodes()
@@ -816,6 +817,7 @@ export class AudioEngine {
       }
 
       if (this.loopA !== null && this.loopB !== null && this.loopA < this.loopB && ct >= this.loopB) {
+        cancelAnimationFrame(this.rafId)  // stop this rAF loop before seek starts a new one
         const targetTime = this.loopA
         const currentPlayId = this.playId
         this.seek(targetTime).then(() => {

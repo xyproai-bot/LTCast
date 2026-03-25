@@ -15,14 +15,15 @@ interface Props {
 }
 
 export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onClearVideo, onResyncVideo }: Props): React.JSX.Element {
-  const musicContainerRef = useRef<HTMLDivElement>(null)
-  const ltcWrapRef        = useRef<HTMLDivElement>(null)
-  const ltcCanvasRef      = useRef<HTMLCanvasElement>(null)
-  const videoWrapRef      = useRef<HTMLDivElement>(null)
-  const videoCanvasRef    = useRef<HTMLCanvasElement>(null)
-  const wsRef             = useRef<WaveSurfer | null>(null)
-  const zoomRef           = useRef(1)
-
+  const musicContainerRef  = useRef<HTMLDivElement>(null)
+  const ltcWrapRef         = useRef<HTMLDivElement>(null)
+  const ltcBgCanvasRef     = useRef<HTMLCanvasElement>(null)   // static waveform
+  const ltcCursorCanvasRef = useRef<HTMLCanvasElement>(null)   // cursor + loop (redrawn every frame)
+  const videoWrapRef       = useRef<HTMLDivElement>(null)
+  const videoBgCanvasRef   = useRef<HTMLCanvasElement>(null)   // static waveform
+  const videoCursorCanvasRef = useRef<HTMLCanvasElement>(null) // cursor (redrawn every frame)
+  const wsRef              = useRef<WaveSurfer | null>(null)
+  const zoomRef            = useRef(1)
   // Stable ref so the wavesurfer event handler always sees the latest callback
   const onSeekRef = useRef(onSeek)
   onSeekRef.current = onSeek
@@ -151,7 +152,8 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   //  LTC waveform — simple canvas
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const drawLtc = useCallback((canvas: HTMLCanvasElement, data: Float32Array): void => {
+  /** Draw static LTC waveform (background canvas) — only when data or size changes */
+  const drawLtcBg = useCallback((canvas: HTMLCanvasElement, data: Float32Array): void => {
     const dpr = window.devicePixelRatio || 1
     const cssW = canvas.clientWidth
     const cssH = canvas.clientHeight
@@ -162,7 +164,6 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     if (!ctx) return
     ctx.scale(dpr, dpr)
     const W = cssW, H = cssH
-    const ct = currentTimeRef.current, dur = durationRef.current
 
     ctx.clearRect(0, 0, W, H)
     ctx.fillStyle = '#1e1e1e'
@@ -188,6 +189,23 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     ctx.moveTo(0, H / 2)
     ctx.lineTo(W, H / 2)
     ctx.stroke()
+  }, [])
+
+  /** Draw cursor + loop markers (overlay canvas) — redrawn every frame */
+  const drawLtcCursor = useCallback((canvas: HTMLCanvasElement): void => {
+    const dpr = window.devicePixelRatio || 1
+    const cssW = canvas.clientWidth
+    const cssH = canvas.clientHeight
+    if (!cssW || !cssH) return
+    canvas.width = cssW * dpr
+    canvas.height = cssH * dpr
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.scale(dpr, dpr)
+    const W = cssW, H = cssH
+    const ct = currentTimeRef.current, dur = durationRef.current
+
+    ctx.clearRect(0, 0, W, H)
 
     if (dur > 0) {
       // Draw A-B loop region
@@ -221,21 +239,32 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     }
   }, [])
 
-  const redrawLtc = useCallback((): void => {
-    if (ltcCanvasRef.current && ltcDataRef.current) drawLtc(ltcCanvasRef.current, ltcDataRef.current)
-  }, [drawLtc])
+  /** Redraw static LTC background (expensive — only on data/size change) */
+  const redrawLtcBg = useCallback((): void => {
+    if (ltcBgCanvasRef.current && ltcDataRef.current) drawLtcBg(ltcBgCanvasRef.current, ltcDataRef.current)
+  }, [drawLtcBg])
 
+  /** Redraw LTC cursor overlay (cheap — every frame) */
+  const redrawLtcCursor = useCallback((): void => {
+    if (ltcCursorCanvasRef.current) drawLtcCursor(ltcCursorCanvasRef.current)
+  }, [drawLtcCursor])
+
+  // ResizeObserver: redraw both layers when container resizes
   useEffect(() => {
     const el = ltcWrapRef.current
     if (!el) return
     const obs = new ResizeObserver(() => {
-      if (ltcCanvasRef.current) redrawLtc()
+      redrawLtcBg()
+      redrawLtcCursor()
     })
     obs.observe(el)
     return () => obs.disconnect()
-  }, [redrawLtc])
+  }, [redrawLtcBg, redrawLtcCursor])
 
-  useEffect(() => { redrawLtc() }, [currentTime, ltcData, loopA, loopB, redrawLtc])
+  // Background: redraw only when data or loop points change (expensive — draws 6000 bars)
+  useEffect(() => { redrawLtcBg() }, [ltcData, loopA, loopB, redrawLtcBg])
+  // Cursor overlay: redraw every frame (cheap — only cursor line + loop region)
+  useEffect(() => { redrawLtcCursor() }, [currentTime, loopA, loopB, redrawLtcCursor])
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  Video waveform — draggable, same timeline as music/LTC
@@ -248,7 +277,18 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   const videoZoomRef = useRef(1)    // 1 = full timeline, higher = zoomed in
   const videoScrollRef = useRef(0)  // scroll offset in seconds (left edge of view)
 
-  const drawVideo = useCallback((canvas: HTMLCanvasElement, data: Float32Array): void => {
+  /** Shared helper: compute video timeToPx based on zoom/scroll state */
+  const videoTimeToPx = (t_: number, W: number): number => {
+    const dur = durationRef.current
+    const zoom = videoZoomRef.current
+    const scroll = videoScrollRef.current
+    if (dur <= 0) return 0
+    const visibleDur = dur / zoom
+    return ((t_ - scroll) / visibleDur) * W
+  }
+
+  /** Draw static video waveform (background canvas) */
+  const drawVideoBg = useCallback((canvas: HTMLCanvasElement, data: Float32Array): void => {
     const dpr = window.devicePixelRatio || 1
     const cssW = canvas.clientWidth
     const cssH = canvas.clientHeight
@@ -265,8 +305,6 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     const dur = durationRef.current
     const vOffset = videoOffsetRef.current
     const vDur = videoDurRef.current
-    const zoom = videoZoomRef.current
-    const scroll = videoScrollRef.current
 
     ctx.clearRect(0, 0, W, H)
     ctx.fillStyle = '#1a2e1a'
@@ -274,15 +312,8 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
 
     if (vDur <= 0 || dur <= 0) return
 
-    // Visible time range based on zoom
-    const visibleDur = dur / zoom
-    const viewStart = scroll  // seconds at left edge
-
-    // Convert time to pixel
-    const timeToPx = (t: number): number => ((t - viewStart) / visibleDur) * W
-
-    const startPx = timeToPx(vOffset)
-    const endPx = timeToPx(vOffset + vDur)
+    const startPx = videoTimeToPx(vOffset, W)
+    const endPx = videoTimeToPx(vOffset + vDur, W)
     const widthPx = endPx - startPx
 
     // Draw video waveform
@@ -334,18 +365,8 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2)
     ctx.stroke()
 
-    // Playback cursor
-    const ct = currentTimeRef.current
-    const cursorPx = timeToPx(ct)
-    if (cursorPx >= 0 && cursorPx <= W) {
-      ctx.beginPath()
-      ctx.strokeStyle = '#00d4ff'
-      ctx.lineWidth = 2
-      ctx.moveTo(cursorPx, 0); ctx.lineTo(cursorPx, H)
-      ctx.stroke()
-    }
-
     // Zoom indicator (only when zoomed in)
+    const zoom = videoZoomRef.current
     if (zoom > 1.05) {
       ctx.fillStyle = 'rgba(255,255,255,0.3)'
       ctx.font = '10px sans-serif'
@@ -359,18 +380,48 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     ctx.fillText(t(useStore.getState().lang, hintKey), W / 2 - 120, H - 4)
   }, [])
 
-  const redrawVideo = useCallback((): void => {
-    if (videoCanvasRef.current && videoDataRef.current) drawVideo(videoCanvasRef.current, videoDataRef.current)
-  }, [drawVideo])
+  /** Draw video cursor overlay (cheap — every frame) */
+  const drawVideoCursor = useCallback((canvas: HTMLCanvasElement): void => {
+    const dpr = window.devicePixelRatio || 1
+    const cssW = canvas.clientWidth
+    const cssH = canvas.clientHeight
+    if (!cssW || !cssH) return
+    canvas.width = cssW * dpr
+    canvas.height = cssH * dpr
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.scale(dpr, dpr)
+    const W = cssW, H = cssH
+
+    ctx.clearRect(0, 0, W, H)
+
+    const ct = currentTimeRef.current
+    const cursorPx = videoTimeToPx(ct, W)
+    if (cursorPx >= 0 && cursorPx <= W) {
+      ctx.beginPath()
+      ctx.strokeStyle = '#00d4ff'
+      ctx.lineWidth = 2
+      ctx.moveTo(cursorPx, 0); ctx.lineTo(cursorPx, H)
+      ctx.stroke()
+    }
+  }, [])
+
+  const redrawVideoBg = useCallback((): void => {
+    if (videoBgCanvasRef.current && videoDataRef.current) drawVideoBg(videoBgCanvasRef.current, videoDataRef.current)
+  }, [drawVideoBg])
+
+  const redrawVideoCursor = useCallback((): void => {
+    if (videoCursorCanvasRef.current) drawVideoCursor(videoCursorCanvasRef.current)
+  }, [drawVideoCursor])
 
   // Resize observer for video canvas
   useEffect(() => {
     const el = videoWrapRef.current
     if (!el) return
-    const obs = new ResizeObserver(() => { redrawVideo() })
+    const obs = new ResizeObserver(() => { redrawVideoBg(); redrawVideoCursor() })
     obs.observe(el)
     return () => obs.disconnect()
-  }, [redrawVideo, videoWaveform])
+  }, [redrawVideoBg, redrawVideoCursor, videoWaveform])
 
   // Auto-zoom to video region when video is first loaded
   useEffect(() => {
@@ -386,8 +437,10 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoWaveform]) // only on new video load
 
-  // Redraw video on changes
-  useEffect(() => { redrawVideo() }, [currentTime, videoWaveform, videoOffsetSeconds, redrawVideo])
+  // Background: redraw when data/offset changes (expensive)
+  useEffect(() => { redrawVideoBg() }, [videoWaveform, videoOffsetSeconds, redrawVideoBg])
+  // Cursor overlay: redraw every frame (cheap)
+  useEffect(() => { redrawVideoCursor() }, [currentTime, redrawVideoCursor])
 
   // Mouse drag handlers for video waveform
   const onVideoMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>): void => {
@@ -448,7 +501,7 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
                    : e.deltaMode === 1 ? e.deltaY / 3
                    : e.deltaY
         const oldZoom = videoZoomRef.current
-        const newZoom = Math.max(1, Math.min(100, oldZoom * Math.pow(1.3, -norm)))
+        const newZoom = Math.max(1, Math.min(50, oldZoom * Math.pow(1.3, -norm)))
 
         // Zoom toward mouse position
         const rect = el.getBoundingClientRect()
@@ -460,13 +513,12 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
         videoZoomRef.current = newZoom
       }
 
-      if (videoCanvasRef.current && videoDataRef.current) {
-        drawVideo(videoCanvasRef.current, videoDataRef.current)
-      }
+      redrawVideoBg()
+      redrawVideoCursor()
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [drawVideo, videoWaveform]) // re-attach when video appears/disappears
+  }, [redrawVideoBg, redrawVideoCursor, videoWaveform]) // re-attach when video appears/disappears
 
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -480,7 +532,8 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       <div className="waveform-section">
         <span className="waveform-label" style={{ color: '#ff9800' }}>{t(lang, 'ltcWaveform')}</span>
         <div className="waveform-ltc-wrap" ref={ltcWrapRef}>
-          <canvas ref={ltcCanvasRef} className="waveform-canvas" />
+          <canvas ref={ltcBgCanvasRef} className="waveform-canvas" />
+          <canvas ref={ltcCursorCanvasRef} className="waveform-canvas waveform-canvas--overlay" />
         </div>
       </div>
 
@@ -506,9 +559,13 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
           ) : (
             <div className="waveform-video-wrap" ref={videoWrapRef}>
               <canvas
-                ref={videoCanvasRef}
+                ref={videoBgCanvasRef}
                 className="waveform-canvas waveform-canvas--draggable"
                 onMouseDown={onVideoMouseDown}
+              />
+              <canvas
+                ref={videoCursorCanvasRef}
+                className="waveform-canvas waveform-canvas--overlay"
               />
             </div>
           )}

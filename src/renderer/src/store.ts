@@ -52,6 +52,7 @@ export interface PresetData {
   setlist: SetlistItem[]
   generatorStartTC?: string
   generatorFps?: number
+  tcGeneratorMode?: boolean
   artnetEnabled?: boolean
   artnetTargetIp?: string
   mtcMode?: 'quarter-frame' | 'full-frame'
@@ -62,17 +63,6 @@ export interface SavedPreset {
   name: string
   data: PresetData
   updatedAt: string
-}
-
-const ACTIVE_PRESET_KEY = 'ltcast-active-preset'
-
-function loadActivePresetName(): string | null {
-  return localStorage.getItem(ACTIVE_PRESET_KEY)
-}
-
-function saveActivePresetName(name: string | null): void {
-  if (name) localStorage.setItem(ACTIVE_PRESET_KEY, name)
-  else localStorage.removeItem(ACTIVE_PRESET_KEY)
 }
 
 // Async helper to reload presets from filesystem
@@ -117,7 +107,7 @@ function migratePreset(data: PresetData): PresetData {
 function buildPresetData(s: Pick<AppState,
   'lang' | 'rightTab' | 'offsetFrames' | 'loop' | 'loopA' | 'loopB' | 'musicOutputDeviceId' |
   'ltcOutputDeviceId' | 'ltcGain' | 'selectedMidiPort' | 'forceFps' |
-  'ltcChannel' | 'setlist' | 'generatorStartTC' | 'generatorFps' |
+  'ltcChannel' | 'setlist' | 'generatorStartTC' | 'generatorFps' | 'tcGeneratorMode' |
   'artnetEnabled' | 'artnetTargetIp' | 'mtcMode'>): PresetData {
   return {
     version: CURRENT_PRESET_VERSION,
@@ -128,6 +118,7 @@ function buildPresetData(s: Pick<AppState,
     selectedMidiPort: s.selectedMidiPort, forceFps: s.forceFps,
     ltcChannel: s.ltcChannel, setlist: s.setlist,
     generatorStartTC: s.generatorStartTC, generatorFps: s.generatorFps,
+    tcGeneratorMode: s.tcGeneratorMode,
     artnetEnabled: s.artnetEnabled, artnetTargetIp: s.artnetTargetIp,
     mtcMode: s.mtcMode
   }
@@ -329,7 +320,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   rightTab: 'devices',
   lang: 'en',
 
-  presetName: loadActivePresetName(),
+  presetName: null,  // restored from Zustand persist on load
   presetPath: null,
   presetDirty: false,
   savedPresets: [],  // loaded async from filesystem on mount
@@ -339,11 +330,14 @@ export const useStore = create<AppState>()(persist((set) => ({
   setPlayState: (playState) => set({ playState }),
   setCurrentTime: (() => {
     let lastUpdate = 0
+    let lastValue = 0
     return (currentTime: number): void => {
-      // Throttle Zustand updates to ~30fps to prevent 60fps re-renders
       const now = Date.now()
-      if (now - lastUpdate >= 33) {
+      // Bypass throttle on large jumps (seek, stop, end) so the final value is never lost
+      const jump = Math.abs(currentTime - lastValue) > 0.5
+      if (jump || now - lastUpdate >= 33) {
         lastUpdate = now
+        lastValue = currentTime
         set({ currentTime })
       }
     }
@@ -419,19 +413,15 @@ export const useStore = create<AppState>()(persist((set) => ({
   reorderSetlist: (from, to) => set((s) => {
     if (from < 0 || from >= s.setlist.length || to < 0 || to >= s.setlist.length) return s
     if (from === to) return s
+    const activeItem = s.activeSetlistIndex !== null ? s.setlist[s.activeSetlistIndex] : null
     const setlist = [...s.setlist]
     const [item] = setlist.splice(from, 1)
     setlist.splice(to, 0, item)
-    // Find where the active item ended up by tracking its identity
-    let activeSetlistIndex = s.activeSetlistIndex
-    if (activeSetlistIndex !== null) {
-      if (activeSetlistIndex === from) {
-        activeSetlistIndex = to
-      } else {
-        // Item removed from `from`, inserted at `to`
-        if (from < activeSetlistIndex) activeSetlistIndex-- // shift down after removal
-        if (to <= activeSetlistIndex) activeSetlistIndex++   // shift up after insertion
-      }
+    // Track active item by ID — immune to index arithmetic errors
+    let activeSetlistIndex: number | null = null
+    if (activeItem) {
+      activeSetlistIndex = setlist.findIndex(i => i.id === activeItem.id)
+      if (activeSetlistIndex === -1) activeSetlistIndex = null
     }
     return { setlist, activeSetlistIndex, presetDirty: true }
   }),
@@ -515,7 +505,6 @@ export const useStore = create<AppState>()(persist((set) => ({
   setLang: (lang) => set({ lang, presetDirty: true }),
 
   newPreset: () => {
-    saveActivePresetName(null)
     set({
       // Clear loaded file
       filePath: null,
@@ -567,7 +556,6 @@ export const useStore = create<AppState>()(persist((set) => ({
       const data = buildPresetData(s)
       if (s.presetPath && s.presetName) {
         await window.api.savePreset(s.presetName, data, s.presetPath)
-        saveActivePresetName(s.presetName)
         window.api.addRecentFile(s.presetPath, s.presetName)
         const presets = await loadPresetsFromDisk()
         set({ savedPresets: presets, presetDirty: false })
@@ -576,7 +564,6 @@ export const useStore = create<AppState>()(persist((set) => ({
         if (!chosenPath) return
         const name = chosenPath.split(/[/\\]/).pop()!.replace(/\.ltcast$/i, '')
         await window.api.savePreset(name, data, chosenPath)
-        saveActivePresetName(name)
         window.api.addRecentFile(chosenPath, name)
         const presets = await loadPresetsFromDisk()
         set({ savedPresets: presets, presetName: name, presetPath: chosenPath, presetDirty: false })
@@ -592,7 +579,6 @@ export const useStore = create<AppState>()(persist((set) => ({
       if (!chosenPath) return
       const name = chosenPath.split(/[/\\]/).pop()!.replace(/\.ltcast$/i, '')
       await window.api.savePreset(name, data, chosenPath)
-      saveActivePresetName(name)
       window.api.addRecentFile(chosenPath, name)
       const presets = await loadPresetsFromDisk()
       set({ savedPresets: presets, presetName: name, presetPath: chosenPath, presetDirty: false })
@@ -605,7 +591,6 @@ export const useStore = create<AppState>()(persist((set) => ({
     warnIfNewerVersion(result.data as PresetData)
     const presetData = ensureSetlistIds(migratePreset(result.data as PresetData))
     const presets = await loadPresetsFromDisk()
-    saveActivePresetName(result.name)
     // Add to recent files
     useStore.getState().addRecentFile(result.path ?? '', result.name)
     set({
@@ -635,7 +620,6 @@ export const useStore = create<AppState>()(persist((set) => ({
       warnIfNewerVersion(result.data as PresetData)
       const presetData = ensureSetlistIds(migratePreset(result.data as PresetData))
       const presets = await loadPresetsFromDisk()
-      saveActivePresetName(result.name)
       // Move to top of recent list and rebuild the native File > Open Recent menu
       useStore.getState().addRecentFile(path, result.name)
       set({
@@ -671,7 +655,6 @@ export const useStore = create<AppState>()(persist((set) => ({
   loadPreset: (name) => set((s) => {
     const preset = s.savedPresets.find(p => p.name === name)
     if (!preset) return s
-    saveActivePresetName(name)
     warnIfNewerVersion(preset.data)
     const data = ensureSetlistIds(migratePreset(preset.data))
     return {
@@ -697,7 +680,6 @@ export const useStore = create<AppState>()(persist((set) => ({
     window.api.deletePreset(name).then(() => {
       // Read current state inside .then() to avoid stale closure
       const isActive = useStore.getState().presetName === name
-      if (isActive) saveActivePresetName(null)
       loadPresetsFromDisk().then(presets => set({
         savedPresets: presets,
         ...(isActive ? { presetName: null, presetPath: null } : {})
@@ -706,7 +688,6 @@ export const useStore = create<AppState>()(persist((set) => ({
   },
 
   resetToDefaults: () => {
-    saveActivePresetName(null)
     set({
       lang: 'en', rightTab: 'devices', offsetFrames: 0, loop: false,
       loopA: null, loopB: null, previousSetlist: null,
@@ -752,7 +733,6 @@ export const useStore = create<AppState>()(persist((set) => ({
         return extracted ? { ...item, path: extracted } : item
       })
     }
-    saveActivePresetName(preset.name)
     set({
       ...presetData,
       loopA: presetData.loopA ?? null, loopB: presetData.loopB ?? null,
@@ -794,6 +774,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     artnetEnabled: state.artnetEnabled,
     artnetTargetIp: state.artnetTargetIp,
     presetPath: state.presetPath,
+    presetName: state.presetName,
   }),
   merge: (persisted, current) => {
     const merged = { ...current, ...(persisted as object) }

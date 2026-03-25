@@ -469,8 +469,7 @@ html, body, #root {
 }
 
 .waveform-ltc-wrap {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   flex: 1;
   min-height: 0;
   border-radius: 4px;
@@ -479,11 +478,16 @@ html, body, #root {
 }
 
 .waveform-canvas {
-  flex: 1;
   display: block;
   width: 100%;
-  min-height: 0;
-  height: 0;
+  height: 100%;
+}
+
+.waveform-canvas--overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
 }
 
 /* ── Video waveform ─────────────────────────────────────── */
@@ -544,8 +548,7 @@ html, body, #root {
 }
 
 .waveform-video-wrap {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   flex: 1;
   min-height: 0;
   border-radius: 4px;

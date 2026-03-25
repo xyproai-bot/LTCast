@@ -14,9 +14,7 @@ import { alignAudio } from './audio/AudioAligner'
 import { getTimecodeAtTime, formatTimecode } from './audio/LtcDecoder'
 import { t } from './i18n'
 import { toast } from './components/Toast'
-
-/** Minimum LTC confidence to consider the signal valid (0–1) */
-const LTC_CONFIDENCE_THRESHOLD = 0.5
+import { LTC_CONFIDENCE_THRESHOLD } from './constants'
 
 export default function App(): React.JSX.Element {
   const engine = useRef<AudioEngine | null>(null)
@@ -121,10 +119,16 @@ export default function App(): React.JSX.Element {
     mtcOut.onPortsChanged = () => {
       setMidiOutputs(mtcOut.getPorts())
       setMidiConnected(mtcOut.isConnected())
+      // Auto-reconnect: if a saved port reappears after disconnect, re-select it
+      const savedPort = useStore.getState().selectedMidiPort
+      if (savedPort && !mtcOut.isConnected()) {
+        const ok = mtcOut.selectPort(savedPort)
+        setMidiConnected(ok)
+      }
     }
     mtcOut.onPortDisconnected = (portName: string) => {
+      // Keep selectedMidiPort so auto-reconnect works when the port reappears
       setMidiConnected(false)
-      setSelectedMidiPort(null)
       const lang = useStore.getState().lang
       toast.warning(t(lang, 'midiPortDisconnected', { name: portName }))
     }
