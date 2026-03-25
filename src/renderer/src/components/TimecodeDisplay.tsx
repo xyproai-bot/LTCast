@@ -16,8 +16,12 @@ export function TimecodeDisplay({ fullscreen }: Props): React.JSX.Element {
     timecode, detectedFps, forceFps, setForceFps, lang,
     tcGeneratorMode, setTcGeneratorMode,
     generatorStartTC, setGeneratorStartTC,
-    generatorFps, setGeneratorFps
+    generatorFps, setGeneratorFps,
+    ltcSignalOk, playState
   } = useStore()
+
+  // LTC signal lost: playing in reader mode but no signal
+  const signalLost = !tcGeneratorMode && playState === 'playing' && !ltcSignalOk
 
   const fps = forceFps ?? detectedFps ?? 25
 
@@ -34,7 +38,7 @@ export function TimecodeDisplay({ fullscreen }: Props): React.JSX.Element {
       : `${fps} ${t(lang, fps === 29.97 ? 'dropFrame' : 'nonDropFrame')}`
 
   return (
-    <div className={`tc-display${fullscreen ? ' tc-display--fullscreen' : ''}`}>
+    <div className={`tc-display${fullscreen ? ' tc-display--fullscreen' : ''}${signalLost ? ' tc-signal-lost' : ''}`}>
       {/* Mode toggle */}
       {!fullscreen && (
         <div className="tc-mode-row">
@@ -64,6 +68,7 @@ export function TimecodeDisplay({ fullscreen }: Props): React.JSX.Element {
         <span className="tc-seg tc-frames">{f}</span>
       </div>
       <div className="tc-fps">{fpsLabel}</div>
+      {signalLost && <div className="tc-signal-lost-banner">{t(lang, 'ltcSignalLost')}</div>}
       {!fullscreen && <TapBpm />}
 
       {/* Force FPS — only shown in LTC Reader mode */}
