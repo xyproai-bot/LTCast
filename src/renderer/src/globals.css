@@ -201,6 +201,24 @@ html, body, #root {
 
 .tc-frames { color: #00ffaa; }
 
+/* LTC signal lost — flash warning */
+.tc-signal-lost .tc-seg,
+.tc-signal-lost .tc-colon {
+  animation: tc-flash 0.8s ease-in-out infinite;
+}
+.tc-signal-lost-banner {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ff4444;
+  letter-spacing: 2px;
+  animation: tc-flash 0.8s ease-in-out infinite;
+  margin-top: 2px;
+}
+@keyframes tc-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
 .tc-colon {
   font-size: 48px;
   color: #444;
@@ -470,6 +488,8 @@ html, body, #root {
 
 .waveform-ltc-wrap {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   border-radius: 4px;
@@ -478,15 +498,19 @@ html, body, #root {
 }
 
 .waveform-canvas {
+  flex: 1;
   display: block;
   width: 100%;
-  height: 100%;
+  min-height: 0;
+  height: 0;
 }
 
 .waveform-canvas--overlay {
   position: absolute;
   top: 0;
   left: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
 }
 
@@ -549,6 +573,8 @@ html, body, #root {
 
 .waveform-video-wrap {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   border-radius: 4px;
@@ -649,6 +675,8 @@ html, body, #root {
   color: #888;
   min-width: 50px;
 }
+.scrub-time--remaining { text-align: center; color: #666; min-width: 55px; }
+.scrub-time--warn { color: #ff4444; font-weight: 700; }
 .scrub-time--right { text-align: right; }
 
 .scrub-bar {

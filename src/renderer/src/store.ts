@@ -775,6 +775,10 @@ export const useStore = create<AppState>()(persist((set) => ({
     artnetTargetIp: state.artnetTargetIp,
     presetPath: state.presetPath,
     presetName: state.presetName,
+    // Crash recovery: persist last played file so we can restore on relaunch
+    filePath: state.filePath,
+    fileName: state.fileName,
+    activeSetlistIndex: state.activeSetlistIndex,
   }),
   merge: (persisted, current) => {
     const merged = { ...current, ...(persisted as object) }
