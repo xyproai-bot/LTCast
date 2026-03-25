@@ -116,6 +116,10 @@ autoUpdater.on('error', async (err) => {
   // that wasn't published (no app-update.yml injected into bundle)
   if ((err as NodeJS.ErrnoException).code === 'ENOENT' &&
       err.message.includes('app-update.yml')) return
+  // Suppress network errors silently — offline is normal in production environments
+  const code = (err as NodeJS.ErrnoException).code
+  if (code === 'ENOTFOUND' || code === 'ETIMEDOUT' || code === 'ECONNREFUSED' ||
+      code === 'ENETUNREACH' || code === 'EAI_AGAIN') return
   const wasDownload = isDownloadInProgress
   const wasManual = isManualUpdateCheck
   isManualUpdateCheck = false
