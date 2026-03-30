@@ -1,0 +1,64 @@
+{
+  "appId": "com.ltcast.app",
+  "productName": "LTCast",
+  "copyright": "Copyright © 2024 LTCast",
+  "icon": "resources/icon",
+  "directories": {
+    "buildResources": "resources",
+    "output": "dist"
+  },
+  "fileAssociations": [
+    {
+      "ext": "ltcast",
+      "name": "LTCast Project",
+      "description": "LTCast Project File",
+      "icon": "resources/icon",
+      "role": "Editor",
+      "mimeType": "application/x-ltcast"
+    }
+  ],
+  "files": [
+    "out/**/*",
+    "resources/**/*",
+    "!resources/installers/**/*"
+  ],
+  "asarUnpack": [
+    "node_modules/ffmpeg-static/**"
+  ],
+  "mac": {
+    "target": [
+      { "target": "dmg", "arch": ["universal"] },
+      { "target": "zip", "arch": ["universal"] }
+    ],
+    "icon": "resources/icon.icns",
+    "identity": null
+  },
+  "dmg": {
+    "title": "LTCast",
+    "window": {
+      "width": 540,
+      "height": 380
+    },
+    "iconSize": 100,
+    "contents": [
+      { "x": 130, "y": 190, "type": "file" },
+      { "x": 410, "y": 190, "type": "link", "path": "/Applications" }
+    ]
+  },
+  "win": {
+    "target": [
+      { "target": "nsis", "arch": ["x64"] }
+    ],
+    "artifactName": "${productName}-Setup-${version}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "license": "resources/LICENSE.txt",
+    "runAfterFinish": true
+  },
+  "linux": {
+    "target": ["AppImage"],
+    "icon": "resources/icon.png"
+  }
+}
