@@ -47,7 +47,11 @@ export function detectBpmAt(
   if (rms < 0.001) return null  // silence
 
   const onsets = computeOnsetEnvelope(segment, sampleRate)
-  if (onsets.length < 4) return null
+  // Need at least enough onset frames to cover one full period at MIN_BPM
+  // (60 BPM = 1 beat/sec, onset at ~87fps → ~87 frames per beat, need ≥2 beats)
+  const hopSize = Math.floor(Math.round(sampleRate * 0.023) / 2)
+  const minOnsetFrames = Math.ceil((sampleRate / hopSize) * 60 / MIN_BPM) * 2
+  if (onsets.length < minOnsetFrames) return null
 
   return autocorrelateBpm(onsets, sampleRate)
 }
@@ -68,7 +72,9 @@ export function detectBpm(buffer: AudioBuffer, musicChannelIndex: number): numbe
   const segment = data.slice(startSample, startSample + analyzeSamples)
 
   const onsets = computeOnsetEnvelope(segment, sampleRate)
-  if (onsets.length < 4) return null
+  const hopSize2 = Math.floor(Math.round(sampleRate * 0.023) / 2)
+  const minOnsetFrames2 = Math.ceil((sampleRate / hopSize2) * 60 / MIN_BPM) * 2
+  if (onsets.length < minOnsetFrames2) return null
 
   return autocorrelateBpm(onsets, sampleRate)
 }

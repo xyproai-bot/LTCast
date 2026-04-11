@@ -218,6 +218,13 @@ html, body, #root {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.2; }
 }
+.tc-preroll-banner {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffaa00;
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
 
 .tc-colon {
   font-size: 48px;
@@ -500,10 +507,7 @@ html, body, #root {
   background: #1e1e1e;
 }
 
-.waveform-canvas--markers {
-  pointer-events: auto;
-  cursor: crosshair;
-}
+/* NOTE: must use compound selector to override .waveform-canvas--overlay pointer-events: none */
 
 .waveform-ltc-wrap {
   position: relative;
@@ -531,6 +535,11 @@ html, body, #root {
   width: 100%;
   height: 100%;
   pointer-events: none;
+  z-index: 5;
+}
+.waveform-canvas--overlay.waveform-canvas--markers {
+  pointer-events: none;
+  z-index: 10;
 }
 
 /* ── Video waveform ─────────────────────────────────────── */
@@ -1959,4 +1968,112 @@ html, body, #root {
 .midi-activity-dot.active {
   background: #00d4ff;
 }
+
+/* ── Structure Panel (Song Markers) ──────────────────────── */
+.structure-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.structure-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.structure-panel-title {
+  font-size: 10px;
+  color: #888;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.btn-add-marker {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  color: #ccc;
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.btn-add-marker:hover { background: #333; color: #fff; }
+.btn-add-marker:disabled { opacity: 0.4; cursor: default; }
+
+.structure-panel-empty {
+  color: #555;
+  font-size: 11px;
+  text-align: center;
+  padding: 20px 0;
+}
+.structure-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.structure-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  background: #1e1e1e;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.structure-item:hover { background: #2a2a2a; }
+
+.structure-color {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 3px;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.structure-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #888;
+  min-width: 52px;
+  flex-shrink: 0;
+}
+.structure-type {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  color: #ccc;
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  min-width: 70px;
+  flex-shrink: 0;
+}
+.structure-label {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #ddd;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  flex: 1;
+  min-width: 0;
+}
+.structure-label:focus {
+  border-color: #444;
+  background: #1a1a1a;
+  outline: none;
+}
+.structure-delete {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.structure-delete:hover { color: #ff4444; }
 

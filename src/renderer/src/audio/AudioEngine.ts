@@ -28,9 +28,11 @@ export interface AudioEngineCallbacks {
   onLtcChannelDetected: (channelIndex: number) => void
   onLtcSignalStatus: (ok: boolean) => void
   onLtcConfidence: (confidence: number) => void
+  onLtcStartTime?: (seconds: number) => void
   onWaveformData: (music: Float32Array, ltc: Float32Array) => void
   onTimecodeLookup: (lookup: TimecodeLookupEntry[]) => void
   onDeviceDisconnected?: (deviceId: string) => void
+  onDeviceReconnected?: (deviceId: string) => void
   onPlayStarted?: (perfNow: number, audioTime: number) => void
   onLtcError?: (message: string) => void
 }
@@ -105,19 +107,38 @@ export class AudioEngine {
     navigator.mediaDevices.addEventListener('devicechange', this._deviceChangeHandler)
   }
 
+  /** Track which devices were disconnected so we can attempt reconnect */
+  private disconnectedDeviceId: string | null = null
+
   /** Check if currently-used audio devices are still available */
   private async _checkDeviceAvailability(): Promise<void> {
-    if (!this.playing) return
     try {
       const devices = await navigator.mediaDevices.enumerateDevices()
       const outputIds = new Set(
         devices.filter(d => d.kind === 'audiooutput').map(d => d.deviceId)
       )
+
+      // Check for reconnected device
+      if (this.disconnectedDeviceId && outputIds.has(this.disconnectedDeviceId)) {
+        const deviceId = this.disconnectedDeviceId
+        this.disconnectedDeviceId = null
+        // Re-warm the LTC device if it was the one that reconnected
+        if (deviceId === this.ltcOutputDeviceId) {
+          await this._closeLtcCtx()
+          await this._warmUpLtcDevice()
+          this.callbacks.onDeviceReconnected?.(deviceId)
+        }
+        return
+      }
+
+      if (!this.playing) return
       // 'default' is always present
       if (this.musicOutputDeviceId !== 'default' && !outputIds.has(this.musicOutputDeviceId)) {
+        this.disconnectedDeviceId = this.musicOutputDeviceId
         this.pause()
         this.callbacks.onDeviceDisconnected?.(this.musicOutputDeviceId)
       } else if (this.ltcOutputDeviceId !== 'default' && !outputIds.has(this.ltcOutputDeviceId)) {
+        this.disconnectedDeviceId = this.ltcOutputDeviceId
         this.pause()
         this.callbacks.onDeviceDisconnected?.(this.ltcOutputDeviceId)
       }
@@ -141,10 +162,9 @@ export class AudioEngine {
     }
 
     // Auto-detect LTC channel
-    console.log('[loadFile] buffer loaded — channels:', this.buffer.numberOfChannels, 'duration:', this.buffer.duration.toFixed(1) + 's', 'sampleRate:', this.buffer.sampleRate)
     const detection = detectLtcChannel(this.buffer)
-    console.log('[loadFile] LTC detection — channel:', detection.channelIndex, 'confidence:', detection.confidence.toFixed(3))
     this.callbacks.onLtcConfidence(detection.confidence)
+    this.callbacks.onLtcStartTime?.(detection.ltcStartTime)
 
     if (detection.confidence >= LTC_CONFIDENCE_THRESHOLD) {
       // LTC detected — Reader mode
@@ -269,66 +289,58 @@ export class AudioEngine {
   // ════════════════════════════════════════════════════════════
 
   async play(offset?: number): Promise<void> {
-    console.log('[play] called, buffer?', !!this.buffer, 'generatorMode?', this.generatorMode, 'musicDevice:', this.musicOutputDeviceId, 'ltcDevice:', this.ltcOutputDeviceId)
-    if (!this.buffer) { console.warn('[play] NO BUFFER — aborting'); return }
+    if (!this.buffer) return
 
     const thisPlayId = ++this.playId
     this._stopPlayback()
 
     const startOffset = offset !== undefined ? offset : this.startOffset
-    console.log('[play] startOffset:', startOffset, 'playId:', thisPlayId)
 
-    // ── Music context (recreated each time — no device handle issue) ──
+    // ── Music context ──
     this.ctx = new AudioContext()
-    console.log('[play] AudioContext created, state:', this.ctx.state)
     if (this.musicOutputDeviceId && this.musicOutputDeviceId !== 'default') {
       try {
         // @ts-expect-error - setSinkId newer API
         await this.ctx.setSinkId(this.musicOutputDeviceId)
-        console.log('[play] Music setSinkId OK:', this.musicOutputDeviceId)
-      } catch (e) { console.warn('[play] Music setSinkId FAILED:', e) }
+      } catch { /**/ }
     }
+    if (this.playId !== thisPlayId) return
 
     this.musicSource = this.ctx.createBufferSource()
     this.musicSource.buffer = this.buffer
     this.musicSource.loop = this.loop
 
     if (this.generatorMode) {
-      console.log('[play] Generator mode — connecting musicSource → destination')
-      // Generator mode: play full stereo through music context (no LTC split)
       this.musicSource.connect(this.ctx.destination)
-
-      // ── LTC encoder context — generates LTC audio for VB-CABLE / BlackHole ──
-      console.log('[play] Setting up LTC context...')
-      await this._setupLtcContext()
-      if (this.playId !== thisPlayId) { console.warn('[play] RACE GUARD tripped (generator)'); return }
-      this._startLtcEncoder(startOffset)
     } else {
-      console.log('[play] Reader mode — ch split: music=', this.musicChannelIndex, 'ltc=', this.ltcChannelIndex, 'numCh=', this.buffer.numberOfChannels)
-      // LTC Reader mode: split channels, only play music channel
       const splitter = this.ctx.createChannelSplitter(this.buffer.numberOfChannels)
       this.musicSource.connect(splitter)
       const merger = this.ctx.createChannelMerger(2)
       splitter.connect(merger, this.musicChannelIndex, 0)
       splitter.connect(merger, this.musicChannelIndex, 1)
       merger.connect(this.ctx.destination)
-
-      // ── LTC context (reused — preserves VB-CABLE handle) ──
-      console.log('[play] Setting up LTC context...')
-      await this._setupLtcContext()
-      if (this.playId !== thisPlayId) { console.warn('[play] RACE GUARD tripped (reader)'); return }
-      this._startLtcSource(startOffset)
     }
 
-    // ── Start music ──
-    const when = this.ctx.currentTime + SCHEDULING_DELAY
-    this.musicSource.start(when, startOffset)
-    this.startTime = when - startOffset
+    // ── LTC context — setup before scheduling so both start at the same time ──
+    await this._setupLtcContext()
+    if (this.playId !== thisPlayId) return
+
+    // ── Schedule both music and LTC at the same wall-clock moment ──
+    const musicWhen = this.ctx.currentTime + SCHEDULING_DELAY
+    // ltcCtx has its own clock; schedule LTC at the same delay from "now"
+    const ltcWhen = this.ltcCtx ? this.ltcCtx.currentTime + SCHEDULING_DELAY : undefined
+
+    this.musicSource.start(musicWhen, startOffset)
+    this.startTime = musicWhen - startOffset
     this.startOffset = startOffset
     this.playing = true
-    console.log('[play] STARTED — when:', when, 'ctx.state:', this.ctx.state)
 
-    // Notify clock mapping baseline for MTC quarter-frame scheduling
+    if (this.generatorMode) {
+      this._startLtcEncoder(startOffset)
+    } else {
+      this._startLtcSource(startOffset, ltcWhen)
+    }
+
     this.callbacks.onPlayStarted?.(performance.now(), this.ctx.currentTime)
 
     this.musicSource.onended = () => {
@@ -400,6 +412,11 @@ export class AudioEngine {
     }
     this.ltcWorkletReady = false
     this.ltcEncoderReady = false
+    // All nodes belong to the closed context — must clear references
+    this.ltcWorkletNode = null
+    this.ltcGainNode = null
+    this.ltcEncoderNode = null
+    this.ltcSource = null
   }
 
   /**
@@ -475,17 +492,18 @@ export class AudioEngine {
   private async _setupLtcContext(): Promise<void> {
     // Reuse existing context if available
     if (this.ltcCtx && this.ltcCtx.state !== 'closed') {
-      console.log('[ltcCtx] Reusing existing context, state:', this.ltcCtx.state)
       if (this.ltcCtx.state === 'suspended') {
         await this.ltcCtx.resume()
       }
       return
     }
-    console.log('[ltcCtx] Creating new context, ltcDevice:', this.ltcOutputDeviceId)
 
-    // Create new context
+    // Create new context — old nodes are invalid, must clear them
     this.ltcCtx = new AudioContext()
     this.ltcWorkletReady = false
+    this.ltcWorkletNode = null
+    this.ltcGainNode = null
+    this.ltcEncoderNode = null
 
     // Set output sink:
     //   'default' (muted) → { type: 'none' } = worklet runs, no audio output
@@ -507,6 +525,10 @@ export class AudioEngine {
     // Load worklet modules (decoder + encoder) with retry
     this.ltcWorkletReady = await this._loadWorklet(ltcProcessorCode, 'LTC decoder')
     this.ltcEncoderReady = await this._loadWorklet(ltcEncoderCode, 'LTC encoder')
+
+    // Notify UI if critical worklet failed
+    if (!this.ltcWorkletReady) this.callbacks.onLtcError?.('worklet')
+    if (!this.ltcEncoderReady && this.generatorMode) this.callbacks.onLtcError?.('encoder')
   }
 
   /** Load an AudioWorklet module with one retry on failure. */
@@ -534,10 +556,14 @@ export class AudioEngine {
   }
 
   /**
-   * Start LTC source and connect all LTC audio nodes.
+   * Start LTC source and connect audio nodes.
+   * Reuses existing worklet node and gain if available (from previous play cycle).
    * Must be called AFTER _setupLtcContext().
+   *
+   * @param offset - playback start position in seconds
+   * @param syncWhen - optional: schedule start at this ltcCtx time to sync with music
    */
-  private _startLtcSource(offset: number): void {
+  private _startLtcSource(offset: number, syncWhen?: number): void {
     if (!this.ltcCtx || !this.buffer) return
 
     this.ltcSource = this.ltcCtx.createBufferSource()
@@ -547,49 +573,47 @@ export class AudioEngine {
     const splitter = this.ltcCtx.createChannelSplitter(this.buffer.numberOfChannels)
     this.ltcSource.connect(splitter)
 
-    // Worklet for LTC decoding (no audio output — numberOfOutputs: 0)
-    if (this.ltcWorkletReady) {
+    // Reuse existing worklet node if available (keeps decoder clock calibrated)
+    if (!this.ltcWorkletNode && this.ltcWorkletReady) {
       try {
         this.ltcWorkletNode = new AudioWorkletNode(this.ltcCtx, 'ltc-processor', {
           numberOfInputs: 1,
           numberOfOutputs: 0,
           channelCount: 1
         })
-        splitter.connect(this.ltcWorkletNode, this.ltcChannelIndex)
         this.ltcWorkletNode.port.onmessage = (e) => this._onLtcFrame(e.data)
       } catch (e) {
         console.warn('LTC worklet creation failed:', e)
         this.callbacks.onLtcError?.('worklet')
       }
     }
+    if (this.ltcWorkletNode) {
+      splitter.connect(this.ltcWorkletNode, this.ltcChannelIndex)
+    }
 
-    // Audio output path: splitter → merger (mono→stereo) → gain → destination
-    // The destination output is controlled by the context's setSinkId:
-    //   { type: 'none' } = silent    |    deviceId = routes to that device
-    this.ltcGainNode = this.ltcCtx.createGain()
+    // Reuse gain node if available, otherwise create new
+    if (!this.ltcGainNode) {
+      this.ltcGainNode = this.ltcCtx.createGain()
+      this.ltcGainNode.connect(this.ltcCtx.destination)
+    }
 
+    // Audio output: splitter → merger (mono→stereo) → gain → destination
     const merger = this.ltcCtx.createChannelMerger(2)
     splitter.connect(merger, this.ltcChannelIndex, 0)
     splitter.connect(merger, this.ltcChannelIndex, 1)
     merger.connect(this.ltcGainNode)
-    this.ltcGainNode.connect(this.ltcCtx.destination)
 
-    // Start playback
-    const when = this.ltcCtx.currentTime + SCHEDULING_DELAY
-    this.ltcStartupDeadline = when + 0.05
+    // Schedule start — use syncWhen if provided for music/LTC alignment
+    const when = syncWhen ?? (this.ltcCtx.currentTime + SCHEDULING_DELAY)
+    this.ltcStartupDeadline = when
 
-    // If seeking to a position far from where we last stopped, mute the LTC output
-    // for 250ms after the scheduled start. This prevents spurious audio from position 0
-    // (or from a previous file) reaching VB-CABLE before the correct position audio arrives.
-    // EASY_TRIGGER reads raw audio from VB-CABLE directly, so muting the gain is the only
-    // reliable way to suppress wrong-position triggers.
-    // Pause/resume (offset ≈ ltcLastStopOffset) skips the mute to avoid LTC gaps.
+    // Pause/resume: no mute. Seek: brief 50ms mute.
     const isResume = Math.abs(offset - this.ltcLastStopOffset) < 0.5
     if (isResume) {
       this.ltcGainNode.gain.value = this.ltcGainValue
     } else {
       this.ltcGainNode.gain.setValueAtTime(0, this.ltcCtx.currentTime)
-      this.ltcGainNode.gain.setValueAtTime(this.ltcGainValue, when + 0.25)
+      this.ltcGainNode.gain.setValueAtTime(this.ltcGainValue, when + 0.05)
     }
 
     this.ltcSource.start(when, offset)
@@ -614,28 +638,24 @@ export class AudioEngine {
         outputChannelCount: [1]
       })
 
-      // Gain node for output level control
-      this.ltcGainNode = this.ltcCtx.createGain()
+      // Reuse gain node if available
+      if (!this.ltcGainNode) {
+        this.ltcGainNode = this.ltcCtx.createGain()
+        this.ltcGainNode.connect(this.ltcCtx.destination)
+      }
 
-      // Mute for 250ms on seek (same protection as _startLtcSource)
-      // Prevents encoder from outputting wrong-position LTC before it settles
       const when = this.ltcCtx.currentTime + SCHEDULING_DELAY
       const isResume = Math.abs(offset - this.ltcLastStopOffset) < 0.5
       if (isResume) {
         this.ltcGainNode.gain.value = this.ltcGainValue
       } else {
         this.ltcGainNode.gain.setValueAtTime(0, this.ltcCtx.currentTime)
-        this.ltcGainNode.gain.setValueAtTime(this.ltcGainValue, when + 0.25)
+        this.ltcGainNode.gain.setValueAtTime(this.ltcGainValue, when + 0.05)
       }
 
-      // Encoder → gain → destination (VB-CABLE / BlackHole)
       this.ltcEncoderNode.connect(this.ltcGainNode)
-      this.ltcGainNode.connect(this.ltcCtx.destination)
 
-      // Calculate the starting frame number from offset + generatorStartTC
       const startFrameNumber = this.generatorStartFrames + Math.floor(offset * this.generatorFps)
-
-      // Send config to start generating
       this.ltcEncoderNode.port.postMessage({
         type: 'config',
         fps: this.generatorFps,
@@ -649,16 +669,26 @@ export class AudioEngine {
   }
 
   /**
-   * Tear down LTC source nodes (but keep ltcCtx alive).
+   * Stop LTC source only — keep worklet node and gain alive for instant resume.
+   * The decoder worklet keeps its clock calibration across pause/play cycles.
    */
-  private _teardownLtcNodes(): void {
+  private _stopLtcSource(): void {
     if (this.ltcSource) { try { this.ltcSource.stop() } catch { /**/ } this.ltcSource = null }
-    if (this.ltcWorkletNode) { this.ltcWorkletNode.port.onmessage = null; try { this.ltcWorkletNode.disconnect() } catch { /**/ } this.ltcWorkletNode = null }
+    // Disconnect worklet input (source is gone) but keep the node alive
+    if (this.ltcWorkletNode) { try { this.ltcWorkletNode.disconnect() } catch { /**/ } }
     if (this.ltcEncoderNode) {
       try { this.ltcEncoderNode.port.postMessage({ type: 'stop' }) } catch { /**/ }
       try { this.ltcEncoderNode.disconnect() } catch { /**/ }
       this.ltcEncoderNode = null
     }
+  }
+
+  /**
+   * Full teardown — destroy all LTC nodes (for device change, file load, shutdown).
+   */
+  private _teardownLtcNodes(): void {
+    this._stopLtcSource()
+    if (this.ltcWorkletNode) { this.ltcWorkletNode.port.onmessage = null; try { this.ltcWorkletNode.disconnect() } catch { /**/ } this.ltcWorkletNode = null }
     if (this.ltcGainNode) { try { this.ltcGainNode.disconnect() } catch { /**/ } this.ltcGainNode = null }
   }
 
@@ -682,8 +712,8 @@ export class AudioEngine {
     if (this.musicSource) { this.musicSource.onended = null; try { this.musicSource.stop() } catch { /**/ } this.musicSource = null }
     if (this.ctx) { try { this.ctx.close() } catch { /**/ } this.ctx = null }
 
-    // Stop LTC sources (but keep ltcCtx alive for device handle)
-    this._teardownLtcNodes()
+    // Stop LTC source only — keep worklet + gain alive for instant resume
+    this._stopLtcSource()
   }
 
   // ════════════════════════════════════════════════════════════
@@ -700,75 +730,24 @@ export class AudioEngine {
     if (!fps || fps <= 0 || !isFinite(fps)) return  // guard against invalid FPS
     this.currentFps = fps
 
-    // #1 fix: use integer arithmetic for 29.97 DF to avoid floating-point drift
     const isDropFrame = this.forceFpsValue !== null
       ? this.forceFpsValue === 29.97
       : raw.dropFrame
-    const fpsInt = Math.round(fps)  // 30 for 29.97, 25 for 25, etc.
+    const fpsInt = Math.round(fps)
 
-    // Convert raw HH:MM:SS:FF to absolute frame count using integer math
-    let totalFrames: number
-    if (isDropFrame) {
-      const D = 2
-      const framesPerMin = fpsInt * 60 - D           // 1798
-      const framesPer10Min = framesPerMin * 10 + D   // 17982
-      const framesPerHour = framesPer10Min * 6        // 107892
-      const tenMinBlocks = Math.floor(raw.minutes / 10)
-      const mInBlock = raw.minutes % 10
-      totalFrames = raw.hours * framesPerHour + tenMinBlocks * framesPer10Min
-      if (mInBlock === 0) {
-        totalFrames += raw.seconds * fpsInt + raw.frames
-      } else {
-        totalFrames += fpsInt * 60 + (mInBlock - 1) * framesPerMin + raw.seconds * fpsInt + raw.frames
-      }
-    } else {
-      totalFrames = raw.hours * 3600 * fpsInt
-        + raw.minutes * 60 * fpsInt
-        + raw.seconds * fpsInt
-        + raw.frames
-    }
-
-    totalFrames += this.offsetFrames
+    // Convert raw HH:MM:SS:FF → frame count → apply offset → convert back
+    // Uses shared timecodeConvert module (single source of truth for DF math)
+    const tcStr = [raw.hours, raw.minutes, raw.seconds, raw.frames]
+      .map(n => String(n).padStart(2, '0')).join(isDropFrame ? ';' : ':')
+    let totalFrames = tcToFrames(tcStr, fps) + this.offsetFrames
     totalFrames = Math.max(0, totalFrames)
 
-    // Convert back to HH:MM:SS:FF using integer math
-    let h: number, m: number, s: number, f: number
-    if (isDropFrame) {
-      const D = 2
-      const framesPerMin = fpsInt * 60 - D
-      const framesPer10Min = framesPerMin * 10 + D
-      const framesPerHour = framesPer10Min * 6
-
-      h = Math.floor(totalFrames / framesPerHour) % 24
-      let remaining = totalFrames - h * framesPerHour
-      const tenMinBlk = Math.floor(remaining / framesPer10Min)
-      remaining -= tenMinBlk * framesPer10Min
-
-      let mInBlk: number
-      if (remaining < fpsInt * 60) {
-        mInBlk = 0
-      } else {
-        remaining -= fpsInt * 60
-        mInBlk = 1 + Math.floor(remaining / framesPerMin)
-        remaining -= (mInBlk - 1) * framesPerMin
-      }
-      m = tenMinBlk * 10 + mInBlk
-      const dropAdj = mInBlk > 0 ? remaining + D : remaining
-      s = Math.floor(dropAdj / fpsInt)
-      f = dropAdj - s * fpsInt
-    } else {
-      h = Math.floor(totalFrames / (3600 * fpsInt)) % 24
-      let rem = totalFrames - h * 3600 * fpsInt
-      m = Math.floor(rem / (60 * fpsInt))
-      rem -= m * 60 * fpsInt
-      s = Math.floor(rem / fpsInt)
-      f = rem - s * fpsInt
-    }
+    const { h, m, s, f } = framesToTc(totalFrames, fps)
 
     const tc: TimecodeFrame = {
-      hours: h % 24,
-      minutes: m % 60,
-      seconds: s % 60,
+      hours: h,
+      minutes: m,
+      seconds: s,
       frames: Math.min(f, fpsInt - 1),
       fps,
       dropFrame: isDropFrame

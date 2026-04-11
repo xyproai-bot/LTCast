@@ -119,7 +119,9 @@ autoUpdater.on('error', async (err) => {
   // Suppress network errors silently — offline is normal in production environments
   const code = (err as NodeJS.ErrnoException).code
   if (code === 'ENOTFOUND' || code === 'ETIMEDOUT' || code === 'ECONNREFUSED' ||
-      code === 'ENETUNREACH' || code === 'EAI_AGAIN') return
+      code === 'ENETUNREACH' || code === 'EAI_AGAIN' || code === 'ECONNRESET' ||
+      code === 'EPIPE' || err.message.includes('ERR_CONNECTION_CLOSED') ||
+      err.message.includes('net::ERR_')) return
   const wasDownload = isDownloadInProgress
   const wasManual = isManualUpdateCheck
   isManualUpdateCheck = false
@@ -507,6 +509,21 @@ app.whenReady().then(() => {
 
   const win = createWindow()
   buildMenu(win, presetsDir)
+
+  // Renderer crash recovery — reload if renderer process crashes or becomes unresponsive
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error('Renderer process gone:', details.reason)
+    if (details.reason !== 'clean-exit') {
+      // Brief delay to avoid tight reload loop on repeated crashes
+      setTimeout(() => { try { win.webContents.reload() } catch { /**/ } }, 1000)
+    }
+  })
+  win.on('unresponsive', () => {
+    console.warn('Window became unresponsive, waiting...')
+  })
+  win.on('responsive', () => {
+    console.log('Window became responsive again')
+  })
 
   // ── Handle .ltcast file opened via double-click ──────────
 

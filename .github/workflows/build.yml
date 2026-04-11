@@ -22,6 +22,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Run tests
+        run: npx vitest run
+
       - name: Build and publish (Windows)
         run: |
           if ("${{ github.ref }}" -like "refs/tags/*") {
@@ -55,6 +58,9 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Run tests
+        run: npx vitest run
 
       - name: Build Universal macOS app
         run: |
