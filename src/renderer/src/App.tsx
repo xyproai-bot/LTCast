@@ -629,14 +629,13 @@ export default function App(): React.JSX.Element {
       const song = s.setlist[s.activeSetlistIndex]
       const cues = song?.midiCues ?? []
       if (cues.length > 0) {
-        const currentFrames = tc.hours * 3600 * Math.round(tc.fps)
-          + tc.minutes * 60 * Math.round(tc.fps)
-          + tc.seconds * Math.round(tc.fps)
-          + tc.frames
+        const tcStr = [tc.hours, tc.minutes, tc.seconds, tc.frames]
+          .map(n => String(n).padStart(2, '0')).join(tc.dropFrame ? ';' : ':')
+        const currentFrames = tcToFrames(tcStr, tc.fps)
         for (const cue of cues) {
           if (!cue.enabled) continue
           if (triggeredCueIds.current.has(cue.id)) continue
-          const cueFrames = tcToFrames(cue.triggerTimecode, tc.fps)
+          const cueFrames = tcToFrames(cue.triggerTimecode, tc.fps) + (cue.offsetFrames ?? 0)
           if (cueFrames <= currentFrames) {
             triggeredCueIds.current.add(cue.id)
             // Fire the cue
@@ -948,12 +947,11 @@ export default function App(): React.JSX.Element {
       const song = s.setlist[s.activeSetlistIndex]
       const cues = song?.midiCues ?? []
       if (tc) {
-        const seekFrames = tc.hours * 3600 * Math.round(tc.fps)
-          + tc.minutes * 60 * Math.round(tc.fps)
-          + tc.seconds * Math.round(tc.fps)
-          + tc.frames
+        const seekTcStr = [tc.hours, tc.minutes, tc.seconds, tc.frames]
+          .map(n => String(n).padStart(2, '0')).join(tc.dropFrame ? ';' : ':')
+        const seekFrames = tcToFrames(seekTcStr, tc.fps)
         triggeredCueIds.current = new Set(
-          cues.filter(c => tcToFrames(c.triggerTimecode, tc.fps) < seekFrames).map(c => c.id)
+          cues.filter(c => (tcToFrames(c.triggerTimecode, tc.fps) + (c.offsetFrames ?? 0)) < seekFrames).map(c => c.id)
         )
       } else {
         triggeredCueIds.current = new Set()

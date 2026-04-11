@@ -511,11 +511,17 @@ app.whenReady().then(() => {
   buildMenu(win, presetsDir)
 
   // Renderer crash recovery — reload if renderer process crashes or becomes unresponsive
+  let crashCount = 0
   win.webContents.on('render-process-gone', (_event, details) => {
     console.error('Renderer process gone:', details.reason)
     if (details.reason !== 'clean-exit') {
-      // Brief delay to avoid tight reload loop on repeated crashes
-      setTimeout(() => { try { win.webContents.reload() } catch { /**/ } }, 1000)
+      crashCount++
+      if (crashCount <= 3) {
+        setTimeout(() => { try { win.webContents.reload() } catch { /**/ } }, 1000)
+      } else {
+        dialog.showErrorBox('LTCast Error',
+          'The application crashed repeatedly and cannot recover.\nPlease restart LTCast manually.')
+      }
     }
   })
   win.on('unresponsive', () => {

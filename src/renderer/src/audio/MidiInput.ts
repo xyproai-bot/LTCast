@@ -32,9 +32,11 @@ export class MidiInput {
       if (!navigator.requestMIDIAccess) throw new Error('Web MIDI API not supported')
       this.midiAccess = await navigator.requestMIDIAccess({ sysex: false })
     }
-    this.midiAccess.onstatechange = () => {
+    // Use addEventListener instead of onstatechange to avoid overwriting
+    // MtcOutput's handler (they share the same MIDIAccess instance)
+    this.midiAccess.addEventListener('statechange', () => {
       this.onPortsChanged?.()
-    }
+    })
   }
 
   getInputPorts(): MidiPort[] {
