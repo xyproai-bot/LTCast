@@ -29,16 +29,47 @@ export interface MidiPort {
 let _setlistIdCounter = Date.now()
 export function nextSetlistId(): string { return `sl-${++_setlistIdCounter}` }
 
+export interface MidiCuePoint {
+  id: string
+  triggerTimecode: string          // HH:MM:SS:FF absolute timecode
+  messageType: 'program-change' | 'note-on' | 'control-change'
+  channel: number                  // 1-16
+  data1: number                    // Program/Note/CC number (0-127)
+  data2?: number                   // Velocity/CC value (0-127); not used for PC
+  label?: string                   // User label (e.g. "Scene A")
+  enabled: boolean                 // mute/unmute
+}
+
+export interface MidiMapping {
+  id: string
+  trigger: {
+    type: 'note-on' | 'control-change' | 'program-change'
+    channel: number    // 1-16, or 0 = any
+    data1: number      // note/cc/program number
+  }
+  action: 'play' | 'pause' | 'stop' | 'play-pause' | 'next' | 'prev' | 'goto-song'
+  actionParam?: number // for goto-song: setlist index (0-based)
+}
+
 export interface SetlistItem {
   id: string
   path: string
   name: string
   offsetFrames?: number  // per-song offset override; undefined = use global
+  notes?: string         // user notes (e.g. "間奏有換場")
+  midiCues?: MidiCuePoint[]  // per-song MIDI cue points
+}
+
+export interface WaveformMarker {
+  id: string
+  time: number       // seconds
+  label: string      // user-defined name
+  color?: string     // optional color (default: cyan)
 }
 
 export interface PresetData {
-  lang: 'en' | 'zh'
-  rightTab: 'devices' | 'setlist'
+  lang: 'en' | 'zh' | 'ja'
+  rightTab: 'devices' | 'setlist' | 'cues'
   offsetFrames: number
   loop: boolean
   loopA?: number | null
@@ -56,6 +87,17 @@ export interface PresetData {
   artnetEnabled?: boolean
   artnetTargetIp?: string
   mtcMode?: 'quarter-frame' | 'full-frame'
+  oscEnabled?: boolean
+  oscTargetIp?: string
+  oscTargetPort?: number
+  autoAdvance?: boolean
+  autoAdvanceGap?: number
+  // Sprint 2: MIDI Cue System
+  selectedCueMidiPort?: string | null
+  midiInputPort?: string | null
+  midiMappings?: MidiMapping[]
+  // Sprint 4: Waveform Markers
+  markers?: Record<string, WaveformMarker[]>
   version?: number
 }
 
@@ -81,7 +123,7 @@ function ensureSetlistIds(data: PresetData): PresetData {
   return data
 }
 
-const CURRENT_PRESET_VERSION = 1
+const CURRENT_PRESET_VERSION = 5
 
 /** Warn once if a preset was created by a newer version of the app. */
 function warnIfNewerVersion(data: PresetData): void {
@@ -98,7 +140,31 @@ function migratePreset(data: PresetData): PresetData {
   if (version < 1) {
     data.mtcMode = data.mtcMode ?? 'full-frame' // old presets keep full-frame behavior
   }
-  // Future: if (version < 2) { ... }
+  // version 1 → 2: add autoAdvance defaults
+  if (version < 2) {
+    data.autoAdvance = data.autoAdvance ?? false
+    data.autoAdvanceGap = data.autoAdvanceGap ?? 2
+  }
+  // version 2 → 3: add MIDI cue system defaults
+  if (version < 3) {
+    data.selectedCueMidiPort = data.selectedCueMidiPort ?? null
+    data.midiInputPort = data.midiInputPort ?? null
+    data.midiMappings = data.midiMappings ?? []
+  }
+  // version 3 → 4: add OSC output defaults
+  if (version < 4) {
+    data.oscEnabled = data.oscEnabled ?? false
+    data.oscTargetIp = data.oscTargetIp ?? '127.0.0.1'
+    data.oscTargetPort = data.oscTargetPort ?? 8000
+  }
+  // version 4 → 5: add waveform markers + ja language support
+  if (version < 5) {
+    data.markers = data.markers ?? {}
+    // Migrate 'ja' lang: was not valid before, keep as-is or default to 'en'
+    if (!['en', 'zh', 'ja'].includes(data.lang as string)) {
+      data.lang = 'en'
+    }
+  }
   data.version = CURRENT_PRESET_VERSION
   return data
 }
@@ -108,7 +174,9 @@ function buildPresetData(s: Pick<AppState,
   'lang' | 'rightTab' | 'offsetFrames' | 'loop' | 'loopA' | 'loopB' | 'musicOutputDeviceId' |
   'ltcOutputDeviceId' | 'ltcGain' | 'selectedMidiPort' | 'forceFps' |
   'ltcChannel' | 'setlist' | 'generatorStartTC' | 'generatorFps' | 'tcGeneratorMode' |
-  'artnetEnabled' | 'artnetTargetIp' | 'mtcMode'>): PresetData {
+  'artnetEnabled' | 'artnetTargetIp' | 'mtcMode' | 'autoAdvance' | 'autoAdvanceGap' |
+  'selectedCueMidiPort' | 'midiInputPort' | 'midiMappings' |
+  'oscEnabled' | 'oscTargetIp' | 'oscTargetPort' | 'markers'>): PresetData {
   return {
     version: CURRENT_PRESET_VERSION,
     lang: s.lang, rightTab: s.rightTab, offsetFrames: s.offsetFrames,
@@ -120,7 +188,12 @@ function buildPresetData(s: Pick<AppState,
     generatorStartTC: s.generatorStartTC, generatorFps: s.generatorFps,
     tcGeneratorMode: s.tcGeneratorMode,
     artnetEnabled: s.artnetEnabled, artnetTargetIp: s.artnetTargetIp,
-    mtcMode: s.mtcMode
+    mtcMode: s.mtcMode,
+    autoAdvance: s.autoAdvance, autoAdvanceGap: s.autoAdvanceGap,
+    selectedCueMidiPort: s.selectedCueMidiPort,
+    midiInputPort: s.midiInputPort, midiMappings: s.midiMappings,
+    oscEnabled: s.oscEnabled, oscTargetIp: s.oscTargetIp, oscTargetPort: s.oscTargetPort,
+    markers: s.markers
   }
 }
 
@@ -172,9 +245,16 @@ export interface AppState {
   artnetEnabled: boolean
   artnetTargetIp: string          // broadcast IP, default '255.255.255.255'
 
-  // BPM (tap-to-detect)
+  // OSC Output
+  oscEnabled: boolean
+  oscTargetIp: string             // unicast IP, default '127.0.0.1'
+  oscTargetPort: number           // default 8000
+
+  // BPM
   tappedBpm: number | null
+  detectedBpm: number | null
   setTappedBpm: (bpm: number | null) => void
+  setDetectedBpm: (bpm: number | null) => void
 
   // Video import
   videoFileName: string | null
@@ -191,10 +271,23 @@ export interface AppState {
   setlist: SetlistItem[]
   activeSetlistIndex: number | null
   previousSetlist: { setlist: SetlistItem[]; activeIndex: number | null } | null
+  autoAdvance: boolean
+  autoAdvanceGap: number  // seconds, 0–30
+
+  // MIDI Cue Output (Sprint 2)
+  selectedCueMidiPort: string | null
+
+  // MIDI Input (Sprint 2)
+  midiInputPort: string | null
+  midiMappings: MidiMapping[]
+  midiInputs: MidiPort[]
+
+  // Waveform Markers (Sprint 4)
+  markers: Record<string, WaveformMarker[]>
 
   // UI
-  rightTab: 'devices' | 'setlist'
-  lang: 'en' | 'zh'
+  rightTab: 'devices' | 'setlist' | 'cues'
+  lang: 'en' | 'zh' | 'ja'
 
   // Project
   presetName: string | null
@@ -232,6 +325,9 @@ export interface AppState {
   setMtcMode: (mode: 'quarter-frame' | 'full-frame') => void
   setArtnetEnabled: (enabled: boolean) => void
   setArtnetTargetIp: (ip: string) => void
+  setOscEnabled: (enabled: boolean) => void
+  setOscTargetIp: (ip: string) => void
+  setOscTargetPort: (port: number) => void
   setVideoFile: (name: string | null, waveform: Float32Array | null, duration: number) => void
   setVideoOffsetSeconds: (offset: number) => void
   setVideoStartTimecode: (tc: string | null) => void
@@ -247,7 +343,23 @@ export interface AppState {
   sortSetlist: (mode: SortMode) => void
   batchUpdateSetlistPaths: (updates: Array<{ index: number; newPath: string }>) => void
   setSetlistItemOffset: (index: number, offsetFrames: number | undefined) => void
-  setLang: (lang: 'en' | 'zh') => void
+  setSetlistItemNotes: (index: number, notes: string | undefined) => void
+  setSetlistItemMidiCues: (index: number, cues: MidiCuePoint[]) => void
+  setRightTab: (tab: 'devices' | 'setlist' | 'cues') => void
+  setLang: (lang: 'en' | 'zh' | 'ja') => void
+  setAutoAdvance: (enabled: boolean) => void
+  // Waveform Markers (Sprint 4)
+  addMarker: (filePath: string, marker: WaveformMarker) => void
+  removeMarker: (filePath: string, markerId: string) => void
+  updateMarker: (filePath: string, markerId: string, updates: Partial<WaveformMarker>) => void
+  setAutoAdvanceGap: (gap: number) => void
+  setSelectedCueMidiPort: (port: string | null) => void
+  setMidiInputPort: (port: string | null) => void
+  setMidiMappings: (mappings: MidiMapping[]) => void
+  addMidiMapping: (mapping: MidiMapping) => void
+  updateMidiMapping: (id: string, mapping: Partial<MidiMapping>) => void
+  removeMidiMapping: (id: string) => void
+  setMidiInputs: (ports: MidiPort[]) => void
 
   // Project actions
   newPreset: () => void
@@ -302,7 +414,12 @@ export const useStore = create<AppState>()(persist((set) => ({
   artnetEnabled: false,
   artnetTargetIp: '255.255.255.255',
 
+  oscEnabled: false,
+  oscTargetIp: '127.0.0.1',
+  oscTargetPort: 8000,
+
   tappedBpm: null,
+  detectedBpm: null,
 
   videoFileName: null,
   videoWaveform: null,
@@ -316,6 +433,15 @@ export const useStore = create<AppState>()(persist((set) => ({
   setlist: [],
   activeSetlistIndex: null,
   previousSetlist: null,
+  autoAdvance: false,
+  autoAdvanceGap: 2,
+
+  selectedCueMidiPort: null,
+  midiInputPort: null,
+  midiMappings: [],
+  midiInputs: [],
+
+  markers: {},
 
   rightTab: 'devices',
   lang: 'en',
@@ -380,7 +506,11 @@ export const useStore = create<AppState>()(persist((set) => ({
   setMtcMode: (mtcMode) => set({ mtcMode, presetDirty: true }),
   setArtnetEnabled: (artnetEnabled) => set({ artnetEnabled, presetDirty: true }),
   setArtnetTargetIp: (artnetTargetIp) => set({ artnetTargetIp, presetDirty: true }),
+  setOscEnabled: (oscEnabled) => set({ oscEnabled, presetDirty: true }),
+  setOscTargetIp: (oscTargetIp) => set({ oscTargetIp, presetDirty: true }),
+  setOscTargetPort: (oscTargetPort) => set({ oscTargetPort, presetDirty: true }),
   setTappedBpm: (tappedBpm) => set({ tappedBpm }),
+  setDetectedBpm: (detectedBpm) => set({ detectedBpm }),
   setVideoFile: (videoFileName, videoWaveform, videoDuration) =>
     set({ videoFileName, videoWaveform, videoDuration }),
   setVideoOffsetSeconds: (videoOffsetSeconds) => set({ videoOffsetSeconds }),
@@ -502,7 +632,57 @@ export const useStore = create<AppState>()(persist((set) => ({
     setlist[index] = { ...setlist[index], offsetFrames: clamped }
     return { setlist, presetDirty: true }
   }),
+  setSetlistItemNotes: (index: number, notes: string | undefined) => set((s) => {
+    if (index < 0 || index >= s.setlist.length) return s
+    const setlist = [...s.setlist]
+    setlist[index] = { ...setlist[index], notes: notes || undefined }
+    return { setlist, presetDirty: true }
+  }),
+  setSetlistItemMidiCues: (index: number, cues: MidiCuePoint[]) => set((s) => {
+    if (index < 0 || index >= s.setlist.length) return s
+    const setlist = [...s.setlist]
+    setlist[index] = { ...setlist[index], midiCues: cues }
+    return { setlist, presetDirty: true }
+  }),
+  setRightTab: (rightTab) => set({ rightTab }),
   setLang: (lang) => set({ lang, presetDirty: true }),
+  setAutoAdvance: (autoAdvance) => set({ autoAdvance, presetDirty: true }),
+  setAutoAdvanceGap: (autoAdvanceGap) => set({ autoAdvanceGap: Math.max(0, Math.min(30, autoAdvanceGap)), presetDirty: true }),
+  setSelectedCueMidiPort: (selectedCueMidiPort) => set({ selectedCueMidiPort, presetDirty: true }),
+  setMidiInputPort: (midiInputPort) => set({ midiInputPort, presetDirty: true }),
+  setMidiMappings: (midiMappings) => set({ midiMappings, presetDirty: true }),
+  addMidiMapping: (mapping) => set((s) => ({ midiMappings: [...s.midiMappings, mapping], presetDirty: true })),
+  updateMidiMapping: (id, partial) => set((s) => ({
+    midiMappings: s.midiMappings.map(m => m.id === id ? { ...m, ...partial } : m),
+    presetDirty: true
+  })),
+  removeMidiMapping: (id) => set((s) => ({
+    midiMappings: s.midiMappings.filter(m => m.id !== id),
+    presetDirty: true
+  })),
+  setMidiInputs: (midiInputs) => set({ midiInputs }),
+
+  addMarker: (filePath, marker) => set((s) => ({
+    markers: {
+      ...s.markers,
+      [filePath]: [...(s.markers[filePath] ?? []), marker]
+    },
+    presetDirty: true
+  })),
+  removeMarker: (filePath, markerId) => set((s) => ({
+    markers: {
+      ...s.markers,
+      [filePath]: (s.markers[filePath] ?? []).filter(m => m.id !== markerId)
+    },
+    presetDirty: true
+  })),
+  updateMarker: (filePath, markerId, updates) => set((s) => ({
+    markers: {
+      ...s.markers,
+      [filePath]: (s.markers[filePath] ?? []).map(m => m.id === markerId ? { ...m, ...updates } : m)
+    },
+    presetDirty: true
+  })),
 
   newPreset: () => {
     set({
@@ -515,6 +695,7 @@ export const useStore = create<AppState>()(persist((set) => ({
       timecode: null,
       detectedFps: null,
       tappedBpm: null,
+      detectedBpm: null,
       timecodeLookup: [],
       // Clear video
       videoFileName: null,
@@ -546,7 +727,16 @@ export const useStore = create<AppState>()(persist((set) => ({
       generatorFps: 25,
       mtcMode: 'quarter-frame',
       artnetEnabled: false,
-      artnetTargetIp: '255.255.255.255'
+      artnetTargetIp: '255.255.255.255',
+      autoAdvance: false,
+      autoAdvanceGap: 2,
+      selectedCueMidiPort: null,
+      midiInputPort: null,
+      midiMappings: [],
+      oscEnabled: false,
+      oscTargetIp: '127.0.0.1',
+      oscTargetPort: 8000,
+      markers: {}
     })
   },
 
@@ -606,7 +796,7 @@ export const useStore = create<AppState>()(persist((set) => ({
       filePath: null, fileName: null, duration: 0,
       playState: 'stopped', currentTime: 0,
       timecode: null, detectedFps: null,
-      tappedBpm: null, timecodeLookup: [],
+      tappedBpm: null, detectedBpm: null, timecodeLookup: [],
       videoFileName: null, videoWaveform: null, videoDuration: 0,
       videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false,
       tcGeneratorMode: false, ltcConfidence: 0, ltcSignalOk: false, detectedLtcChannel: null
@@ -634,7 +824,7 @@ export const useStore = create<AppState>()(persist((set) => ({
         filePath: null, fileName: null, duration: 0,
         playState: 'stopped', currentTime: 0,
         timecode: null, detectedFps: null,
-        tappedBpm: null, timecodeLookup: [],
+        tappedBpm: null, detectedBpm: null, timecodeLookup: [],
         videoFileName: null, videoWaveform: null, videoDuration: 0,
         videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false,
         tcGeneratorMode: false, ltcConfidence: 0, ltcSignalOk: false, detectedLtcChannel: null
@@ -668,7 +858,7 @@ export const useStore = create<AppState>()(persist((set) => ({
       filePath: null, fileName: null, duration: 0,
       playState: 'stopped', currentTime: 0,
       timecode: null, detectedFps: null,
-      tappedBpm: null, timecodeLookup: [],
+      tappedBpm: null, detectedBpm: null, timecodeLookup: [],
       videoFileName: null, videoWaveform: null, videoDuration: 0,
       videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false,
       // Reset runtime detection state so old session state doesn't bleed into new preset
@@ -696,7 +886,11 @@ export const useStore = create<AppState>()(persist((set) => ({
       ltcChannel: 'auto', setlist: [], activeSetlistIndex: null,
       presetName: null, presetPath: null, presetDirty: false,
       generatorStartTC: '01:00:00:00', generatorFps: 25,
-      mtcMode: 'quarter-frame', artnetEnabled: false, artnetTargetIp: '255.255.255.255'
+      mtcMode: 'quarter-frame', artnetEnabled: false, artnetTargetIp: '255.255.255.255',
+      autoAdvance: false, autoAdvanceGap: 2,
+      selectedCueMidiPort: null, midiInputPort: null, midiMappings: [],
+      oscEnabled: false, oscTargetIp: '127.0.0.1', oscTargetPort: 8000,
+      markers: {}
     })
   },
 
@@ -746,7 +940,7 @@ export const useStore = create<AppState>()(persist((set) => ({
       filePath: null, fileName: null, duration: 0,
       playState: 'stopped', currentTime: 0,
       timecode: null, detectedFps: null,
-      tappedBpm: null, timecodeLookup: [],
+      tappedBpm: null, detectedBpm: null, timecodeLookup: [],
       videoFileName: null, videoWaveform: null, videoDuration: 0,
       videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false,
       tcGeneratorMode: false, ltcConfidence: 0, ltcSignalOk: false, detectedLtcChannel: null
@@ -773,6 +967,15 @@ export const useStore = create<AppState>()(persist((set) => ({
     mtcMode: state.mtcMode,
     artnetEnabled: state.artnetEnabled,
     artnetTargetIp: state.artnetTargetIp,
+    autoAdvance: state.autoAdvance,
+    autoAdvanceGap: state.autoAdvanceGap,
+    selectedCueMidiPort: state.selectedCueMidiPort,
+    midiInputPort: state.midiInputPort,
+    midiMappings: state.midiMappings,
+    oscEnabled: state.oscEnabled,
+    oscTargetIp: state.oscTargetIp,
+    oscTargetPort: state.oscTargetPort,
+    markers: state.markers,
     presetPath: state.presetPath,
     presetName: state.presetName,
     // Crash recovery: persist last played file so we can restore on relaunch

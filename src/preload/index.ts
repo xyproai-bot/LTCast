@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   openMultipleAudioDialog: () => ipcRenderer.invoke('open-multiple-audio-dialog'),
   readAudioFile: (path: string) => ipcRenderer.invoke('read-audio-file', path),
+  getAudioDurations: (paths: string[]) => ipcRenderer.invoke('get-audio-durations', paths),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   openVideoDialog: () => ipcRenderer.invoke('open-video-dialog'),
   extractAudioFromVideo: (path: string) => ipcRenderer.invoke('extract-audio-from-video', path),
@@ -29,6 +30,18 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('package-project', name, data, audioPaths),
   importProject: () => ipcRenderer.invoke('import-project'),
 
+  // Export: save CSV (setlist) via save dialog
+  saveCsvDialog: (csvContent: string, defaultName: string) =>
+    ipcRenderer.invoke('save-csv-dialog', csvContent, defaultName),
+
+  // Import: open CSV (setlist) via open dialog, returns file content as string
+  openCsvDialog: () =>
+    ipcRenderer.invoke('open-csv-dialog'),
+
+  // Export: save WAV (LTC) via save dialog
+  saveWavDialog: (buffer: ArrayBuffer, defaultName: string) =>
+    ipcRenderer.invoke('save-wav-dialog', buffer, defaultName),
+
   // Get filesystem path for a dragged File object (Electron 32+ requires webUtils)
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
 
@@ -43,6 +56,16 @@ contextBridge.exposeInMainWorld('api', {
   artnetStop: () => ipcRenderer.invoke('artnet-stop'),
   artnetSendTc: (hours: number, minutes: number, seconds: number, frames: number, fps: number, targetIp: string) =>
     ipcRenderer.send('artnet-send-tc', hours, minutes, seconds, frames, fps, targetIp),
+
+  // OSC Output
+  oscStart: () => ipcRenderer.invoke('osc-start'),
+  oscStop: () => ipcRenderer.invoke('osc-stop'),
+  oscSendTc: (hours: number, minutes: number, seconds: number, frames: number, fps: number, targetIp: string, port: number) =>
+    ipcRenderer.send('osc-send-tc', hours, minutes, seconds, frames, fps, targetIp, port),
+  oscSendTransport: (state: string, targetIp: string, port: number) =>
+    ipcRenderer.send('osc-send-transport', state, targetIp, port),
+  oscSendSong: (name: string, index: number, targetIp: string, port: number) =>
+    ipcRenderer.send('osc-send-song', name, index, targetIp, port),
 
   // Menu command listeners
   onMenuCommand: (channel: string, callback: (...args: unknown[]) => void) => {

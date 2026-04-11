@@ -11,8 +11,10 @@ interface DetectionResult {
 }
 
 /**
- * Analyzes a short segment (first 2 seconds) of each channel.
- * Returns the channel index most likely to contain LTC, or -1 if none found.
+ * Analyzes multiple segments across the entire file to detect LTC.
+ * Scans: first 2s, then every 30s throughout the file.
+ * If LTC appears anywhere (e.g. music for 3 min then LTC starts),
+ * it will still be detected.
  */
 export function detectLtcChannel(buffer: AudioBuffer): DetectionResult {
   const sampleRate = buffer.sampleRate
@@ -21,17 +23,37 @@ export function detectLtcChannel(buffer: AudioBuffer): DetectionResult {
   // A mono file can never have a dedicated LTC channel separate from music
   if (channels === 1) return { channelIndex: 0, confidence: 0 }
 
-  // Analyze first 2 seconds (or whole buffer if shorter)
-  const analyzeLength = Math.min(sampleRate * 2, buffer.length)
+  // Build list of sample offsets to analyze (2-second windows)
+  const windowLen = Math.min(sampleRate * 2, buffer.length)
+  const offsets: number[] = [0] // always check the start
+  // Then check every 30 seconds throughout the file
+  const step = sampleRate * 30
+  for (let pos = step; pos + windowLen <= buffer.length; pos += step) {
+    offsets.push(pos)
+  }
+  // Also check near the end if not already covered
+  const endOffset = Math.max(0, buffer.length - windowLen)
+  if (endOffset > 0 && !offsets.some(o => Math.abs(o - endOffset) < sampleRate * 5)) {
+    offsets.push(endOffset)
+  }
 
   let bestChannel = 0
   let bestScore = -1
 
   for (let ch = 0; ch < channels; ch++) {
-    const data = buffer.getChannelData(ch).slice(0, analyzeLength)
-    const score = scoreLtcLikelihood(data, sampleRate)
-    if (score > bestScore) {
-      bestScore = score
+    const fullData = buffer.getChannelData(ch)
+    let channelBestScore = 0
+
+    // Check each window — take the highest score found anywhere in the file
+    for (const offset of offsets) {
+      const end = Math.min(offset + windowLen, buffer.length)
+      const segment = fullData.slice(offset, end)
+      const score = scoreLtcLikelihood(segment, sampleRate)
+      if (score > channelBestScore) channelBestScore = score
+    }
+
+    if (channelBestScore > bestScore) {
+      bestScore = channelBestScore
       bestChannel = ch
     }
   }

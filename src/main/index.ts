@@ -180,6 +180,52 @@ autoUpdater.on('update-downloaded', async (info) => {
 })
 
 // ════════════════════════════════════════════════════════════
+// OSC Output — UDP sender (user-configured port, default 8000)
+// ════════════════════════════════════════════════════════════
+
+let oscSocket: dgram.Socket | null = null
+
+function oscString(str: string): Buffer {
+  const buf = Buffer.from(str + '\0', 'ascii')
+  const rem = buf.length % 4
+  return rem === 0 ? buf : Buffer.concat([buf, Buffer.alloc(4 - rem)])
+}
+
+function oscInt32(val: number): Buffer {
+  const buf = Buffer.alloc(4)
+  buf.writeInt32BE(val, 0)
+  return buf
+}
+
+function oscMessage(address: string, types: string, ...args: (number | string)[]): Buffer {
+  const parts: Buffer[] = [oscString(address), oscString(',' + types)]
+  for (let i = 0; i < args.length; i++) {
+    const t = types[i]
+    if (t === 'i') parts.push(oscInt32(args[i] as number))
+    else if (t === 's') parts.push(oscString(args[i] as string))
+  }
+  return Buffer.concat(parts)
+}
+
+function ensureOscSocket(): void {
+  if (oscSocket) return
+  oscSocket = dgram.createSocket({ type: 'udp4', reuseAddr: true })
+  oscSocket.on('error', (err) => {
+    console.error('OSC socket error:', err)
+    oscSocket?.close()
+    oscSocket = null
+  })
+  oscSocket.bind()
+}
+
+function closeOscSocket(): void {
+  if (oscSocket) {
+    try { oscSocket.close() } catch { /**/ }
+    oscSocket = null
+  }
+}
+
+// ════════════════════════════════════════════════════════════
 // Art-Net Timecode — UDP sender on port 6454
 // ════════════════════════════════════════════════════════════
 
@@ -255,14 +301,21 @@ function createWindow(): BrowserWindow {
     win.show()
   })
 
-  // Block DevTools shortcuts (F12, Ctrl+Shift+I, Cmd+Option+I)
-  win.webContents.on('before-input-event', (_e, input) => {
-    if (input.key === 'F12' ||
-        (input.control && input.shift && input.key.toLowerCase() === 'i') ||
-        (input.meta && input.alt && input.key.toLowerCase() === 'i')) {
-      _e.preventDefault()
+  // In dev mode, allow DevTools; in production, block shortcuts
+  if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
+    win.webContents.on('ready-to-show', () => {
+      win.webContents.openDevTools({ mode: 'detach' })
+    })
+  } else {
+    // Block DevTools shortcuts (F12, Ctrl+Shift+I, Cmd+Option+I)
+    win.webContents.on('before-input-event', (_e, input) => {
+      if (input.key === 'F12' ||
+          (input.control && input.shift && input.key.toLowerCase() === 'i') ||
+          (input.meta && input.alt && input.key.toLowerCase() === 'i')) {
+        _e.preventDefault()
       }
     })
+  }
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     // Only allow http/https URLs to be opened externally
@@ -707,6 +760,50 @@ app.whenReady().then(() => {
     } catch { return null }
   })
 
+  // IPC: save CSV file via save dialog
+  ipcMain.handle('save-csv-dialog', async (_event, csvContent: string, defaultName: string) => {
+    const result = await dialog.showSaveDialog({
+      title: 'Export Setlist CSV',
+      defaultPath: defaultName || 'setlist.csv',
+      filters: [
+        { name: 'CSV File', extensions: ['csv'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+    if (result.canceled || !result.filePath) return null
+    writeFileSync(result.filePath, '\uFEFF' + csvContent, 'utf-8')
+    return result.filePath
+  })
+
+  // IPC: open CSV file via open dialog and return its content as a string
+  ipcMain.handle('open-csv-dialog', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Import Setlist CSV',
+      filters: [
+        { name: 'CSV File', extensions: ['csv'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    return readFileSync(result.filePaths[0], 'utf-8')
+  })
+
+  // IPC: save WAV file via save dialog
+  ipcMain.handle('save-wav-dialog', async (_event, buffer: ArrayBuffer, defaultName: string) => {
+    const result = await dialog.showSaveDialog({
+      title: 'Export LTC WAV',
+      defaultPath: defaultName || 'ltc.wav',
+      filters: [
+        { name: 'WAV Audio', extensions: ['wav'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+    if (result.canceled || !result.filePath) return null
+    writeFileSync(result.filePath, Buffer.from(buffer))
+    return result.filePath
+  })
+
   // IPC: check if file exists on disk
   ipcMain.handle('file-exists', (_e, filePath: string) => {
     return existsSync(filePath)
@@ -780,6 +877,24 @@ app.whenReady().then(() => {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths
+  })
+
+  // IPC: get audio durations for multiple files via ffprobe
+  ipcMain.handle('get-audio-durations', async (_event, filePaths: string[]) => {
+    const results: Record<string, number | null> = {}
+    for (const fp of filePaths) {
+      if (!fp || !existsSync(fp)) { results[fp] = null; continue }
+      try {
+        const dur = await new Promise<number>((resolve, reject) => {
+          ffmpeg.ffprobe(fp, (err, metadata) => {
+            if (err) return reject(err)
+            resolve(metadata.format.duration ?? 0)
+          })
+        })
+        results[fp] = dur
+      } catch { results[fp] = null }
+    }
+    return results
   })
 
   // IPC: read file as buffer (async to avoid blocking main process)
@@ -876,6 +991,41 @@ app.whenReady().then(() => {
     artnetPacket.writeUInt8(hours & 0x1f, 17)
     artnetPacket.writeUInt8(artnetFpsToType(fps), 18)
     artnetSocket.send(artnetPacket, 0, 19, ARTNET_PORT, ip)
+  })
+
+  // ── OSC Output IPC ──
+  ipcMain.handle('osc-start', () => {
+    ensureOscSocket()
+    return true
+  })
+
+  ipcMain.handle('osc-stop', () => {
+    closeOscSocket()
+    return true
+  })
+
+  ipcMain.on('osc-send-tc', (_event, hours: number, minutes: number, seconds: number, frames: number, fps: number, targetIp: string, port: number) => {
+    if (!oscSocket) return
+    const ip = (targetIp && isValidIp(targetIp)) ? targetIp : '127.0.0.1'
+    const pkt = oscMessage('/timecode', 'iiiii', hours, minutes, seconds, frames, fps)
+    oscSocket.send(pkt, 0, pkt.length, port, ip)
+  })
+
+  ipcMain.on('osc-send-transport', (_event, state: string, targetIp: string, port: number) => {
+    if (!oscSocket) return
+    const ip = (targetIp && isValidIp(targetIp)) ? targetIp : '127.0.0.1'
+    const addr = state === 'play' ? '/transport/play'
+               : state === 'pause' ? '/transport/pause'
+               : '/transport/stop'
+    const pkt = oscMessage(addr, '')
+    oscSocket.send(pkt, 0, pkt.length, port, ip)
+  })
+
+  ipcMain.on('osc-send-song', (_event, name: string, index: number, targetIp: string, port: number) => {
+    if (!oscSocket) return
+    const ip = (targetIp && isValidIp(targetIp)) ? targetIp : '127.0.0.1'
+    const pkt = oscMessage('/song', 'si', name, index)
+    oscSocket.send(pkt, 0, pkt.length, port, ip)
   })
 
   // IPC: show input dialog (replacement for prompt())

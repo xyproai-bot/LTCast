@@ -24,9 +24,9 @@ export function StatusBar({ version, onToggleFullscreen }: Props): React.JSX.Ele
       <button className="btn-sm" onClick={onToggleFullscreen}>{t(lang, 'fullscreen')}</button>
       <button
         className="btn-sm"
-        onClick={() => setLang(lang === 'en' ? 'zh' : 'en')}
+        onClick={() => setLang(lang === 'en' ? 'zh' : lang === 'zh' ? 'ja' : 'en')}
       >
-        {lang === 'en' ? '中文' : 'EN'}
+        {lang === 'en' ? '中文' : lang === 'zh' ? '日本語' : 'EN'}
       </button>
       <span className="status-version">v{version}</span>
     </div>

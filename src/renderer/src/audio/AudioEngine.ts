@@ -141,7 +141,9 @@ export class AudioEngine {
     }
 
     // Auto-detect LTC channel
+    console.log('[loadFile] buffer loaded — channels:', this.buffer.numberOfChannels, 'duration:', this.buffer.duration.toFixed(1) + 's', 'sampleRate:', this.buffer.sampleRate)
     const detection = detectLtcChannel(this.buffer)
+    console.log('[loadFile] LTC detection — channel:', detection.channelIndex, 'confidence:', detection.confidence.toFixed(3))
     this.callbacks.onLtcConfidence(detection.confidence)
 
     if (detection.confidence >= LTC_CONFIDENCE_THRESHOLD) {
@@ -267,20 +269,24 @@ export class AudioEngine {
   // ════════════════════════════════════════════════════════════
 
   async play(offset?: number): Promise<void> {
-    if (!this.buffer) return
+    console.log('[play] called, buffer?', !!this.buffer, 'generatorMode?', this.generatorMode, 'musicDevice:', this.musicOutputDeviceId, 'ltcDevice:', this.ltcOutputDeviceId)
+    if (!this.buffer) { console.warn('[play] NO BUFFER — aborting'); return }
 
     const thisPlayId = ++this.playId
     this._stopPlayback()
 
     const startOffset = offset !== undefined ? offset : this.startOffset
+    console.log('[play] startOffset:', startOffset, 'playId:', thisPlayId)
 
     // ── Music context (recreated each time — no device handle issue) ──
     this.ctx = new AudioContext()
+    console.log('[play] AudioContext created, state:', this.ctx.state)
     if (this.musicOutputDeviceId && this.musicOutputDeviceId !== 'default') {
       try {
         // @ts-expect-error - setSinkId newer API
         await this.ctx.setSinkId(this.musicOutputDeviceId)
-      } catch { /**/ }
+        console.log('[play] Music setSinkId OK:', this.musicOutputDeviceId)
+      } catch (e) { console.warn('[play] Music setSinkId FAILED:', e) }
     }
 
     this.musicSource = this.ctx.createBufferSource()
@@ -288,14 +294,17 @@ export class AudioEngine {
     this.musicSource.loop = this.loop
 
     if (this.generatorMode) {
+      console.log('[play] Generator mode — connecting musicSource → destination')
       // Generator mode: play full stereo through music context (no LTC split)
       this.musicSource.connect(this.ctx.destination)
 
       // ── LTC encoder context — generates LTC audio for VB-CABLE / BlackHole ──
+      console.log('[play] Setting up LTC context...')
       await this._setupLtcContext()
-      if (this.playId !== thisPlayId) return  // race guard: another play/pause interrupted
+      if (this.playId !== thisPlayId) { console.warn('[play] RACE GUARD tripped (generator)'); return }
       this._startLtcEncoder(startOffset)
     } else {
+      console.log('[play] Reader mode — ch split: music=', this.musicChannelIndex, 'ltc=', this.ltcChannelIndex, 'numCh=', this.buffer.numberOfChannels)
       // LTC Reader mode: split channels, only play music channel
       const splitter = this.ctx.createChannelSplitter(this.buffer.numberOfChannels)
       this.musicSource.connect(splitter)
@@ -305,8 +314,9 @@ export class AudioEngine {
       merger.connect(this.ctx.destination)
 
       // ── LTC context (reused — preserves VB-CABLE handle) ──
+      console.log('[play] Setting up LTC context...')
       await this._setupLtcContext()
-      if (this.playId !== thisPlayId) return  // race guard
+      if (this.playId !== thisPlayId) { console.warn('[play] RACE GUARD tripped (reader)'); return }
       this._startLtcSource(startOffset)
     }
 
@@ -316,6 +326,7 @@ export class AudioEngine {
     this.startTime = when - startOffset
     this.startOffset = startOffset
     this.playing = true
+    console.log('[play] STARTED — when:', when, 'ctx.state:', this.ctx.state)
 
     // Notify clock mapping baseline for MTC quarter-frame scheduling
     this.callbacks.onPlayStarted?.(performance.now(), this.ctx.currentTime)
@@ -363,6 +374,9 @@ export class AudioEngine {
     if (!this.buffer) return null
     return this.buffer.getChannelData(this.musicChannelIndex)
   }
+
+  getBuffer(): AudioBuffer | null { return this.buffer }
+  getMusicChannelIndex(): number { return this.musicChannelIndex }
 
   async dispose(): Promise<void> {
     // Don't remove devicechange listener here — loadFile() calls dispose() to reset,
@@ -461,11 +475,13 @@ export class AudioEngine {
   private async _setupLtcContext(): Promise<void> {
     // Reuse existing context if available
     if (this.ltcCtx && this.ltcCtx.state !== 'closed') {
+      console.log('[ltcCtx] Reusing existing context, state:', this.ltcCtx.state)
       if (this.ltcCtx.state === 'suspended') {
         await this.ltcCtx.resume()
       }
       return
     }
+    console.log('[ltcCtx] Creating new context, ltcDevice:', this.ltcOutputDeviceId)
 
     // Create new context
     this.ltcCtx = new AudioContext()

@@ -37,6 +37,9 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
     mtcMode, setMtcMode,
     artnetEnabled, setArtnetEnabled,
     artnetTargetIp, setArtnetTargetIp,
+    oscEnabled, setOscEnabled,
+    oscTargetIp, setOscTargetIp,
+    oscTargetPort, setOscTargetPort,
     lang
   } = useStore()
 
@@ -235,6 +238,52 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
           </div>
         )}
         <span className="ltc-gain-hint">{t(lang, 'artnetHint')}</span>
+      </div>
+
+      {/* OSC Output */}
+      <div className="device-row">
+        <span className="device-label">{t(lang, 'oscEnabled')}</span>
+        <div className="artnet-row">
+          <label className="artnet-toggle">
+            <input
+              type="checkbox"
+              checked={oscEnabled}
+              onChange={(e) => setOscEnabled(e.target.checked)}
+            />
+            <span>{oscEnabled ? t(lang, 'artnetOn') : t(lang, 'artnetOff')}</span>
+          </label>
+          <span className={`signal-dot${oscEnabled ? ' signal-ok' : ' signal-off'}`} />
+          {oscEnabled && <span className="signal-label">{t(lang, 'oscStatus')}</span>}
+        </div>
+        {oscEnabled && (
+          <div className="artnet-ip-row">
+            <span className="artnet-ip-label">{t(lang, 'oscTargetIp')}</span>
+            <input
+              type="text"
+              className={`artnet-ip-input${!isValidIpv4(oscTargetIp) ? ' artnet-ip-invalid' : ''}`}
+              value={oscTargetIp}
+              onChange={(e) => setOscTargetIp(e.target.value)}
+              onBlur={() => {
+                if (!isValidIpv4(oscTargetIp)) setOscTargetIp('127.0.0.1')
+              }}
+              placeholder="127.0.0.1"
+              spellCheck={false}
+            />
+            <span className="artnet-ip-label">{t(lang, 'oscTargetPort')}</span>
+            <input
+              type="number"
+              className="artnet-ip-input"
+              value={oscTargetPort}
+              min={1}
+              max={65535}
+              onChange={(e) => {
+                const v = parseInt(e.target.value, 10)
+                if (!isNaN(v) && v > 0 && v <= 65535) setOscTargetPort(v)
+              }}
+              style={{ width: '70px' }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Help text */}
