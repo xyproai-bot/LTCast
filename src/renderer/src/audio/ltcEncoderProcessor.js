@@ -126,8 +126,9 @@ class LTCEncoderProcessor extends AudioWorkletProcessor {
         remaining -= (mInBlock - 1) * framesPerMin
       }
       m = tenMinBlocks * 10 + mInBlock
-      s = Math.floor(remaining / fps)
-      f = remaining - s * fps
+      const dropAdjusted = mInBlock > 0 ? remaining + D : remaining
+      s = Math.floor(dropAdjusted / fps)
+      f = dropAdjusted - s * fps
     } else {
       // Non-drop-frame: simple division
       h = Math.floor(totalFrames / (fps * 3600)) % 24
