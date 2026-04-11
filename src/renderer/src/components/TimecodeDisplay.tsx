@@ -29,7 +29,8 @@ export function TimecodeDisplay({ fullscreen }: Props): React.JSX.Element {
     generatorStartTC, setGeneratorStartTC,
     generatorFps, setGeneratorFps,
     ltcSignalOk, playState,
-    currentTime, duration
+    currentTime, duration,
+    ltcStartTime
   } = useStore()
 
   // LTC signal lost: playing in reader mode but no signal
@@ -95,6 +96,11 @@ export function TimecodeDisplay({ fullscreen }: Props): React.JSX.Element {
       )}
 
       {signalLost && <div className="tc-signal-lost-banner">{t(lang, 'ltcSignalLost')}</div>}
+      {!fullscreen && ltcStartTime > 0 && !tcGeneratorMode && (
+        <div className="tc-preroll-banner">
+          {t(lang, 'ltcPreroll').replace('{time}', formatCountdown(ltcStartTime))}
+        </div>
+      )}
       {!fullscreen && <TapBpm />}
 
       {/* Force FPS — only shown in LTC Reader mode */}

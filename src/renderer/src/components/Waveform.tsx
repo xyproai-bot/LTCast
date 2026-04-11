@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useCallback } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline.esm.js'
 import MinimapPlugin from 'wavesurfer.js/dist/plugins/minimap.esm.js'
-import { useStore, WaveformMarker } from '../store'
+import { useStore, WaveformMarker, MARKER_TYPE_COLORS, MARKER_TYPES, MarkerType } from '../store'
 import { t } from '../i18n'
 
 interface Props {
@@ -26,6 +26,7 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   const videoCursorCanvasRef = useRef<HTMLCanvasElement>(null) // cursor (redrawn every frame)
   const wsRef              = useRef<WaveSurfer | null>(null)
   const zoomRef            = useRef(1)
+  const drawMarkersRef     = useRef(() => {})  // updated after drawMarkers is defined
   // Stable ref so the wavesurfer event handler always sees the latest callback
   const onSeekRef = useRef(onSeek)
   onSeekRef.current = onSeek
@@ -103,9 +104,26 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     })
 
     ws.on('interaction', (time: number) => onSeekRef.current(time))
-    ws.on('zoom', (px: number) => { zoomRef.current = px })
+    ws.on('zoom', (px: number) => { zoomRef.current = px; drawMarkersRef.current() })
+    ws.on('scroll', () => { drawMarkersRef.current() })
+
+    // Listen to native scroll on WaveSurfer's scroll container
+    // getWrapper() returns the inner .wrapper, but scrolling happens on its parent .scroll
+    const wrapper = (ws as unknown as { getWrapper(): HTMLElement }).getWrapper?.()
+    const scrollContainer = wrapper?.parentElement
+    const onScroll = (): void => { drawMarkersRef.current() }
+    if (scrollContainer) {
+      scrollContainer.addEventListener('scroll', onScroll)
+    }
 
     wsRef.current = ws
+
+    // Cleanup: store scroll listener ref for removal
+    const origDestroy = ws.destroy.bind(ws)
+    ws.destroy = () => {
+      if (scrollContainer) scrollContainer.removeEventListener('scroll', onScroll)
+      origDestroy()
+    }
 
     // Dynamic height: resize WaveSurfer when its container changes size
     const el = musicContainerRef.current
@@ -131,6 +149,13 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     const pos = Array.from(musicData)
     const neg = pos.map(v => -v)
     ws.load('', [pos, neg], duration)
+    // Capture initial pxPerSec after load (WaveSurfer doesn't fire 'zoom' for initial render)
+    requestAnimationFrame(() => {
+      const container = musicContainerRef.current
+      if (container && duration > 0) {
+        zoomRef.current = container.clientWidth / duration
+      }
+    })
   }, [musicData, duration])
 
   useEffect(() => {
@@ -139,8 +164,9 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     ws.setTime(currentTime)
   }, [currentTime, duration])
 
+  // Ctrl+scroll zoom — on musicWrapRef (parent) so it works even when marker canvas is on top
   useEffect(() => {
-    const el = musicContainerRef.current
+    const el = musicWrapRef.current
     if (!el) return
     const onWheel = (e: WheelEvent): void => {
       if (!e.ctrlKey && !e.metaKey) return
@@ -188,9 +214,11 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     const dur = durationRef.current
     if (dur <= 0) return
 
-    // Get WaveSurfer scroll position and zoom
-    const scrollLeft = (ws as unknown as { getScroll(): number }).getScroll?.() ?? 0
-    const totalWidth = Math.max(cssW, zoomRef.current * dur)
+    // Read scroll state from WaveSurfer's scrollContainer (parent of wrapper)
+    const wrapper = (ws as unknown as { getWrapper(): HTMLElement }).getWrapper?.()
+    const scrollContainer = wrapper?.parentElement
+    const totalWidth = scrollContainer ? scrollContainer.scrollWidth : cssW
+    const scrollLeft = scrollContainer ? scrollContainer.scrollLeft : 0
     const pxPerSec = totalWidth / dur
 
     for (const marker of fileMarkers) {
@@ -198,34 +226,40 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       const x = absX - scrollLeft
       if (x < -10 || x > cssW + 10) continue
 
-      const color = marker.color ?? '#00d4ff'
+      const mType = marker.type ?? 'custom'
+      const color = marker.color ?? MARKER_TYPE_COLORS[mType]
+      const isSongTitle = mType === 'song-title'
 
-      // Vertical line
+      // Vertical line (thicker for song-title)
       ctx.beginPath()
       ctx.strokeStyle = color
-      ctx.lineWidth = 2
+      ctx.lineWidth = isSongTitle ? 3 : 2
       ctx.moveTo(x, 0)
       ctx.lineTo(x, cssH)
       ctx.stroke()
 
-      // Triangle at top
+      // Triangle at top (bigger for song-title)
+      const triSize = isSongTitle ? 7 : 5
       ctx.beginPath()
       ctx.fillStyle = color
-      ctx.moveTo(x - 5, 0)
-      ctx.lineTo(x + 5, 0)
-      ctx.lineTo(x, 8)
+      ctx.moveTo(x - triSize, 0)
+      ctx.lineTo(x + triSize, 0)
+      ctx.lineTo(x, triSize + 3)
       ctx.closePath()
       ctx.fill()
 
       // Label
       if (marker.label) {
-        ctx.font = '10px sans-serif'
+        ctx.font = isSongTitle ? 'bold 12px sans-serif' : '10px sans-serif'
         ctx.fillStyle = color
-        const labelX = Math.min(x + 4, cssW - 60)
-        ctx.fillText(marker.label, labelX, 20)
+        const labelX = Math.min(x + 4, cssW - 80)
+        ctx.fillText(marker.label, labelX, isSongTitle ? 22 : 20)
       }
     }
   }, [])
+
+  // Keep drawMarkersRef in sync so WaveSurfer event handlers can call it
+  drawMarkersRef.current = drawMarkers
 
   // Redraw markers whenever markers, filePath, duration, currentTime changes
   useEffect(() => { drawMarkers() }, [markers, filePath, duration, currentTime, drawMarkers])
@@ -239,132 +273,177 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     return () => obs.disconnect()
   }, [drawMarkers])
 
-  // Double-click on music waveform → add marker at that time
-  useEffect(() => {
-    const el = musicContainerRef.current
-    if (!el) return
+  // ── Marker interaction helpers ─────────────────────────────
+  // Compute time from mouse position relative to the waveform wrap container
+  /** Get WaveSurfer's actual scroll metrics from its DOM */
+  const getWsMetrics = (): { totalWidth: number; scrollLeft: number; pxPerSec: number } | null => {
+    const ws = wsRef.current
+    const dur = durationRef.current
+    if (!ws || dur <= 0) return null
+    // getWrapper() = inner .wrapper, scrolling is on parent .scroll (scrollContainer)
+    const wrapper = (ws as unknown as { getWrapper(): HTMLElement }).getWrapper?.()
+    const scrollContainer = wrapper?.parentElement
+    if (!wrapper || !scrollContainer) return null
+    const totalWidth = scrollContainer.scrollWidth
+    const scrollLeft = scrollContainer.scrollLeft
+    return { totalWidth, scrollLeft, pxPerSec: totalWidth / dur }
+  }
 
-    const onDblClick = (e: MouseEvent): void => {
-      const ws = wsRef.current
-      const fp = filePathRef.current
-      const dur = durationRef.current
-      if (!ws || !fp || dur <= 0) return
+  const getTimeFromMouseEvent = (e: React.MouseEvent): number | null => {
+    const m = getWsMetrics()
+    const wrap = musicWrapRef.current
+    if (!m || !wrap) return null
+    const rect = wrap.getBoundingClientRect()
+    const clickX = e.clientX - rect.left + m.scrollLeft
+    return Math.max(0, Math.min(durationRef.current, clickX / m.pxPerSec))
+  }
 
-      // Compute time at click position
-      const rect = el.getBoundingClientRect()
-      const scrollLeft = ws.getScroll() ?? 0
-      const totalWidth = Math.max(rect.width, zoomRef.current * (durationRef.current || 1))
-      const pxPerSec = totalWidth / dur
-      const clickX = e.clientX - rect.left + scrollLeft
-      const time = Math.max(0, Math.min(dur, clickX / pxPerSec))
-
-      // Prompt for marker name
-      const lang_ = useStore.getState().lang
-      window.api.showInputDialog(
-        t(lang_, 'addMarker'),
-        t(lang_, 'markerLabel'),
-        t(lang_, 'markerPlaceholder')
-      ).then((label: string | null) => {
-        if (label === null) return
-        const { addMarker: add } = useStore.getState()
-        add(fp, {
-          id: `marker-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          time,
-          label: label.trim() || String(Math.round(time * 10) / 10) + 's',
-          color: '#00d4ff'
-        })
-      }).catch(() => {})
+  const findNearestMarker = (e: React.MouseEvent): WaveformMarker | null => {
+    const fp = filePathRef.current
+    const m = getWsMetrics()
+    const wrap = musicWrapRef.current
+    if (!fp || !m || !wrap) return null
+    const rect = wrap.getBoundingClientRect()
+    const fileMarkers = markersRef.current[fp] ?? []
+    let closest: WaveformMarker | null = null
+    let minDist = 15
+    for (const mk of fileMarkers) {
+      const mx = mk.time * m.pxPerSec - m.scrollLeft
+      const dist = Math.abs(mx - (e.clientX - rect.left))
+      if (dist < minDist) { minDist = dist; closest = mk }
     }
+    return closest
+  }
 
-    el.addEventListener('dblclick', onDblClick)
-    return () => el.removeEventListener('dblclick', onDblClick)
-  }, [])
+  // Double-click on waveform area → add marker immediately (edit name in Structure panel)
+  const handleMarkerDblClick = useCallback((e: React.MouseEvent): void => {
+    const fp = filePathRef.current
+    const time = getTimeFromMouseEvent(e)
+    if (fp === null || time === null) return
+    const m = Math.floor(time / 60)
+    const s = Math.floor(time % 60)
+    useStore.getState().addMarker(fp, {
+      id: `marker-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      time,
+      label: `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`,
+      type: 'custom' as const
+    })
+    markersRef.current = useStore.getState().markers
+    drawMarkers()
+  }, [drawMarkers])
 
-  // Right-click on marker canvas → rename or delete marker
-  // (showInputDialog: blank/cancel = delete, any text = rename)
-  useEffect(() => {
-    const canvas = markerCanvasRef.current
-    if (!canvas) return
-
-    const onContextMenu = (e: MouseEvent): void => {
-      e.preventDefault()
-      const ws = wsRef.current
-      const fp = filePathRef.current
-      const dur = durationRef.current
-      if (!ws || !fp || dur <= 0) return
-
-      const rect = canvas.getBoundingClientRect()
-      const scrollLeft = ws.getScroll() ?? 0
-      const totalWidth = Math.max(rect.width, zoomRef.current * (durationRef.current || 1))
-      const pxPerSec = totalWidth / dur
-
-      // Find nearest marker within 10px
-      const fileMarkers = markersRef.current[fp] ?? []
-      let closest: WaveformMarker | null = null
-      let minDist = 10
-      for (const m of fileMarkers) {
-        const mx = m.time * pxPerSec - scrollLeft
-        const dist = Math.abs(mx - (e.clientX - rect.left))
-        if (dist < minDist) { minDist = dist; closest = m }
-      }
-
-      if (!closest) return
-
-      const lang_ = useStore.getState().lang
-      // showInputDialog: blank = delete, text = rename, cancel = do nothing
-      window.api.showInputDialog(
-        t(lang_, 'renameMarker'),
-        t(lang_, 'markerLabel'),
-        closest.label
-      ).then((newLabel: string | null) => {
-        if (newLabel === null) return // cancelled — do nothing
+  // Right-click → rename / delete nearest marker
+  const handleMarkerContextMenu = useCallback((e: React.MouseEvent): void => {
+    const fp = filePathRef.current
+    if (!fp) return
+    const closest = findNearestMarker(e)
+    if (!closest) return
+    e.preventDefault() // only prevent default if we found a marker
+    const lang_ = useStore.getState().lang
+    window.api.showInputDialog(
+      t(lang_, 'renameMarker'),
+      t(lang_, 'markerLabel'),
+      closest.label
+    ).then((newLabel: string | null) => {
+      if (newLabel === null) return
+      setTimeout(() => {
         const state = useStore.getState()
         if (newLabel.trim() === '') {
-          state.removeMarker(fp, closest!.id)
+          state.removeMarker(fp, closest.id)
         } else {
-          state.updateMarker(fp, closest!.id, { label: newLabel.trim() })
+          state.updateMarker(fp, closest.id, { label: newLabel.trim() })
         }
-      }).catch(() => {})
-    }
+        markersRef.current = useStore.getState().markers
+        drawMarkers()
+      }, 0)
+    }).catch(() => {})
+  }, [drawMarkers])
 
-    canvas.addEventListener('contextmenu', onContextMenu)
-    return () => canvas.removeEventListener('contextmenu', onContextMenu)
+  // ── Marker click + drag ──────────────────────────────────
+  const dragRef = useRef<{
+    id: string
+    filePath: string
+    startX: number          // mousedown screen X (to distinguish click vs drag)
+    originalTime: number    // marker time before drag started (for undo)
+    currentTime: number     // live time during drag (only written to store on mouseup)
+    isDragging: boolean     // true once mouse moved > 5px from startX
+  } | null>(null)
+
+  // Mousedown capture on parent div — if near a marker, prepare for potential drag
+  const handleWrapMouseDown = useCallback((e: React.MouseEvent): void => {
+    const closest = findNearestMarker(e)
+    const fp = filePathRef.current
+    if (closest && fp) {
+      dragRef.current = {
+        id: closest.id,
+        filePath: fp,
+        startX: e.clientX,
+        originalTime: closest.time,
+        currentTime: closest.time,
+        isDragging: false
+      }
+      // Don't stopPropagation yet — only block WaveSurfer if it becomes a real drag
+    }
   }, [])
 
-  // Click on marker canvas → seek to nearest marker
+  // Global mousemove/mouseup for drag
   useEffect(() => {
-    const canvas = markerCanvasRef.current
-    if (!canvas) return
+    const DRAG_THRESHOLD = 5 // pixels before considered a drag
 
-    const onClick = (e: MouseEvent): void => {
-      const ws = wsRef.current
-      const fp = filePathRef.current
-      const dur = durationRef.current
-      if (!ws || !fp || dur <= 0) return
+    const onMouseMove = (e: MouseEvent): void => {
+      if (!dragRef.current) return
+      const dx = Math.abs(e.clientX - dragRef.current.startX)
 
-      const rect = canvas.getBoundingClientRect()
-      const scrollLeft = ws.getScroll() ?? 0
-      const totalWidth = Math.max(rect.width, zoomRef.current * (durationRef.current || 1))
-      const pxPerSec = totalWidth / dur
-
-      const fileMarkers = markersRef.current[fp] ?? []
-      let closest: WaveformMarker | null = null
-      let minDist = 10
-      for (const m of fileMarkers) {
-        const mx = m.time * pxPerSec - scrollLeft
-        const dist = Math.abs(mx - (e.clientX - rect.left))
-        if (dist < minDist) { minDist = dist; closest = m }
+      if (!dragRef.current.isDragging) {
+        if (dx < DRAG_THRESHOLD) return // not a drag yet
+        dragRef.current.isDragging = true
       }
 
-      if (closest) {
-        onSeekRef.current(closest.time)
-        e.stopPropagation()
+      // Calculate new time from mouse position (visual only — don't write store)
+      const m = getWsMetrics()
+      const wrap = musicWrapRef.current
+      if (!m || !wrap) return
+      const rect = wrap.getBoundingClientRect()
+      const clickX = e.clientX - rect.left + m.scrollLeft
+      const time = Math.max(0, Math.min(durationRef.current, clickX / m.pxPerSec))
+      dragRef.current.currentTime = time
+
+      // Update canvas visually by temporarily modifying the ref (not the store)
+      const fp = dragRef.current.filePath
+      const id = dragRef.current.id
+      const fileMarkers = markersRef.current[fp] ?? []
+      markersRef.current = {
+        ...markersRef.current,
+        [fp]: fileMarkers.map(mk => mk.id === id ? { ...mk, time } : mk)
+      }
+      drawMarkers()
+    }
+
+    const onMouseUp = (): void => {
+      if (!dragRef.current) return
+      const { id, filePath: fp, originalTime, currentTime: newTime, isDragging } = dragRef.current
+      dragRef.current = null
+
+      if (isDragging && Math.abs(newTime - originalTime) > 0.01) {
+        // Commit drag: write final position to store (single undo-able operation)
+        useStore.getState().updateMarker(fp, id, { time: newTime })
+        markersRef.current = useStore.getState().markers
+        drawMarkers()
+      } else {
+        // Was a click, not a drag — restore original position in ref
+        markersRef.current = useStore.getState().markers
+        drawMarkers()
       }
     }
 
-    canvas.addEventListener('click', onClick)
-    return () => canvas.removeEventListener('click', onClick)
-  }, [])
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [drawMarkers])
+
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  LTC waveform — simple canvas
@@ -744,9 +823,18 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     <div className="waveform-container">
       <div className="waveform-section">
         <span className="waveform-label">{t(lang, 'musicWaveform')}</span>
-        <div ref={musicWrapRef} className="waveform-music-wrap">
+        <div
+          ref={musicWrapRef}
+          className="waveform-music-wrap"
+          onMouseDownCapture={handleWrapMouseDown}
+          onDoubleClickCapture={handleMarkerDblClick}
+          onContextMenuCapture={handleMarkerContextMenu}
+        >
           <div ref={musicContainerRef} className="waveform-ws" />
-          <canvas ref={markerCanvasRef} className="waveform-canvas waveform-canvas--overlay waveform-canvas--markers" />
+          <canvas
+            ref={markerCanvasRef}
+            className="waveform-canvas waveform-canvas--overlay waveform-canvas--markers"
+          />
         </div>
       </div>
 

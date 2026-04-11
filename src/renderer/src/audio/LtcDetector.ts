@@ -5,9 +5,11 @@
  * and a very regular zero-crossing rate.
  */
 
-interface DetectionResult {
+export interface DetectionResult {
   channelIndex: number
   confidence: number // 0–1
+  /** Time in seconds where LTC signal first appears (pre-roll detection) */
+  ltcStartTime: number
 }
 
 /**
@@ -21,7 +23,7 @@ export function detectLtcChannel(buffer: AudioBuffer): DetectionResult {
   const channels = buffer.numberOfChannels
 
   // A mono file can never have a dedicated LTC channel separate from music
-  if (channels === 1) return { channelIndex: 0, confidence: 0 }
+  if (channels === 1) return { channelIndex: 0, confidence: 0, ltcStartTime: 0 }
 
   // Build list of sample offsets to analyze (2-second windows)
   const windowLen = Math.min(sampleRate * 2, buffer.length)
@@ -39,29 +41,45 @@ export function detectLtcChannel(buffer: AudioBuffer): DetectionResult {
 
   let bestChannel = 0
   let bestScore = -1
+  /** Earliest sample offset where LTC is detected on the best channel */
+  let ltcFirstOffset = 0
 
   for (let ch = 0; ch < channels; ch++) {
     const fullData = buffer.getChannelData(ch)
     let channelBestScore = 0
+    let channelFirstOffset = 0
 
     // Check each window — take the highest score found anywhere in the file
     for (const offset of offsets) {
       const end = Math.min(offset + windowLen, buffer.length)
-      const segment = fullData.slice(offset, end)
+      const segment = fullData.subarray(offset, end)
       const score = scoreLtcLikelihood(segment, sampleRate)
       if (score > channelBestScore) channelBestScore = score
     }
 
+    // Find earliest window where LTC appears (score > 0.3 threshold)
     if (channelBestScore > bestScore) {
       bestScore = channelBestScore
       bestChannel = ch
+      // Scan offsets in order to find first LTC appearance
+      channelFirstOffset = 0
+      for (const offset of offsets) {
+        const end = Math.min(offset + windowLen, buffer.length)
+        const segment = fullData.subarray(offset, end)
+        const score = scoreLtcLikelihood(segment, sampleRate)
+        if (score > 0.3) {
+          channelFirstOffset = offset
+          break
+        }
+      }
+      ltcFirstOffset = channelFirstOffset
     }
   }
 
   return {
     channelIndex: bestChannel,
-    // Confidence: if best score is significantly higher than 0.3, we trust the detection
-    confidence: Math.min(bestScore, 1.0)
+    confidence: Math.min(bestScore, 1.0),
+    ltcStartTime: ltcFirstOffset / sampleRate
   }
 }
 

@@ -38,6 +38,7 @@ export interface MidiCuePoint {
   data2?: number                   // Velocity/CC value (0-127); not used for PC
   label?: string                   // User label (e.g. "Scene A")
   enabled: boolean                 // mute/unmute
+  offsetFrames?: number            // Fine-tune trigger offset in frames (+/- from triggerTimecode)
 }
 
 export interface MidiMapping {
@@ -60,16 +61,32 @@ export interface SetlistItem {
   midiCues?: MidiCuePoint[]  // per-song MIDI cue points
 }
 
+export type MarkerType = 'intro' | 'verse' | 'chorus' | 'bridge' | 'outro' | 'break' | 'song-title' | 'custom'
+
+export const MARKER_TYPE_COLORS: Record<MarkerType, string> = {
+  'intro':      '#42a5f5',  // blue
+  'verse':      '#66bb6a',  // green
+  'chorus':     '#ef5350',  // red
+  'bridge':     '#ab47bc',  // purple
+  'outro':      '#78909c',  // grey-blue
+  'break':      '#ffa726',  // orange
+  'song-title': '#ffee58',  // yellow
+  'custom':     '#00d4ff',  // cyan (legacy default)
+}
+
+export const MARKER_TYPES: MarkerType[] = ['song-title', 'intro', 'verse', 'chorus', 'bridge', 'outro', 'break', 'custom']
+
 export interface WaveformMarker {
   id: string
   time: number       // seconds
   label: string      // user-defined name
-  color?: string     // optional color (default: cyan)
+  color?: string     // override auto color
+  type?: MarkerType  // section type (undefined = 'custom' for backward compat)
 }
 
 export interface PresetData {
   lang: 'en' | 'zh' | 'ja'
-  rightTab: 'devices' | 'setlist' | 'cues'
+  rightTab: 'devices' | 'setlist' | 'cues' | 'structure'
   offsetFrames: number
   loop: boolean
   loopA?: number | null
@@ -226,6 +243,7 @@ export interface AppState {
   generatorStartTC: string      // "HH:MM:SS:FF" format
   generatorFps: number           // 24, 25, 29.97, 30
   ltcConfidence: number          // 0–1, from LTC detector
+  ltcStartTime: number           // seconds where LTC signal first appears (0 = from start)
 
   // Audio devices
   audioOutputDevices: AudioDevice[]
@@ -284,9 +302,10 @@ export interface AppState {
 
   // Waveform Markers (Sprint 4)
   markers: Record<string, WaveformMarker[]>
+  markerUndoStack: Record<string, WaveformMarker[]>[]
 
   // UI
-  rightTab: 'devices' | 'setlist' | 'cues'
+  rightTab: 'devices' | 'setlist' | 'cues' | 'structure'
   lang: 'en' | 'zh' | 'ja'
 
   // Project
@@ -315,6 +334,7 @@ export interface AppState {
   setGeneratorStartTC: (tc: string) => void
   setGeneratorFps: (fps: number) => void
   setLtcConfidence: (confidence: number) => void
+  setLtcStartTime: (time: number) => void
   setAudioOutputDevices: (devices: AudioDevice[]) => void
   setMusicOutputDeviceId: (id: string) => void
   setLtcOutputDeviceId: (id: string) => void
@@ -345,13 +365,14 @@ export interface AppState {
   setSetlistItemOffset: (index: number, offsetFrames: number | undefined) => void
   setSetlistItemNotes: (index: number, notes: string | undefined) => void
   setSetlistItemMidiCues: (index: number, cues: MidiCuePoint[]) => void
-  setRightTab: (tab: 'devices' | 'setlist' | 'cues') => void
+  setRightTab: (tab: 'devices' | 'setlist' | 'cues' | 'structure') => void
   setLang: (lang: 'en' | 'zh' | 'ja') => void
   setAutoAdvance: (enabled: boolean) => void
   // Waveform Markers (Sprint 4)
   addMarker: (filePath: string, marker: WaveformMarker) => void
   removeMarker: (filePath: string, markerId: string) => void
   updateMarker: (filePath: string, markerId: string, updates: Partial<WaveformMarker>) => void
+  undoMarker: () => void
   setAutoAdvanceGap: (gap: number) => void
   setSelectedCueMidiPort: (port: string | null) => void
   setMidiInputPort: (port: string | null) => void
@@ -399,6 +420,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   generatorStartTC: '01:00:00:00',
   generatorFps: 25,
   ltcConfidence: 0,
+  ltcStartTime: 0,
 
   audioOutputDevices: [],
   musicOutputDeviceId: 'default',
@@ -442,6 +464,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   midiInputs: [],
 
   markers: {},
+  markerUndoStack: [],
 
   rightTab: 'devices',
   lang: 'en',
@@ -475,13 +498,13 @@ export const useStore = create<AppState>()(persist((set) => ({
     return { loopA }
   }),
   setLoopB: (loopB) => set((s) => {
-    // If setting B and A already exists, enforce A < B
-    if (loopB !== null && s.loopA !== null && loopB <= s.loopA) return s
     // Clamp loopB to at least 50ms before end of file so the A-B loop
     // fires before musicSource.onended stops playback at file end
     const clamped = loopB !== null && s.duration > 0
       ? Math.min(loopB, s.duration - 0.05)
       : loopB
+    // Enforce A < B after clamping (not before) to avoid edge-case inconsistency
+    if (clamped !== null && s.loopA !== null && clamped <= s.loopA) return s
     return { loopB: clamped }
   }),
   clearLoop: () => set({ loopA: null, loopB: null }),
@@ -496,6 +519,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   setGeneratorStartTC: (generatorStartTC) => set({ generatorStartTC, presetDirty: true }),
   setGeneratorFps: (generatorFps) => set({ generatorFps, presetDirty: true }),
   setLtcConfidence: (ltcConfidence) => set({ ltcConfidence }),
+  setLtcStartTime: (ltcStartTime) => set({ ltcStartTime }),
   setAudioOutputDevices: (audioOutputDevices) => set({ audioOutputDevices }),
   setMusicOutputDeviceId: (musicOutputDeviceId) => set({ musicOutputDeviceId, presetDirty: true }),
   setLtcOutputDeviceId: (ltcOutputDeviceId) => set({ ltcOutputDeviceId, presetDirty: true }),
@@ -663,6 +687,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   setMidiInputs: (midiInputs) => set({ midiInputs }),
 
   addMarker: (filePath, marker) => set((s) => ({
+    markerUndoStack: [...s.markerUndoStack.slice(-19), s.markers],  // keep last 20
     markers: {
       ...s.markers,
       [filePath]: [...(s.markers[filePath] ?? []), marker]
@@ -670,6 +695,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     presetDirty: true
   })),
   removeMarker: (filePath, markerId) => set((s) => ({
+    markerUndoStack: [...s.markerUndoStack.slice(-19), s.markers],
     markers: {
       ...s.markers,
       [filePath]: (s.markers[filePath] ?? []).filter(m => m.id !== markerId)
@@ -677,12 +703,22 @@ export const useStore = create<AppState>()(persist((set) => ({
     presetDirty: true
   })),
   updateMarker: (filePath, markerId, updates) => set((s) => ({
+    markerUndoStack: [...s.markerUndoStack.slice(-19), s.markers],
     markers: {
       ...s.markers,
       [filePath]: (s.markers[filePath] ?? []).map(m => m.id === markerId ? { ...m, ...updates } : m)
     },
     presetDirty: true
   })),
+  undoMarker: () => set((s) => {
+    if (s.markerUndoStack.length === 0) return s
+    const prev = s.markerUndoStack[s.markerUndoStack.length - 1]
+    return {
+      markers: prev,
+      markerUndoStack: s.markerUndoStack.slice(0, -1),
+      presetDirty: true
+    }
+  }),
 
   newPreset: () => {
     set({
@@ -984,13 +1020,19 @@ export const useStore = create<AppState>()(persist((set) => ({
     activeSetlistIndex: state.activeSetlistIndex,
   }),
   merge: (persisted, current) => {
+    if (!persisted || typeof persisted !== 'object') return current
     const merged = { ...current, ...(persisted as object) }
+    // Validate critical fields — revert to defaults if corrupted
+    if (!Array.isArray(merged.setlist)) merged.setlist = current.setlist
+    if (typeof merged.lang !== 'string') merged.lang = current.lang
+    if (typeof merged.offsetFrames !== 'number' || !isFinite(merged.offsetFrames)) merged.offsetFrames = current.offsetFrames
+    if (typeof merged.generatorFps !== 'number' || merged.generatorFps <= 0) merged.generatorFps = current.generatorFps
+    if (!Array.isArray(merged.midiCues)) merged.midiCues = current.midiCues ?? []
+    if (!Array.isArray(merged.waveformMarkers)) merged.waveformMarkers = current.waveformMarkers ?? []
     // Ensure setlist items from old storage have IDs
-    if (merged.setlist) {
-      merged.setlist = merged.setlist.map((item: SetlistItem) =>
-        item.id ? item : { ...item, id: nextSetlistId() }
-      )
-    }
+    merged.setlist = merged.setlist.map((item: SetlistItem) =>
+      item.id ? item : { ...item, id: nextSetlistId() }
+    )
     return merged as AppState
   },
 }))

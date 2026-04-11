@@ -10,6 +10,7 @@ import { Transport } from './components/Transport'
 import { DevicePanel } from './components/DevicePanel'
 import { SetlistPanel } from './components/SetlistPanel'
 import { MidiCuePanel } from './components/MidiCuePanel'
+import { StructurePanel } from './components/StructurePanel'
 import { PresetBar } from './components/PresetBar'
 import { StatusBar } from './components/StatusBar'
 import { LtcWavExportDialog } from './components/LtcWavExportDialog'
@@ -181,6 +182,9 @@ export default function App(): React.JSX.Element {
           engine.current?.setGeneratorMode(false)
         }
       },
+      onLtcStartTime: (seconds) => {
+        useStore.getState().setLtcStartTime(seconds)
+      },
       onWaveformData: (music, ltc) => {
         setMusicWaveform(music)
         setLtcWaveform(ltc)
@@ -190,8 +194,10 @@ export default function App(): React.JSX.Element {
       },
       onDeviceDisconnected: () => {
         setPlayState('paused')
-        const lang = useStore.getState().lang
         toast.warning(t(useStore.getState().lang, 'audioDeviceDisconnected'))
+      },
+      onDeviceReconnected: () => {
+        toast.success(t(useStore.getState().lang, 'audioDeviceReconnected'))
       },
       onPlayStarted: (perfNow, audioTime) => {
         mtc.current?.setPlayStartClocks(perfNow, audioTime)
@@ -381,6 +387,9 @@ export default function App(): React.JSX.Element {
 
     return () => {
       clearInterval(autoSaveInterval)
+      if (midiActivityTimer.current) { clearTimeout(midiActivityTimer.current); midiActivityTimer.current = null }
+      if (autoAdvanceTimer.current) { clearTimeout(autoAdvanceTimer.current); autoAdvanceTimer.current = null }
+      if (autoAdvanceIntervalRef.current) { clearInterval(autoAdvanceIntervalRef.current); autoAdvanceIntervalRef.current = null }
       window.removeEventListener('beforeunload', handleBeforeUnload)
       engine.current?.forceCleanup()
       engine.current?.dispose()
@@ -564,12 +573,39 @@ export default function App(): React.JSX.Element {
         if (state.duration > 0) state.setLoopB(state.currentTime)
       }
 
-      // Ctrl+Z / Cmd+Z: undo clear setlist
+      // Ctrl+Z / Cmd+Z: undo (markers first, then setlist)
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         const state = useStore.getState()
-        if (state.previousSetlist) {
+        if (state.markerUndoStack.length > 0) {
+          e.preventDefault()
+          state.undoMarker()
+        } else if (state.previousSetlist) {
           e.preventDefault()
           state.undoClearSetlist()
+        }
+      }
+
+      // Ctrl+Left / Ctrl+Right: jump to previous/next marker
+      if ((e.ctrlKey || e.metaKey) && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+        e.preventDefault()
+        const state = useStore.getState()
+        if (!state.filePath || state.duration <= 0) return
+        const fileMarkers = state.markers[state.filePath] ?? []
+        if (fileMarkers.length === 0) return
+        const sorted = [...fileMarkers].sort((a, b) => a.time - b.time)
+        const ct = state.currentTime
+        const threshold = 0.5 // seconds tolerance
+
+        if (e.code === 'ArrowLeft') {
+          const prev = sorted.filter(m => m.time < ct - threshold)
+          if (prev.length > 0) {
+            handleSeek(prev[prev.length - 1].time)
+          }
+        } else {
+          const next = sorted.filter(m => m.time > ct + threshold)
+          if (next.length > 0) {
+            handleSeek(next[0].time)
+          }
         }
       }
     }
@@ -1041,6 +1077,10 @@ export default function App(): React.JSX.Element {
               {t(lang, 'cues')}
               <span className={`midi-activity-dot${midiActivity ? ' active' : ''}`} />
             </button>
+            <button
+              className={`right-tab-btn${rightTab === 'structure' ? ' active' : ''}`}
+              onClick={() => useStore.getState().setRightTab('structure')}
+            >{t(lang, 'structureTitle')}</button>
           </div>
 
           {rightTab === 'devices' && (
@@ -1061,6 +1101,10 @@ export default function App(): React.JSX.Element {
               onStartLearn={handleStartLearn}
               learningMappingId={learningMappingId}
             />
+          )}
+
+          {rightTab === 'structure' && (
+            <StructurePanel onSeek={handleSeek} />
           )}
         </div>
       </div>
