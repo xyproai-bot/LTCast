@@ -8,11 +8,10 @@ const MAX_TAPS = 12
 const RESET_TIMEOUT_MS = 2500
 
 /**
- * Tap BPM tool — user taps a button to detect BPM manually.
- * Shows BPM value, TAP button, and Reset button.
+ * BPM display — shows auto-detected BPM and manual tap BPM.
  */
 export function TapBpm(): React.JSX.Element {
-  const { tappedBpm, setTappedBpm, lang } = useStore()
+  const { tappedBpm, detectedBpm, setTappedBpm, lang } = useStore()
   const tapsRef = useRef<number[]>([])
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -55,12 +54,16 @@ export function TapBpm(): React.JSX.Element {
     setTappedBpm(null)
   }, [setTappedBpm])
 
-  const displayBpm = tappedBpm !== null ? tappedBpm.toFixed(2) : '—'
+  const displayDetected = detectedBpm !== null ? detectedBpm.toFixed(1) : '—'
+  const displayTapped = tappedBpm !== null ? tappedBpm.toFixed(2) : '—'
 
   return (
     <div className="tap-bpm-bar">
-      <span className="tap-bpm-label">{t(lang, 'bpm')}</span>
-      <span className="tap-bpm-value">{displayBpm}</span>
+      <span className="tap-bpm-label">{t(lang, 'bpmAuto')}</span>
+      <span className="tap-bpm-value">{displayDetected}</span>
+      <span className="tap-bpm-sep">|</span>
+      <span className="tap-bpm-label">{t(lang, 'bpmTap')}</span>
+      <span className="tap-bpm-value">{displayTapped}</span>
       <button className="tap-bpm-btn tap-bpm-btn--tap" onClick={handleTap}>TAP</button>
       <button className="tap-bpm-btn tap-bpm-btn--reset" onClick={handleReset}>{t(lang, 'bpmReset')}</button>
     </div>

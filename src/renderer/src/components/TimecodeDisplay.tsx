@@ -11,13 +11,25 @@ interface Props {
 
 const FPS_OPTIONS = [24, 25, 29.97, 30]
 
+function formatCountdown(remaining: number): string {
+  if (remaining < 0) remaining = 0
+  const h = Math.floor(remaining / 3600)
+  const m = Math.floor((remaining % 3600) / 60)
+  const s = Math.floor(remaining % 60)
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
 export function TimecodeDisplay({ fullscreen }: Props): React.JSX.Element {
   const {
     timecode, detectedFps, forceFps, setForceFps, lang,
     tcGeneratorMode, setTcGeneratorMode,
     generatorStartTC, setGeneratorStartTC,
     generatorFps, setGeneratorFps,
-    ltcSignalOk, playState
+    ltcSignalOk, playState,
+    currentTime, duration
   } = useStore()
 
   // LTC signal lost: playing in reader mode but no signal
@@ -68,6 +80,20 @@ export function TimecodeDisplay({ fullscreen }: Props): React.JSX.Element {
         <span className="tc-seg tc-frames">{f}</span>
       </div>
       <div className="tc-fps">{fpsLabel}</div>
+
+      {/* Countdown timer */}
+      {duration > 0 ? (() => {
+        const remaining = Math.max(0, duration - currentTime)
+        const isWarning = remaining <= 30
+        return (
+          <div className={`tc-countdown${isWarning ? ' tc-countdown--warn' : ''}`}>
+            -{formatCountdown(remaining)}
+          </div>
+        )
+      })() : (
+        <div className="tc-countdown tc-countdown--empty">--:--</div>
+      )}
+
       {signalLost && <div className="tc-signal-lost-banner">{t(lang, 'ltcSignalLost')}</div>}
       {!fullscreen && <TapBpm />}
 

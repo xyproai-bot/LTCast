@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useCallback } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline.esm.js'
 import MinimapPlugin from 'wavesurfer.js/dist/plugins/minimap.esm.js'
-import { useStore } from '../store'
+import { useStore, WaveformMarker } from '../store'
 import { t } from '../i18n'
 
 interface Props {
@@ -16,6 +16,8 @@ interface Props {
 
 export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onClearVideo, onResyncVideo }: Props): React.JSX.Element {
   const musicContainerRef  = useRef<HTMLDivElement>(null)
+  const musicWrapRef       = useRef<HTMLDivElement>(null)
+  const markerCanvasRef    = useRef<HTMLCanvasElement>(null)   // marker overlay on music waveform
   const ltcWrapRef         = useRef<HTMLDivElement>(null)
   const ltcBgCanvasRef     = useRef<HTMLCanvasElement>(null)   // static waveform
   const ltcCursorCanvasRef = useRef<HTMLCanvasElement>(null)   // cursor + loop (redrawn every frame)
@@ -29,10 +31,11 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   onSeekRef.current = onSeek
 
   const {
-    currentTime, duration, lang,
+    currentTime, duration, lang, filePath,
     videoWaveform, videoDuration, videoOffsetSeconds,
     videoStartTimecode, videoFileName, videoLoading,
-    loopA, loopB
+    loopA, loopB,
+    markers, addMarker, removeMarker, updateMarker
   } = useStore()
 
   // Stable refs for canvas drawing
@@ -52,6 +55,12 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   const loopBRef = useRef(loopB)
   useEffect(() => { loopARef.current = loopA }, [loopA])
   useEffect(() => { loopBRef.current = loopB }, [loopB])
+
+  // Stable refs for marker drawing
+  const markersRef = useRef(markers)
+  const filePathRef = useRef(filePath)
+  useEffect(() => { markersRef.current = markers }, [markers])
+  useEffect(() => { filePathRef.current = filePath }, [filePath])
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  Music waveform — WaveSurfer.js
@@ -146,6 +155,215 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Music waveform marker overlay canvas
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Draw markers on the music waveform overlay canvas */
+  const drawMarkers = useCallback((): void => {
+    const canvas = markerCanvasRef.current
+    if (!canvas) return
+    const ws = wsRef.current
+    if (!ws) return
+
+    const dpr = window.devicePixelRatio || 1
+    const cssW = canvas.clientWidth
+    const cssH = canvas.clientHeight
+    if (!cssW || !cssH) return
+    canvas.width = cssW * dpr
+    canvas.height = cssH * dpr
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.scale(dpr, dpr)
+
+    ctx.clearRect(0, 0, cssW, cssH)
+
+    const fp = filePathRef.current
+    if (!fp) return
+    const fileMarkers = markersRef.current[fp] ?? []
+    if (fileMarkers.length === 0) return
+
+    const dur = durationRef.current
+    if (dur <= 0) return
+
+    // Get WaveSurfer scroll position and zoom
+    const scrollLeft = (ws as unknown as { getScroll(): number }).getScroll?.() ?? 0
+    const totalWidth = Math.max(cssW, zoomRef.current * dur)
+    const pxPerSec = totalWidth / dur
+
+    for (const marker of fileMarkers) {
+      const absX = marker.time * pxPerSec
+      const x = absX - scrollLeft
+      if (x < -10 || x > cssW + 10) continue
+
+      const color = marker.color ?? '#00d4ff'
+
+      // Vertical line
+      ctx.beginPath()
+      ctx.strokeStyle = color
+      ctx.lineWidth = 2
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, cssH)
+      ctx.stroke()
+
+      // Triangle at top
+      ctx.beginPath()
+      ctx.fillStyle = color
+      ctx.moveTo(x - 5, 0)
+      ctx.lineTo(x + 5, 0)
+      ctx.lineTo(x, 8)
+      ctx.closePath()
+      ctx.fill()
+
+      // Label
+      if (marker.label) {
+        ctx.font = '10px sans-serif'
+        ctx.fillStyle = color
+        const labelX = Math.min(x + 4, cssW - 60)
+        ctx.fillText(marker.label, labelX, 20)
+      }
+    }
+  }, [])
+
+  // Redraw markers whenever markers, filePath, duration, currentTime changes
+  useEffect(() => { drawMarkers() }, [markers, filePath, duration, currentTime, drawMarkers])
+
+  // ResizeObserver for music waveform wrap
+  useEffect(() => {
+    const el = musicWrapRef.current
+    if (!el) return
+    const obs = new ResizeObserver(() => { drawMarkers() })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [drawMarkers])
+
+  // Double-click on music waveform → add marker at that time
+  useEffect(() => {
+    const el = musicContainerRef.current
+    if (!el) return
+
+    const onDblClick = (e: MouseEvent): void => {
+      const ws = wsRef.current
+      const fp = filePathRef.current
+      const dur = durationRef.current
+      if (!ws || !fp || dur <= 0) return
+
+      // Compute time at click position
+      const rect = el.getBoundingClientRect()
+      const scrollLeft = ws.getScroll() ?? 0
+      const totalWidth = Math.max(rect.width, zoomRef.current * (durationRef.current || 1))
+      const pxPerSec = totalWidth / dur
+      const clickX = e.clientX - rect.left + scrollLeft
+      const time = Math.max(0, Math.min(dur, clickX / pxPerSec))
+
+      // Prompt for marker name
+      const lang_ = useStore.getState().lang
+      window.api.showInputDialog(
+        t(lang_, 'addMarker'),
+        t(lang_, 'markerLabel'),
+        t(lang_, 'markerPlaceholder')
+      ).then((label: string | null) => {
+        if (label === null) return
+        const { addMarker: add } = useStore.getState()
+        add(fp, {
+          id: `marker-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          time,
+          label: label.trim() || String(Math.round(time * 10) / 10) + 's',
+          color: '#00d4ff'
+        })
+      }).catch(() => {})
+    }
+
+    el.addEventListener('dblclick', onDblClick)
+    return () => el.removeEventListener('dblclick', onDblClick)
+  }, [])
+
+  // Right-click on marker canvas → rename or delete marker
+  // (showInputDialog: blank/cancel = delete, any text = rename)
+  useEffect(() => {
+    const canvas = markerCanvasRef.current
+    if (!canvas) return
+
+    const onContextMenu = (e: MouseEvent): void => {
+      e.preventDefault()
+      const ws = wsRef.current
+      const fp = filePathRef.current
+      const dur = durationRef.current
+      if (!ws || !fp || dur <= 0) return
+
+      const rect = canvas.getBoundingClientRect()
+      const scrollLeft = ws.getScroll() ?? 0
+      const totalWidth = Math.max(rect.width, zoomRef.current * (durationRef.current || 1))
+      const pxPerSec = totalWidth / dur
+
+      // Find nearest marker within 10px
+      const fileMarkers = markersRef.current[fp] ?? []
+      let closest: WaveformMarker | null = null
+      let minDist = 10
+      for (const m of fileMarkers) {
+        const mx = m.time * pxPerSec - scrollLeft
+        const dist = Math.abs(mx - (e.clientX - rect.left))
+        if (dist < minDist) { minDist = dist; closest = m }
+      }
+
+      if (!closest) return
+
+      const lang_ = useStore.getState().lang
+      // showInputDialog: blank = delete, text = rename, cancel = do nothing
+      window.api.showInputDialog(
+        t(lang_, 'renameMarker'),
+        t(lang_, 'markerLabel'),
+        closest.label
+      ).then((newLabel: string | null) => {
+        if (newLabel === null) return // cancelled — do nothing
+        const state = useStore.getState()
+        if (newLabel.trim() === '') {
+          state.removeMarker(fp, closest!.id)
+        } else {
+          state.updateMarker(fp, closest!.id, { label: newLabel.trim() })
+        }
+      }).catch(() => {})
+    }
+
+    canvas.addEventListener('contextmenu', onContextMenu)
+    return () => canvas.removeEventListener('contextmenu', onContextMenu)
+  }, [])
+
+  // Click on marker canvas → seek to nearest marker
+  useEffect(() => {
+    const canvas = markerCanvasRef.current
+    if (!canvas) return
+
+    const onClick = (e: MouseEvent): void => {
+      const ws = wsRef.current
+      const fp = filePathRef.current
+      const dur = durationRef.current
+      if (!ws || !fp || dur <= 0) return
+
+      const rect = canvas.getBoundingClientRect()
+      const scrollLeft = ws.getScroll() ?? 0
+      const totalWidth = Math.max(rect.width, zoomRef.current * (durationRef.current || 1))
+      const pxPerSec = totalWidth / dur
+
+      const fileMarkers = markersRef.current[fp] ?? []
+      let closest: WaveformMarker | null = null
+      let minDist = 10
+      for (const m of fileMarkers) {
+        const mx = m.time * pxPerSec - scrollLeft
+        const dist = Math.abs(mx - (e.clientX - rect.left))
+        if (dist < minDist) { minDist = dist; closest = m }
+      }
+
+      if (closest) {
+        onSeekRef.current(closest.time)
+        e.stopPropagation()
+      }
+    }
+
+    canvas.addEventListener('click', onClick)
+    return () => canvas.removeEventListener('click', onClick)
   }, [])
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -526,7 +744,10 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     <div className="waveform-container">
       <div className="waveform-section">
         <span className="waveform-label">{t(lang, 'musicWaveform')}</span>
-        <div ref={musicContainerRef} className="waveform-ws" />
+        <div ref={musicWrapRef} className="waveform-music-wrap">
+          <div ref={musicContainerRef} className="waveform-ws" />
+          <canvas ref={markerCanvasRef} className="waveform-canvas waveform-canvas--overlay waveform-canvas--markers" />
+        </div>
       </div>
 
       <div className="waveform-section">

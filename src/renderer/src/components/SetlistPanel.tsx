@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore, SortMode } from '../store'
+import { framesToTc, tcToString } from '../audio/timecodeConvert'
 import { t } from '../i18n'
 import { toast } from './Toast'
 import { Tooltip } from './Tooltip'
@@ -13,14 +14,18 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
   const {
     setlist, activeSetlistIndex, lang,
     addToSetlist, removeFromSetlist, reorderSetlist, clearSetlist,
-    sortSetlist, setActiveSetlistIndex
+    sortSetlist, setActiveSetlistIndex,
+    autoAdvance, autoAdvanceGap, setAutoAdvance, setAutoAdvanceGap
   } = useStore()
 
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [missingPaths, setMissingPaths] = useState<Set<string>>(new Set())
   const [editingOffsetIdx, setEditingOffsetIdx] = useState<number | null>(null)
   const [editingOffsetStr, setEditingOffsetStr] = useState('')
+  const [editingNotesIdx, setEditingNotesIdx] = useState<number | null>(null)
+  const [editingNotesStr, setEditingNotesStr] = useState('')
   const offsetInputRef = useRef<HTMLInputElement>(null)
+  const notesInputRef = useRef<HTMLInputElement>(null)
   const sortRef = useRef<HTMLDivElement>(null)
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -32,6 +37,13 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
       offsetInputRef.current?.select()
     }
   }, [editingOffsetIdx])
+
+  // Auto-focus notes input when it appears
+  useEffect(() => {
+    if (editingNotesIdx !== null) {
+      notesInputRef.current?.focus()
+    }
+  }, [editingNotesIdx])
 
   // Clear hold timer/interval on unmount
   useEffect(() => {
@@ -235,6 +247,146 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     setShowSortMenu(false)
   }, [sortSetlist])
 
+  const handleExportCsv = useCallback(async (): Promise<void> => {
+    if (setlist.length === 0) {
+      toast.warning(t(lang, 'exportCsvEmpty'))
+      return
+    }
+    const escape = (s: string): string => {
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+        return '"' + s.replace(/"/g, '""') + '"'
+      }
+      return s
+    }
+    const formatDuration = (secs: number): string => {
+      const h = Math.floor(secs / 3600)
+      const m = Math.floor((secs % 3600) / 60)
+      const s = Math.floor(secs % 60)
+      return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    }
+    try {
+      // Get durations for all files via ffprobe
+      const paths = setlist.map(item => item.path)
+      const durations = await window.api.getAudioDurations(paths)
+      const fps = useStore.getState().forceFps ?? 25
+
+      const header = '#,Song Name,Duration,Offset,Notes,File Path'
+      const rows = setlist.map((item, i) => {
+        const dur = durations[item.path]
+        const durationStr = dur != null ? formatDuration(dur) : ''
+        const offsetStr = item.offsetFrames
+          ? tcToString(framesToTc(item.offsetFrames, fps))
+          : '00:00:00:00'
+        return [
+          String(i + 1),
+          escape(item.name),
+          durationStr,
+          offsetStr,
+          escape(item.notes ?? ''),
+          escape(item.path)
+        ].join(',')
+      })
+      const csvContent = [header, ...rows].join('\r\n')
+      const defaultName = 'setlist.csv'
+      const savedPath = await window.api.saveCsvDialog(csvContent, defaultName)
+      if (savedPath) toast.success(t(lang, 'exportCsvSuccess'))
+    } catch (e) {
+      console.error('CSV export failed', e)
+    }
+  }, [setlist, lang])
+
+  const handleImportCsv = useCallback(async (): Promise<void> => {
+    try {
+      const csvContent = await window.api.openCsvDialog()
+      if (!csvContent) return
+
+      // Parse CSV — handle UTF-8 BOM
+      const content = csvContent.startsWith('\uFEFF') ? csvContent.slice(1) : csvContent
+      const lines = content.split(/\r?\n/).filter(l => l.trim().length > 0)
+      if (lines.length === 0) { toast.error(t(lang, 'csvFormatError')); return }
+
+      // Simple CSV field parser — handles quoted fields with commas/quotes inside
+      const parseRow = (line: string): string[] => {
+        const fields: string[] = []
+        let cur = ''
+        let inQuote = false
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i]
+          if (inQuote) {
+            if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++ }
+            else if (ch === '"') { inQuote = false }
+            else { cur += ch }
+          } else {
+            if (ch === '"') { inQuote = true }
+            else if (ch === ',') { fields.push(cur); cur = '' }
+            else { cur += ch }
+          }
+        }
+        fields.push(cur)
+        return fields
+      }
+
+      // Detect header format
+      const firstRow = parseRow(lines[0])
+      const h1 = firstRow.map(f => f.trim().toLowerCase())
+      const hasHeader = h1[0] === '#' || h1.includes('song name')
+      const dataLines = hasHeader ? lines.slice(1) : lines
+
+      // Detect new format: #, Song Name, Duration, Offset, Notes, File Path
+      const isNewFormat = hasHeader && h1.includes('notes') && h1.includes('duration')
+
+      const items: Array<{ path: string; name: string; offsetFrames?: number; notes?: string }> = []
+      let missingCount = 0
+
+      for (const line of dataLines) {
+        const row = parseRow(line)
+        if (row.length < 3) continue
+
+        let name: string, path: string, notes: string | undefined
+
+        if (isNewFormat) {
+          // New format: #, Song Name, Duration, Offset, Notes, File Path
+          name = row[1]?.trim() ?? ''
+          notes = row[4]?.trim() || undefined
+          path = row[5]?.trim() ?? ''
+        } else {
+          // Old format: #, Song Name, File Path, Song Offset (frames)
+          name = row[1]?.trim() ?? ''
+          path = row[2]?.trim() ?? ''
+        }
+        if (!path) continue
+
+        items.push({
+          path,
+          name: name || (path.split(/[/\\]/).pop() ?? path),
+          notes
+        })
+      }
+
+      if (items.length === 0) { toast.error(t(lang, 'csvFormatError')); return }
+
+      // Check which paths exist
+      const existenceChecks = await Promise.all(
+        items.map(item => window.api.fileExists(item.path).then(e => e).catch(() => true))
+      )
+      missingCount = existenceChecks.filter(e => !e).length
+
+      addToSetlist(items)
+
+      if (missingCount === 0) {
+        toast.success(t(lang, 'importCsvSuccess', { n: String(items.length) }))
+      } else {
+        toast.warning(t(lang, 'importCsvPartial', {
+          n: String(items.length - missingCount),
+          m: String(missingCount)
+        }))
+      }
+    } catch (e) {
+      console.error('CSV import failed', e)
+      toast.error(t(lang, 'csvFormatError'))
+    }
+  }, [lang, addToSetlist])
+
   return (
     <div
       className="setlist-panel"
@@ -272,11 +424,29 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                         {(item.offsetFrames ?? 0) >= 0 ? '+' : ''}{item.offsetFrames}f
                       </span>
                     )}
+                    {item.notes && (
+                      <span className="setlist-notes-badge" title={item.notes}>N</span>
+                    )}
                     <Tooltip text={t(lang, 'songOffset')}>
                       <button
                         className={`setlist-offset-btn${isEditingOffset ? ' active' : ''}`}
                         onClick={(e) => handleToggleOffsetEdit(e, i)}
                       >⊕</button>
+                    </Tooltip>
+                    <Tooltip text={t(lang, 'songNotes')}>
+                      <button
+                        className={`setlist-offset-btn${editingNotesIdx === i ? ' active' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (editingNotesIdx === i) {
+                            setEditingNotesIdx(null)
+                          } else {
+                            setEditingNotesStr(item.notes ?? '')
+                            setEditingNotesIdx(i)
+                            setEditingOffsetIdx(null)
+                          }
+                        }}
+                      >N</button>
                     </Tooltip>
                     <Tooltip text={t(lang, 'remove')}>
                       <button
@@ -337,12 +507,36 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                       )}
                     </div>
                   )}
+                  {editingNotesIdx === i && (
+                    <div className="setlist-notes-editor" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        ref={notesInputRef}
+                        type="text"
+                        className="setlist-notes-input"
+                        value={editingNotesStr}
+                        placeholder={t(lang, 'songNotesPlaceholder')}
+                        onChange={(e) => setEditingNotesStr(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            useStore.getState().setSetlistItemNotes(i, editingNotesStr)
+                            setEditingNotesIdx(null)
+                          }
+                          if (e.key === 'Escape') { e.stopPropagation(); setEditingNotesIdx(null) }
+                        }}
+                        onBlur={() => {
+                          useStore.getState().setSetlistItemNotes(i, editingNotesStr)
+                          setEditingNotesIdx(null)
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               )
             })}
           </div>
 
-          {/* Top action bar: add + sort */}
+          {/* Top action bar: add + sort + export/import CSV */}
           <div className="setlist-actions">
             <button className="btn-setlist-action" onClick={onImportFiles} title={t(lang, 'addFiles')}>+</button>
             <div className="setlist-sort-wrapper" ref={sortRef}>
@@ -362,6 +556,47 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                 </div>
               )}
             </div>
+            <button
+              className="btn-setlist-action"
+              onClick={handleExportCsv}
+              title={t(lang, 'exportCsv')}
+              disabled={setlist.length === 0}
+            >
+              CSV↑
+            </button>
+            <button
+              className="btn-setlist-action"
+              onClick={handleImportCsv}
+              title={t(lang, 'importCsv')}
+            >
+              CSV↓
+            </button>
+          </div>
+
+          {/* Auto-advance controls */}
+          <div className="setlist-auto-advance">
+            <label className="auto-advance-toggle">
+              <input
+                type="checkbox"
+                checked={autoAdvance}
+                onChange={e => setAutoAdvance(e.target.checked)}
+              />
+              <span>{t(lang, 'autoAdvance')}</span>
+            </label>
+            {autoAdvance && (
+              <label className="auto-advance-gap">
+                <span>{t(lang, 'autoAdvanceGap')}</span>
+                <input
+                  type="number"
+                  className="auto-advance-gap-input"
+                  min={0}
+                  max={30}
+                  step={1}
+                  value={autoAdvanceGap}
+                  onChange={e => setAutoAdvanceGap(Number(e.target.value))}
+                />
+              </label>
+            )}
           </div>
 
           {/* Clear all at very bottom, red, with confirmation */}

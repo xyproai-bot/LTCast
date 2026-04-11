@@ -264,6 +264,12 @@ html, body, #root {
   letter-spacing: -0.5px;
 }
 
+.tap-bpm-sep {
+  color: #555;
+  margin: 0 6px;
+  font-size: 14px;
+}
+
 .tap-bpm-btn {
   background: #2a2a2a;
   color: #ccc;
@@ -478,12 +484,25 @@ html, body, #root {
   letter-spacing: 1px;
 }
 
+.waveform-music-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .waveform-ws {
   flex: 1;
   min-height: 0;
   border-radius: 4px;
   overflow: hidden;
   background: #1e1e1e;
+}
+
+.waveform-canvas--markers {
+  pointer-events: auto;
+  cursor: crosshair;
 }
 
 .waveform-ltc-wrap {
@@ -1150,6 +1169,38 @@ html, body, #root {
 .setlist-offset-input:focus { border-color: #00d4ff; }
 .setlist-offset-input::placeholder { color: #444; font-size: 10px; }
 
+/* Notes badge + editor */
+.setlist-notes-badge {
+  font-size: 9px;
+  color: #ffa500;
+  background: rgba(255, 165, 0, 0.1);
+  border: 1px solid rgba(255, 165, 0, 0.25);
+  border-radius: 3px;
+  padding: 1px 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.setlist-notes-editor {
+  padding: 4px 6px 4px 22px;
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+}
+.setlist-notes-input {
+  width: 100%;
+  background: #0d0d0d;
+  border: 1px solid #333;
+  color: #e0e0e0;
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  outline: none;
+  box-sizing: border-box;
+}
+.setlist-notes-input:focus { border-color: #ffa500; }
+.setlist-notes-input::placeholder { color: #444; font-size: 10px; }
+
 /* +/- adjustment buttons */
 .offset-adj-btn {
   background: #222;
@@ -1368,4 +1419,544 @@ html, body, #root {
 ::-webkit-scrollbar-track { background: #1a1a1a; }
 ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #444; }
+
+/* ── LTC WAV Export Dialog ────────────────────────────────── */
+.ltc-wav-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.ltc-wav-dialog {
+  background: #1e1e1e;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  padding: 20px 24px;
+  min-width: 320px;
+  max-width: 400px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.ltc-wav-dialog-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #00d4ff;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.ltc-wav-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ltc-wav-label {
+  font-size: 10px;
+  color: #888;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.ltc-wav-input,
+.ltc-wav-select {
+  background: #151515;
+  color: #e0e0e0;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  width: 100%;
+}
+.ltc-wav-input:focus,
+.ltc-wav-select:focus { border-color: #00d4ff; }
+.ltc-wav-input:disabled,
+.ltc-wav-select:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.ltc-wav-slider {
+  width: 100%;
+  appearance: none;
+  height: 4px;
+  background: #2a2a2a;
+  border-radius: 2px;
+  cursor: pointer;
+  outline: none;
+}
+.ltc-wav-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #00d4ff;
+  cursor: pointer;
+}
+.ltc-wav-slider:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.ltc-wav-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ltc-wav-progress-label {
+  font-size: 11px;
+  color: #aaa;
+}
+
+.ltc-wav-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #2a2a2a;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.ltc-wav-progress-fill {
+  height: 100%;
+  background: #00d4ff;
+  border-radius: 3px;
+  transition: width 0.1s;
+}
+
+.ltc-wav-progress-pct {
+  font-size: 11px;
+  color: #888;
+  text-align: right;
+}
+
+.ltc-wav-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.ltc-wav-btn {
+  background: #2a2a2a;
+  color: #ccc;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.ltc-wav-btn:hover:not(:disabled) { background: #3a3a3a; color: #fff; }
+.ltc-wav-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.ltc-wav-btn-export {
+  background: #003344;
+  color: #00d4ff;
+  border-color: #00d4ff44;
+}
+.ltc-wav-btn-export:hover:not(:disabled) { background: #004455; color: #33ddff; }
+
+/* ── Countdown timer (TimecodeDisplay) ────────────────────── */
+.tc-countdown {
+  font-size: 18px;
+  font-weight: 700;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+
+.tc-countdown--warn {
+  color: #ff6b35;
+  text-shadow: 0 0 10px rgba(255, 107, 53, 0.4);
+  animation: countdown-pulse 1s ease-in-out infinite;
+}
+
+.tc-countdown--empty {
+  color: #444;
+}
+
+@keyframes countdown-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Fullscreen countdown */
+.tc-display--fullscreen .tc-countdown {
+  font-size: 28px;
+}
+
+/* ── Auto-advance banner (App.tsx center panel) ────────────── */
+.auto-advance-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #1a2a1a;
+  border: 1px solid #2a6a2a;
+  border-radius: 5px;
+  font-size: 12px;
+  color: #88ff88;
+  letter-spacing: 0.5px;
+}
+
+.auto-advance-cancel {
+  background: transparent;
+  color: #66cc66;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1;
+}
+.auto-advance-cancel:hover { color: #ff4444; background: #2a1a1a; }
+
+/* ── Auto-advance controls (SetlistPanel) ─────────────────── */
+.setlist-auto-advance {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 4px;
+  border-top: 1px solid #2a2a2a;
+  font-size: 11px;
+}
+
+.auto-advance-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: #aaa;
+}
+.auto-advance-toggle input[type="checkbox"] { cursor: pointer; accent-color: #00d4ff; }
+
+.auto-advance-gap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #888;
+  padding-left: 16px;
+}
+
+.auto-advance-gap-input {
+  width: 44px;
+  background: #222;
+  color: #e0e0e0;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-family: inherit;
+  text-align: center;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.auto-advance-gap-input:focus { border-color: #00d4ff; }
+
+/* ── MIDI Cue Panel ───────────────────────────────────────── */
+.midi-cue-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cue-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cue-section-title {
+  font-size: 10px;
+  color: #888;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border-bottom: 1px solid #2a2a2a;
+  padding-bottom: 3px;
+  margin-bottom: 2px;
+}
+
+.cue-section-subtitle {
+  font-size: 10px;
+  color: #666;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-top: 6px;
+}
+
+.cue-empty {
+  font-size: 11px;
+  color: #555;
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.cue-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 0;
+  border-bottom: 1px solid #222;
+  font-size: 11px;
+}
+
+.cue-row--disabled {
+  opacity: 0.4;
+}
+
+.cue-enable {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.cue-tc {
+  font-variant-numeric: tabular-nums;
+  color: #00d4ff;
+  min-width: 74px;
+  font-size: 11px;
+}
+
+.cue-type {
+  color: #ffb74d;
+  min-width: 28px;
+  font-size: 10px;
+}
+
+.cue-ch {
+  color: #888;
+  min-width: 24px;
+  font-size: 10px;
+}
+
+.cue-data {
+  color: #ccc;
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+  font-size: 10px;
+}
+
+.cue-label {
+  flex: 1;
+  color: #888;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cue-delete {
+  background: none;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+.cue-delete:hover { color: #f44336; }
+
+.cue-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #1e1e1e;
+  border-radius: 4px;
+  border: 1px solid #2a2a2a;
+}
+
+.cue-form-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.cue-form-label {
+  font-size: 10px;
+  color: #666;
+}
+
+.cue-tc-input {
+  background: #222;
+  color: #00d4ff;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  width: 85px;
+  outline: none;
+}
+.cue-tc-input:focus { border-color: #00d4ff; }
+
+.cue-type-select {
+  background: #222;
+  color: #e0e0e0;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+}
+
+.cue-num-input {
+  background: #222;
+  color: #e0e0e0;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-family: inherit;
+  width: 44px;
+  text-align: center;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.cue-num-input:focus { border-color: #00d4ff; }
+
+.cue-label-input {
+  flex: 1;
+  background: #222;
+  color: #e0e0e0;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+  min-width: 60px;
+}
+.cue-label-input:focus { border-color: #00d4ff; }
+
+.cue-add-btn {
+  flex-shrink: 0;
+}
+
+/* ── MIDI Mapping rows ────────────────────────────────────── */
+.mapping-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px 6px;
+  background: #1e1e1e;
+  border-radius: 4px;
+  border: 1px solid #2a2a2a;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.mapping-row--learning {
+  border-color: #ff9800;
+  background: #241e0f;
+}
+
+.mapping-trigger,
+.mapping-action-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.mapping-select {
+  background: #222;
+  color: #e0e0e0;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+}
+
+.mapping-label-sm {
+  font-size: 10px;
+  color: #666;
+}
+
+.mapping-num {
+  background: #222;
+  color: #e0e0e0;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-family: inherit;
+  width: 38px;
+  text-align: center;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.mapping-num:focus { border-color: #00d4ff; }
+
+.mapping-arrow {
+  color: #555;
+  font-size: 12px;
+}
+
+.mapping-learn {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.mapping-learn--active {
+  background: #3a2800;
+  border-color: #ff9800;
+  color: #ff9800;
+}
+
+/* ── Right panel tab switcher ─────────────────────────────── */
+.right-panel-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.right-tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #666;
+  font-size: 11px;
+  font-family: inherit;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 5px 4px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.right-tab-btn:hover { color: #aaa; }
+.right-tab-btn.active {
+  color: #00d4ff;
+  border-bottom-color: #00d4ff;
+}
+
+/* ── MIDI activity indicator ──────────────────────────────── */
+.midi-activity-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #888;
+  margin-left: 4px;
+  transition: background 0.1s;
+}
+.midi-activity-dot.active {
+  background: #00d4ff;
+}
 

@@ -1,25 +1,32 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { AudioEngine } from './audio/AudioEngine'
 import { MtcOutput } from './audio/MtcOutput'
+import { MidiInput } from './audio/MidiInput'
 import { ArtNetOutput } from './audio/ArtNetOutput'
+import { OscOutput } from './audio/OscOutput'
 import { TimecodeDisplay } from './components/TimecodeDisplay'
 import { Waveform } from './components/Waveform'
 import { Transport } from './components/Transport'
 import { DevicePanel } from './components/DevicePanel'
 import { SetlistPanel } from './components/SetlistPanel'
+import { MidiCuePanel } from './components/MidiCuePanel'
 import { PresetBar } from './components/PresetBar'
 import { StatusBar } from './components/StatusBar'
+import { LtcWavExportDialog } from './components/LtcWavExportDialog'
 import { useStore, TimecodeFrame } from './store'
 import { alignAudio } from './audio/AudioAligner'
 import { getTimecodeAtTime, formatTimecode } from './audio/LtcDecoder'
+import { detectBpmAt } from './audio/BpmDetector'
 import { t } from './i18n'
 import { toast } from './components/Toast'
 import { LTC_CONFIDENCE_THRESHOLD } from './constants'
 
 export default function App(): React.JSX.Element {
-  const engine = useRef<AudioEngine | null>(null)
-  const mtc    = useRef<MtcOutput | null>(null)
-  const artnet = useRef<ArtNetOutput | null>(null)
+  const engine    = useRef<AudioEngine | null>(null)
+  const mtc       = useRef<MtcOutput | null>(null)
+  const midiIn    = useRef<MidiInput | null>(null)
+  const artnet    = useRef<ArtNetOutput | null>(null)
+  const osc       = useRef<OscOutput | null>(null)
   const [musicWaveform, setMusicWaveform] = useState<Float32Array | null>(null)
   const [ltcWaveform, setLtcWaveform]     = useState<Float32Array | null>(null)
   const [version, setVersion]             = useState('0.1.0')
@@ -28,6 +35,26 @@ export default function App(): React.JSX.Element {
   const [fullscreenTc, setFullscreenTc]   = useState(false)
   const [sidebarWidth, setSidebarWidth]   = useState(200)
   const isResizingSidebar = useRef(false)
+  const [showLtcWavDialog, setShowLtcWavDialog] = useState(false)
+  const lastBpmUpdateTime = useRef(0)
+  // Auto-advance: timer ref + countdown state
+  const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [autoAdvanceCountdown, setAutoAdvanceCountdown] = useState<{ name: string; remaining: number } | null>(null)
+  const autoAdvanceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // MIDI cue: track last triggered cue IDs per playback session
+  const triggeredCueIds = useRef<Set<string>>(new Set())
+  // MIDI input: learning state
+  const [learningMappingId, setLearningMappingId] = useState<string | null>(null)
+  // MIDI activity indicator
+  const [midiActivity, setMidiActivity] = useState(false)
+  const midiActivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Cancel any pending auto-advance countdown
+  const cancelAutoAdvance = useCallback((): void => {
+    if (autoAdvanceTimer.current) { clearTimeout(autoAdvanceTimer.current); autoAdvanceTimer.current = null }
+    if (autoAdvanceIntervalRef.current) { clearInterval(autoAdvanceIntervalRef.current); autoAdvanceIntervalRef.current = null }
+    setAutoAdvanceCountdown(null)
+  }, [])
 
   const {
     filePath, fileName, presetName, lang, loop,
@@ -41,9 +68,14 @@ export default function App(): React.JSX.Element {
     generatorStartTC, generatorFps,
     forceFps,
     ltcChannel,
-    setLtcConfidence,
+    setLtcConfidence, setDetectedBpm,
     artnetEnabled, artnetTargetIp,
-    setSelectedMidiPort
+    oscEnabled, oscTargetIp, oscTargetPort,
+    setSelectedMidiPort,
+    rightTab, setMidiInputs,
+    selectedCueMidiPort, setSelectedCueMidiPort,
+    midiInputPort, setMidiInputPort,
+    midiMappings, updateMidiMapping
   } = useStore()
 
   // Sync window title bar with preset name
@@ -74,8 +106,66 @@ export default function App(): React.JSX.Element {
       onTimecode: handleTimecode,
       onTimeUpdate: (t) => {
         setCurrentTime(t)
+        // Real-time BPM detection every 3 seconds
+        const now = performance.now()
+        if (now - lastBpmUpdateTime.current > 3000) {
+          lastBpmUpdateTime.current = now
+          const buf = engine.current?.getBuffer()
+          if (buf) {
+            const musicCh = engine.current?.getMusicChannelIndex() ?? 0
+            const bpm = detectBpmAt(buf, musicCh, t)
+            useStore.getState().setDetectedBpm(bpm)
+          }
+        }
       },
-      onEnded: () => setPlayState('stopped'),
+      onEnded: () => {
+        setPlayState('stopped')
+        // Auto-advance: check if we should load next song
+        const s = useStore.getState()
+        if (!s.autoAdvance) return
+        if (s.activeSetlistIndex === null) return
+        const nextIdx = s.activeSetlistIndex + 1
+        if (nextIdx >= s.setlist.length) return  // last song — stop
+        const nextItem = s.setlist[nextIdx]
+        const gapMs = (s.autoAdvanceGap ?? 2) * 1000
+
+        // Start countdown display
+        let remaining = Math.ceil(s.autoAdvanceGap ?? 2)
+        setAutoAdvanceCountdown({ name: nextItem.name, remaining })
+        autoAdvanceIntervalRef.current = setInterval(() => {
+          remaining -= 1
+          if (remaining <= 0) {
+            if (autoAdvanceIntervalRef.current) { clearInterval(autoAdvanceIntervalRef.current); autoAdvanceIntervalRef.current = null }
+            setAutoAdvanceCountdown(null)
+          } else {
+            setAutoAdvanceCountdown({ name: nextItem.name, remaining })
+          }
+        }, 1000)
+
+        autoAdvanceTimer.current = setTimeout(() => {
+          autoAdvanceTimer.current = null
+          // Re-check state in case user cancelled
+          const latest = useStore.getState()
+          if (latest.autoAdvance && latest.activeSetlistIndex !== null) {
+            const ni = latest.activeSetlistIndex + 1
+            if (ni < latest.setlist.length) {
+              const item = latest.setlist[ni]
+              latest.setActiveSetlistIndex(ni)
+              openFile(item.path, item.offsetFrames).then(() => {
+                // Auto-play after loading
+                const afterLoad = useStore.getState()
+                if (afterLoad.duration > 0) {
+                  setPlayState('playing')
+                  engine.current?.play().then(() => {
+                    const tc = useStore.getState().timecode
+                    if (tc) mtc.current?.sendFullFrame(tc)
+                  }).catch(() => setPlayState('paused'))
+                }
+              })
+            }
+          }
+        }, gapMs)
+      },
       onLtcChannelDetected: (ch) => setDetectedLtcChannel(ch >= 0 ? ch : null),
       onLtcSignalStatus: (ok) => setLtcSignalOk(ok),
       onLtcConfidence: (confidence) => {
@@ -107,7 +197,6 @@ export default function App(): React.JSX.Element {
         mtc.current?.setPlayStartClocks(perfNow, audioTime)
       },
       onLtcError: (type) => {
-        const lang = useStore.getState().lang
         const l = useStore.getState().lang
         if (type === 'worklet') toast.error(t(l, 'ltcWorkletError'))
         else if (type === 'warmup') toast.warning(t(l, 'ltcWarmupError'))
@@ -144,6 +233,102 @@ export default function App(): React.JSX.Element {
         }
         // Restore saved MTC mode
         mtcOut.setMode(useStore.getState().mtcMode)
+        // Restore saved cue MIDI port
+        const savedCuePort = useStore.getState().selectedCueMidiPort
+        if (savedCuePort) mtcOut.selectCuePort(savedCuePort)
+
+        // Init MIDI Input using same midiAccess
+        const midiInst = new MidiInput()
+        midiInst.onPortsChanged = () => {
+          setMidiInputs(midiInst.getInputPorts())
+        }
+        midiInst.onActionReceived = (event) => {
+          const s = useStore.getState()
+          switch (event.action) {
+            case 'play':
+              if (s.playState !== 'playing' && s.duration > 0) {
+                s.setPlayState('playing')
+                engine.current?.play().then(() => {
+                  const tc = useStore.getState().timecode
+                  if (tc) mtcOut.sendFullFrame(tc)
+                }).catch(() => s.setPlayState('paused'))
+              }
+              break
+            case 'pause':
+              if (s.playState === 'playing') {
+                engine.current?.pause()
+                s.setPlayState('paused')
+              }
+              break
+            case 'stop':
+              engine.current?.pause()
+              engine.current?.seek(0)
+              s.setPlayState('stopped')
+              s.setTimecode(null)
+              triggeredCueIds.current = new Set()
+              break
+            case 'play-pause':
+              if (s.playState === 'playing') {
+                engine.current?.pause()
+                s.setPlayState('paused')
+              } else if (s.duration > 0) {
+                s.setPlayState('playing')
+                engine.current?.play().then(() => {
+                  const tc = useStore.getState().timecode
+                  if (tc) mtcOut.sendFullFrame(tc)
+                }).catch(() => s.setPlayState('paused'))
+              }
+              break
+            case 'next': {
+              const ni = s.activeSetlistIndex !== null ? s.activeSetlistIndex + 1 : 0
+              if (ni < s.setlist.length) {
+                s.setActiveSetlistIndex(ni)
+                const item = s.setlist[ni]
+                openFile(item.path, item.offsetFrames)
+              }
+              break
+            }
+            case 'prev': {
+              const pi = s.activeSetlistIndex !== null && s.activeSetlistIndex > 0
+                ? s.activeSetlistIndex - 1 : null
+              if (pi !== null) {
+                s.setActiveSetlistIndex(pi)
+                const item = s.setlist[pi]
+                openFile(item.path, item.offsetFrames)
+              }
+              break
+            }
+            case 'goto-song': {
+              const idx = event.param ?? 0
+              if (idx >= 0 && idx < s.setlist.length) {
+                s.setActiveSetlistIndex(idx)
+                const item = s.setlist[idx]
+                openFile(item.path, item.offsetFrames)
+              }
+              break
+            }
+          }
+        }
+        midiInst.onMidiActivity = () => {
+          setMidiActivity(true)
+          if (midiActivityTimer.current) clearTimeout(midiActivityTimer.current)
+          midiActivityTimer.current = setTimeout(() => setMidiActivity(false), 200)
+        }
+
+        // Use the same midiAccess from MtcOutput to avoid requesting a second permission
+        const sharedAccess = (mtcOut as unknown as { midiAccess: MIDIAccess | null }).midiAccess
+        if (sharedAccess) {
+          midiInst.init(sharedAccess).then(() => {
+            setMidiInputs(midiInst.getInputPorts())
+            // Restore saved MIDI input port
+            const savedInputPort = useStore.getState().midiInputPort
+            if (savedInputPort) {
+              const ok = midiInst.selectPort(savedInputPort)
+              if (ok) midiInst.setupMappingListener(() => useStore.getState().midiMappings)
+            }
+          }).catch((e) => console.warn('MIDI Input init failed:', e))
+        }
+        midiIn.current = midiInst
       })
       .catch((e) => console.warn('MIDI init failed:', e))
     mtc.current = mtcOut
@@ -153,6 +338,12 @@ export default function App(): React.JSX.Element {
     const savedState = useStore.getState()
     if (savedState.artnetEnabled) {
       artnet.current.start(savedState.artnetTargetIp).catch(() => {})
+    }
+
+    // Init OSC Output
+    osc.current = new OscOutput()
+    if (savedState.oscEnabled) {
+      osc.current.start(savedState.oscTargetIp, savedState.oscTargetPort).catch(() => {})
     }
 
     // Restore saved engine settings
@@ -194,7 +385,10 @@ export default function App(): React.JSX.Element {
       engine.current?.forceCleanup()
       engine.current?.dispose()
       mtc.current?.deselectPort()
+      mtc.current?.deselectCuePort()
+      midiIn.current?.deselectPort()
       artnet.current?.stop()
+      osc.current?.stop()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -263,6 +457,23 @@ export default function App(): React.JSX.Element {
     artnet.current?.setTargetIp(artnetTargetIp)
   }, [artnetTargetIp])
 
+  // Sync OSC settings
+  useEffect(() => {
+    if (oscEnabled) {
+      osc.current?.start(oscTargetIp, oscTargetPort).catch(() => {})
+    } else {
+      osc.current?.stop()
+    }
+  }, [oscEnabled])
+
+  useEffect(() => {
+    osc.current?.setTargetIp(oscTargetIp)
+  }, [oscTargetIp])
+
+  useEffect(() => {
+    osc.current?.setTargetPort(oscTargetPort)
+  }, [oscTargetPort])
+
   // Keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -273,6 +484,7 @@ export default function App(): React.JSX.Element {
       // Space: play/pause
       if (e.code === 'Space') {
         e.preventDefault()
+        cancelAutoAdvance()
         const state = useStore.getState()
         if (!state.duration) return
         if (state.playState === 'playing') {
@@ -295,6 +507,7 @@ export default function App(): React.JSX.Element {
         if (fullscreenTc) {
           setFullscreenTc(false)
         } else {
+          cancelAutoAdvance()
           engine.current?.pause()
           engine.current?.seek(0)
           setPlayState('stopped')
@@ -371,6 +584,37 @@ export default function App(): React.JSX.Element {
     const audioTime = engine.current?.getCurrentAudioContextTime() ?? 0
     mtc.current?.sendTimecode(tc, audioTime)
     artnet.current?.sendTimecode(tc)
+    osc.current?.sendTimecode(tc)
+
+    // MIDI Cue triggering — compare absolute timecode
+    const s = useStore.getState()
+    if (s.playState === 'playing' && s.activeSetlistIndex !== null) {
+      const song = s.setlist[s.activeSetlistIndex]
+      const cues = song?.midiCues ?? []
+      if (cues.length > 0) {
+        const currentTcStr = [
+          String(tc.hours).padStart(2, '0'),
+          String(tc.minutes).padStart(2, '0'),
+          String(tc.seconds).padStart(2, '0'),
+          String(tc.frames).padStart(2, '0')
+        ].join(':')
+        for (const cue of cues) {
+          if (!cue.enabled) continue
+          if (triggeredCueIds.current.has(cue.id)) continue
+          if (cue.triggerTimecode <= currentTcStr) {
+            triggeredCueIds.current.add(cue.id)
+            // Fire the cue
+            if (cue.messageType === 'program-change') {
+              mtc.current?.sendProgramChange(cue.channel, cue.data1)
+            } else if (cue.messageType === 'note-on') {
+              mtc.current?.sendNoteOn(cue.channel, cue.data1, cue.data2 ?? 100)
+            } else if (cue.messageType === 'control-change') {
+              mtc.current?.sendControlChange(cue.channel, cue.data1, cue.data2 ?? 0)
+            }
+          }
+        }
+      }
+    }
   }, [setTimecode, setDetectedFps])
 
   const selectMidiPort = useCallback((portId: string): void => {
@@ -391,10 +635,60 @@ export default function App(): React.JSX.Element {
     }
   }, [setMidiConnected, setSelectedMidiPort])
 
+  const selectCueMidiPort = useCallback((portId: string): void => {
+    if (!mtc.current) return
+    if (!portId) {
+      mtc.current.deselectCuePort()
+      setSelectedCueMidiPort(null)
+      return
+    }
+    const ok = mtc.current.selectCuePort(portId)
+    setSelectedCueMidiPort(ok ? portId : null)
+  }, [setSelectedCueMidiPort])
+
+  const selectMidiInputPort = useCallback((portId: string): void => {
+    if (!midiIn.current) return
+    if (!portId) {
+      midiIn.current.deselectPort()
+      setMidiInputPort(null)
+      return
+    }
+    const ok = midiIn.current.selectPort(portId)
+    setMidiInputPort(ok ? portId : null)
+    if (ok) {
+      // Setup mapping listener
+      midiIn.current.setupMappingListener(() => useStore.getState().midiMappings)
+    }
+  }, [setMidiInputPort])
+
+  const handleMidiActivity = useCallback((): void => {
+    setMidiActivity(true)
+    if (midiActivityTimer.current) clearTimeout(midiActivityTimer.current)
+    midiActivityTimer.current = setTimeout(() => setMidiActivity(false), 200)
+  }, [])
+
+  const handleStartLearn = useCallback((mappingId: string): void => {
+    if (!midiIn.current) return
+    if (learningMappingId === mappingId) {
+      // Cancel learn
+      midiIn.current.stopLearn()
+      setLearningMappingId(null)
+      return
+    }
+    setLearningMappingId(mappingId)
+    midiIn.current.startLearn((result) => {
+      setLearningMappingId(null)
+      updateMidiMapping(mappingId, {
+        trigger: { type: result.type, channel: result.channel, data1: result.data1 }
+      })
+    })
+  }, [learningMappingId, updateMidiMapping])
+
   const openFile = async (path?: string, songOffsetFrames?: number): Promise<void> => {
     const filePath_ = path ?? await window.api.openFileDialog()
     if (!filePath_) return
 
+    cancelAutoAdvance()
     engine.current?.pause()  // stop audio immediately — don't let old file keep playing during file read
     setPlayState('stopped')
     setTimecode(null)
@@ -408,6 +702,10 @@ export default function App(): React.JSX.Element {
       const arrayBuffer = await window.api.readAudioFile(filePath_)
       if (!arrayBuffer) throw new Error('Empty file')
       await engine.current?.loadFile(arrayBuffer)
+
+      // Reset BPM on new file load (real-time detection happens during playback)
+      setDetectedBpm(null)
+
       // Apply manual LTC channel override if set (overrides auto-detect from loadFile)
       const ch = useStore.getState().ltcChannel
       if (ch !== 'auto') engine.current?.setLtcChannel(ch)
@@ -418,6 +716,10 @@ export default function App(): React.JSX.Element {
       engine.current?.setOffset(effectiveOffset)
       const duration = engine.current?.getDuration() ?? 0
       setFilePath(filePath_, name, duration)
+      // Notify OSC clients of song change
+      const s = useStore.getState()
+      const songIndex = s.activeSetlistIndex ?? 0
+      osc.current?.sendSong(name, songIndex)
     } catch (e) {
       setFilePath(null, null, 0)  // clear stale file state so UI doesn't show old file as loaded
       toast.error(`${t(useStore.getState().lang, 'loadFailed')}: ${e}`)
@@ -571,7 +873,9 @@ export default function App(): React.JSX.Element {
   }
 
   const handlePlay = (): void => {
+    cancelAutoAdvance()
     setPlayState('playing')
+    osc.current?.sendTransport('play')
     engine.current?.play().then(() => {
       const tc = useStore.getState().timecode
       if (tc) mtc.current?.sendFullFrame(tc)
@@ -581,15 +885,20 @@ export default function App(): React.JSX.Element {
   }
 
   const handlePause = (): void => {
+    cancelAutoAdvance()
     engine.current?.pause()
     setPlayState('paused')
+    osc.current?.sendTransport('pause')
   }
 
   const handleStop = (): void => {
+    cancelAutoAdvance()
     engine.current?.pause()
     engine.current?.seek(0)
     setPlayState('stopped')
     setTimecode(null)
+    triggeredCueIds.current = new Set()
+    osc.current?.sendTransport('stop')
   }
 
   const handleSeek = async (time: number): Promise<void> => {
@@ -597,6 +906,23 @@ export default function App(): React.JSX.Element {
     if (wasPlaying) setPlayState('playing')
     const tc = useStore.getState().timecode
     if (tc) mtc.current?.sendFullFrame(tc)
+    // Reset cue tracking: re-add IDs of cues that are already past the new seek position
+    const s = useStore.getState()
+    if (s.activeSetlistIndex !== null) {
+      const song = s.setlist[s.activeSetlistIndex]
+      const cues = song?.midiCues ?? []
+      if (tc) {
+        const seekTcStr = [
+          String(tc.hours).padStart(2, '0'),
+          String(tc.minutes).padStart(2, '0'),
+          String(tc.seconds).padStart(2, '0'),
+          String(tc.frames).padStart(2, '0')
+        ].join(':')
+        triggeredCueIds.current = new Set(cues.filter(c => c.triggerTimecode < seekTcStr).map(c => c.id))
+      } else {
+        triggeredCueIds.current = new Set()
+      }
+    }
   }
 
   if (fullscreenTc) {
@@ -628,6 +954,9 @@ export default function App(): React.JSX.Element {
         </button>
         <button className="btn-open" onClick={openVideo} disabled={!filePath}>
           {t(lang, 'importVideo')}
+        </button>
+        <button className="btn-open" onClick={() => setShowLtcWavDialog(true)}>
+          {t(lang, 'exportLtcWav')}
         </button>
       </div>
 
@@ -687,19 +1016,52 @@ export default function App(): React.JSX.Element {
             onStop={handleStop}
             onSeek={handleSeek}
           />
+
+          {/* Auto-advance countdown banner */}
+          {autoAdvanceCountdown && (
+            <div className="auto-advance-banner">
+              <span>{t(lang, 'nextSongIn', { name: autoAdvanceCountdown.name, s: String(autoAdvanceCountdown.remaining) })}</span>
+              <button className="auto-advance-cancel" onClick={cancelAutoAdvance}>✕</button>
+            </div>
+          )}
         </div>
 
-        {/* Right: Device panel */}
+        {/* Right: Device / Cue panel */}
         <div className="right-panel">
-          <DevicePanel
-            onMidiPortChange={selectMidiPort}
-            onMusicDeviceChange={(id) => engine.current?.setMusicOutputDevice(id).catch(() => {})}
-            onLtcDeviceChange={(id) => engine.current?.setLtcOutputDevice(id).catch(() => {})}
-            onLtcGainChange={(gain) => engine.current?.setLtcGain(gain)}
-            onMtcModeChange={(mode) => mtc.current?.setMode(mode)}
-            onLtcChannelChange={(ch) => { if (ch !== 'auto') engine.current?.setLtcChannel(ch) }}
-          />
+          {/* Tab switcher */}
+          <div className="right-panel-tabs">
+            <button
+              className={`right-tab-btn${rightTab === 'devices' ? ' active' : ''}`}
+              onClick={() => useStore.getState().setRightTab('devices')}
+            >{t(lang, 'devices')}</button>
+            <button
+              className={`right-tab-btn${rightTab === 'cues' ? ' active' : ''}`}
+              onClick={() => useStore.getState().setRightTab('cues')}
+            >
+              {t(lang, 'cues')}
+              <span className={`midi-activity-dot${midiActivity ? ' active' : ''}`} />
+            </button>
+          </div>
 
+          {rightTab === 'devices' && (
+            <DevicePanel
+              onMidiPortChange={selectMidiPort}
+              onMusicDeviceChange={(id) => engine.current?.setMusicOutputDevice(id).catch(() => {})}
+              onLtcDeviceChange={(id) => engine.current?.setLtcOutputDevice(id).catch(() => {})}
+              onLtcGainChange={(gain) => engine.current?.setLtcGain(gain)}
+              onMtcModeChange={(mode) => mtc.current?.setMode(mode)}
+              onLtcChannelChange={(ch) => { if (ch !== 'auto') engine.current?.setLtcChannel(ch) }}
+            />
+          )}
+
+          {rightTab === 'cues' && (
+            <MidiCuePanel
+              onCueMidiPortChange={selectCueMidiPort}
+              onMidiInputPortChange={selectMidiInputPort}
+              onStartLearn={handleStartLearn}
+              learningMappingId={learningMappingId}
+            />
+          )}
         </div>
       </div>
 
@@ -707,6 +1069,10 @@ export default function App(): React.JSX.Element {
         version={version}
         onToggleFullscreen={() => setFullscreenTc(true)}
       />
+
+      {showLtcWavDialog && (
+        <LtcWavExportDialog onClose={() => setShowLtcWavDialog(false)} />
+      )}
     </div>
   )
 }

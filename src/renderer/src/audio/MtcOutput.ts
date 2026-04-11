@@ -17,6 +17,7 @@ function fpsToRateCode(fps: number): number {
 export class MtcOutput {
   private midiAccess: MIDIAccess | null = null
   private selectedOutput: MIDIOutput | null = null
+  private cueOutput: MIDIOutput | null = null
   private lastSentFrame = -1
   private mtcMode: MtcMode = 'quarter-frame'
   private lastQfPiece = -1  // tracks which quarter-frame piece (0-7) was last sent
@@ -65,6 +66,56 @@ export class MtcOutput {
     this.selectedOutput = null
     this.lastSentFrame = -1
     this.lastQfPiece = -1
+  }
+
+  // ── Cue output port (separate from MTC port) ───────────────
+
+  selectCuePort(id: string): boolean {
+    if (!this.midiAccess) return false
+    const out = this.midiAccess.outputs.get(id)
+    if (!out) return false
+    this.cueOutput = out
+    return true
+  }
+
+  deselectCuePort(): void {
+    this.cueOutput = null
+  }
+
+  getCuePortId(): string | null {
+    return this.cueOutput?.id ?? null
+  }
+
+  isCueConnected(): boolean {
+    return this.cueOutput !== null
+  }
+
+  // ── Cue MIDI send methods ──────────────────────────────────
+
+  sendProgramChange(channel: number, program: number): void {
+    if (!this.cueOutput) return
+    try {
+      this.cueOutput.send([0xC0 | ((channel - 1) & 0x0F), program & 0x7F])
+    } catch { /* port may have gone away */ }
+  }
+
+  sendNoteOn(channel: number, note: number, velocity: number): void {
+    if (!this.cueOutput) return
+    try {
+      const ch = (channel - 1) & 0x0F
+      this.cueOutput.send([0x90 | ch, note & 0x7F, velocity & 0x7F])
+      // Auto Note Off after 100ms
+      setTimeout(() => {
+        try { this.cueOutput?.send([0x80 | ch, note & 0x7F, 0]) } catch { /* ignore */ }
+      }, 100)
+    } catch { /* port may have gone away */ }
+  }
+
+  sendControlChange(channel: number, cc: number, value: number): void {
+    if (!this.cueOutput) return
+    try {
+      this.cueOutput.send([0xB0 | ((channel - 1) & 0x0F), cc & 0x7F, value & 0x7F])
+    } catch { /* port may have gone away */ }
   }
 
   isConnected(): boolean {
