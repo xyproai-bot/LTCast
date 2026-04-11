@@ -118,7 +118,7 @@ export function LicenseDialog({ onClose }: Props): React.JSX.Element {
 
         <div className="license-footer">
           <a
-            href="https://ltcast.lemonsqueezy.com/buy"
+            href="https://ltcast.lemonsqueezy.com/checkout/buy/001f3f48-747b-4649-801f-c0063a8b7afd"
             target="_blank"
             rel="noopener noreferrer"
             className="license-buy-link"
