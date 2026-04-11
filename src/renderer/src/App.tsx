@@ -17,6 +17,7 @@ import { LtcWavExportDialog } from './components/LtcWavExportDialog'
 import { useStore, TimecodeFrame } from './store'
 import { alignAudio } from './audio/AudioAligner'
 import { getTimecodeAtTime, formatTimecode } from './audio/LtcDecoder'
+import { tcToFrames } from './audio/timecodeConvert'
 import { detectBpmAt } from './audio/BpmDetector'
 import { t } from './i18n'
 import { toast } from './components/Toast'
@@ -628,16 +629,15 @@ export default function App(): React.JSX.Element {
       const song = s.setlist[s.activeSetlistIndex]
       const cues = song?.midiCues ?? []
       if (cues.length > 0) {
-        const currentTcStr = [
-          String(tc.hours).padStart(2, '0'),
-          String(tc.minutes).padStart(2, '0'),
-          String(tc.seconds).padStart(2, '0'),
-          String(tc.frames).padStart(2, '0')
-        ].join(':')
+        const currentFrames = tc.hours * 3600 * Math.round(tc.fps)
+          + tc.minutes * 60 * Math.round(tc.fps)
+          + tc.seconds * Math.round(tc.fps)
+          + tc.frames
         for (const cue of cues) {
           if (!cue.enabled) continue
           if (triggeredCueIds.current.has(cue.id)) continue
-          if (cue.triggerTimecode <= currentTcStr) {
+          const cueFrames = tcToFrames(cue.triggerTimecode, tc.fps)
+          if (cueFrames <= currentFrames) {
             triggeredCueIds.current.add(cue.id)
             // Fire the cue
             if (cue.messageType === 'program-change') {
@@ -948,13 +948,13 @@ export default function App(): React.JSX.Element {
       const song = s.setlist[s.activeSetlistIndex]
       const cues = song?.midiCues ?? []
       if (tc) {
-        const seekTcStr = [
-          String(tc.hours).padStart(2, '0'),
-          String(tc.minutes).padStart(2, '0'),
-          String(tc.seconds).padStart(2, '0'),
-          String(tc.frames).padStart(2, '0')
-        ].join(':')
-        triggeredCueIds.current = new Set(cues.filter(c => c.triggerTimecode < seekTcStr).map(c => c.id))
+        const seekFrames = tc.hours * 3600 * Math.round(tc.fps)
+          + tc.minutes * 60 * Math.round(tc.fps)
+          + tc.seconds * Math.round(tc.fps)
+          + tc.frames
+        triggeredCueIds.current = new Set(
+          cues.filter(c => tcToFrames(c.triggerTimecode, tc.fps) < seekFrames).map(c => c.id)
+        )
       } else {
         triggeredCueIds.current = new Set()
       }
