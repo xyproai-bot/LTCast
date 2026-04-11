@@ -15,6 +15,11 @@ interface Window {
     showInputDialog(title: string, label: string, defaultValue?: string): Promise<string | null>
     showConfirmDialog(message: string): Promise<boolean>
 
+    // License (LemonSqueezy)
+    licenseActivate(key: string): Promise<{ valid: boolean; error?: string }>
+    licenseDeactivate(key: string): Promise<{ valid: boolean; error?: string }>
+    licenseValidate(key: string): Promise<{ valid: boolean; error?: string }>
+
     // Preset / project management (filesystem)
     getLTCastPath(): Promise<string>
     listPresets(): Promise<Array<{ name: string; data: unknown; updatedAt: string }>>

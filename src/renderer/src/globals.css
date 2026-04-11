@@ -2077,3 +2077,76 @@ html, body, #root {
 }
 .structure-delete:hover { color: #ff4444; }
 
+/* ── License Dialog ──────────────────────────────────────── */
+.license-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.license-dialog {
+  background: #1e1e1e; border: 1px solid #333; border-radius: 8px;
+  padding: 24px; min-width: 400px; max-width: 500px;
+}
+.license-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16px;
+}
+.license-header h3 { margin: 0; font-size: 16px; color: #eee; }
+.license-close {
+  background: none; border: none; color: #666; font-size: 20px;
+  cursor: pointer; padding: 0 4px;
+}
+.license-close:hover { color: #fff; }
+.license-status {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 16px; font-size: 13px; color: #aaa;
+}
+.license-badge {
+  padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600;
+}
+.license-badge--none { background: #333; color: #888; }
+.license-badge--valid { background: #1b5e20; color: #66bb6a; }
+.license-badge--expired { background: #4a3a00; color: #ffa726; }
+.license-badge--invalid { background: #4a1111; color: #ef5350; }
+.license-input-row {
+  display: flex; gap: 8px; margin-bottom: 12px;
+}
+.license-input {
+  flex: 1; background: #222; border: 1px solid #3a3a3a; border-radius: 4px;
+  color: #fff; padding: 8px 12px; font-size: 13px; font-family: 'JetBrains Mono', monospace;
+}
+.license-input:focus { border-color: #00d4ff; outline: none; }
+.license-key-display {
+  flex: 1; color: #888; font-size: 13px; font-family: 'JetBrains Mono', monospace;
+  padding: 8px 0;
+}
+.license-btn {
+  padding: 8px 16px; border-radius: 4px; font-size: 12px; cursor: pointer;
+  border: 1px solid #444; font-family: inherit;
+}
+.license-btn--primary { background: #003a4a; border-color: #00d4ff; color: #00d4ff; }
+.license-btn--primary:hover { background: #004d5c; }
+.license-btn--primary:disabled { opacity: 0.4; cursor: default; }
+.license-btn--danger { background: #3a1111; border-color: #c62828; color: #ef5350; }
+.license-btn--danger:hover { background: #4a1818; }
+.license-error { color: #ef5350; font-size: 12px; margin-bottom: 8px; }
+.license-success { color: #66bb6a; font-size: 12px; margin-bottom: 8px; }
+.license-footer { margin-top: 12px; text-align: center; }
+.license-buy-link { color: #00d4ff; text-decoration: none; font-size: 13px; }
+.license-buy-link:hover { text-decoration: underline; }
+
+/* ── Pro Feature Gate ─────────────────────────────────────── */
+.pro-gate {
+  position: relative; pointer-events: none; opacity: 0.4;
+  filter: grayscale(0.5);
+}
+.pro-gate-badge {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: #003a4a; border: 1px solid #00d4ff; border-radius: 6px;
+  padding: 8px 16px; pointer-events: auto; cursor: pointer;
+  color: #00d4ff; font-size: 12px; font-weight: 600;
+  z-index: 5; white-space: nowrap;
+}
+.pro-gate-badge:hover { background: #004d5c; }
+

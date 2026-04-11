@@ -308,6 +308,11 @@ export interface AppState {
   rightTab: 'devices' | 'setlist' | 'cues' | 'structure'
   lang: 'en' | 'zh' | 'ja'
 
+  // License
+  licenseKey: string | null
+  licenseStatus: 'none' | 'valid' | 'expired' | 'invalid'
+  licenseValidatedAt: number | null  // timestamp of last successful validation
+
   // Project
   presetName: string | null
   presetPath: string | null   // filesystem path of the current .ltcast file
@@ -373,6 +378,11 @@ export interface AppState {
   removeMarker: (filePath: string, markerId: string) => void
   updateMarker: (filePath: string, markerId: string, updates: Partial<WaveformMarker>) => void
   undoMarker: () => void
+  // License
+  setLicenseKey: (key: string | null) => void
+  setLicenseStatus: (status: 'none' | 'valid' | 'expired' | 'invalid') => void
+  setLicenseValidatedAt: (ts: number | null) => void
+  isPro: () => boolean
   setAutoAdvanceGap: (gap: number) => void
   setSelectedCueMidiPort: (port: string | null) => void
   setMidiInputPort: (port: string | null) => void
@@ -465,6 +475,10 @@ export const useStore = create<AppState>()(persist((set) => ({
 
   markers: {},
   markerUndoStack: [],
+
+  licenseKey: null,
+  licenseStatus: 'none',
+  licenseValidatedAt: null,
 
   rightTab: 'devices',
   lang: 'en',
@@ -719,6 +733,21 @@ export const useStore = create<AppState>()(persist((set) => ({
       presetDirty: true
     }
   }),
+
+  // License actions
+  setLicenseKey: (licenseKey) => set({ licenseKey }),
+  setLicenseStatus: (licenseStatus) => set({ licenseStatus }),
+  setLicenseValidatedAt: (licenseValidatedAt) => set({ licenseValidatedAt }),
+  isPro: () => {
+    const s = useStore.getState()
+    if (s.licenseStatus !== 'valid') return false
+    // Offline grace: valid for 7 days without re-validation
+    if (s.licenseValidatedAt) {
+      const daysSince = (Date.now() - s.licenseValidatedAt) / (1000 * 60 * 60 * 24)
+      if (daysSince > 7) return false
+    }
+    return true
+  },
 
   newPreset: () => {
     set({
@@ -1018,6 +1047,10 @@ export const useStore = create<AppState>()(persist((set) => ({
     filePath: state.filePath,
     fileName: state.fileName,
     activeSetlistIndex: state.activeSetlistIndex,
+    // License (persist across restarts)
+    licenseKey: state.licenseKey,
+    licenseStatus: state.licenseStatus,
+    licenseValidatedAt: state.licenseValidatedAt,
   }),
   merge: (persisted, current) => {
     if (!persisted || typeof persisted !== 'object') return current

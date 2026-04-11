@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld('api', {
   showConfirmDialog: (message: string) =>
     ipcRenderer.invoke('show-confirm-dialog', message),
 
+  // License (LemonSqueezy)
+  licenseActivate: (key: string) => ipcRenderer.invoke('license-activate', key),
+  licenseDeactivate: (key: string) => ipcRenderer.invoke('license-deactivate', key),
+  licenseValidate: (key: string) => ipcRenderer.invoke('license-validate', key),
+
   // Preset / project management (filesystem-based)
   getLTCastPath: () => ipcRenderer.invoke('get-ltcast-path'),
   listPresets: () => ipcRenderer.invoke('list-presets'),

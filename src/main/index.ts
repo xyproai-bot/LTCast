@@ -182,6 +182,37 @@ autoUpdater.on('update-downloaded', async (info) => {
 })
 
 // ════════════════════════════════════════════════════════════
+// License Validation (LemonSqueezy API)
+// ════════════════════════════════════════════════════════════
+
+const LEMONSQUEEZY_API = 'https://api.lemonsqueezy.com/v1/licenses'
+
+async function lemonSqueezyRequest(
+  action: 'activate' | 'deactivate' | 'validate',
+  licenseKey: string
+): Promise<{ valid: boolean; error?: string; status?: string }> {
+  try {
+    const { net } = require('electron')
+    const body = JSON.stringify({
+      license_key: licenseKey,
+      instance_name: `${require('os').hostname()}-${require('os').platform()}`
+    })
+    const response = await net.fetch(`${LEMONSQUEEZY_API}/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body
+    })
+    const data = await response.json()
+    if (data.valid || data.activated) {
+      return { valid: true, status: data.license_key?.status }
+    }
+    return { valid: false, error: data.error || data.message || 'Invalid license key' }
+  } catch (e) {
+    return { valid: false, error: `Network error: ${(e as Error).message}` }
+  }
+}
+
+// ════════════════════════════════════════════════════════════
 // OSC Output — UDP sender (user-configured port, default 8000)
 // ════════════════════════════════════════════════════════════
 
@@ -1052,6 +1083,11 @@ app.whenReady().then(() => {
   })
 
   // IPC: show input dialog (replacement for prompt())
+  // ── License IPC ──
+  ipcMain.handle('license-activate', async (_event, key: string) => lemonSqueezyRequest('activate', key))
+  ipcMain.handle('license-deactivate', async (_event, key: string) => lemonSqueezyRequest('deactivate', key))
+  ipcMain.handle('license-validate', async (_event, key: string) => lemonSqueezyRequest('validate', key))
+
   ipcMain.handle('show-input-dialog', async (_event, title: string, label: string, defaultValue: string) => {
     const focusedWin = BrowserWindow.getFocusedWindow()
     if (!focusedWin) return null

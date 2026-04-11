@@ -14,6 +14,8 @@ import { StructurePanel } from './components/StructurePanel'
 import { PresetBar } from './components/PresetBar'
 import { StatusBar } from './components/StatusBar'
 import { LtcWavExportDialog } from './components/LtcWavExportDialog'
+import { LicenseDialog } from './components/LicenseDialog'
+import { ProGate } from './components/ProGate'
 import { useStore, TimecodeFrame } from './store'
 import { alignAudio } from './audio/AudioAligner'
 import { getTimecodeAtTime, formatTimecode } from './audio/LtcDecoder'
@@ -38,6 +40,7 @@ export default function App(): React.JSX.Element {
   const [sidebarWidth, setSidebarWidth]   = useState(200)
   const isResizingSidebar = useRef(false)
   const [showLtcWavDialog, setShowLtcWavDialog] = useState(false)
+  const [showLicenseDialog, setShowLicenseDialog] = useState(false)
   const lastBpmUpdateTime = useRef(0)
   // Auto-advance: timer ref + countdown state
   const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -100,6 +103,27 @@ export default function App(): React.JSX.Element {
       toast.error(t(useStore.getState().lang, 'artnetSocketError'))
     })
     return cleanup
+  }, [])
+
+  // Validate license on startup (if key exists)
+  useEffect(() => {
+    const s = useStore.getState()
+    if (s.licenseKey) {
+      window.api.licenseValidate(s.licenseKey).then((result) => {
+        if (result.valid) {
+          s.setLicenseStatus('valid')
+          s.setLicenseValidatedAt(Date.now())
+        } else {
+          // Don't immediately invalidate — check offline grace period
+          if (s.licenseValidatedAt) {
+            const daysSince = (Date.now() - s.licenseValidatedAt) / (1000 * 60 * 60 * 24)
+            if (daysSince > 7) s.setLicenseStatus('expired')
+          }
+        }
+      }).catch(() => {
+        // Network error — keep existing status, rely on offline grace
+      })
+    }
   }, [])
 
   // Init engine + MIDI once
@@ -1093,16 +1117,20 @@ export default function App(): React.JSX.Element {
           )}
 
           {rightTab === 'cues' && (
-            <MidiCuePanel
-              onCueMidiPortChange={selectCueMidiPort}
-              onMidiInputPortChange={selectMidiInputPort}
-              onStartLearn={handleStartLearn}
-              learningMappingId={learningMappingId}
-            />
+            <ProGate onUpgrade={() => setShowLicenseDialog(true)}>
+              <MidiCuePanel
+                onCueMidiPortChange={selectCueMidiPort}
+                onMidiInputPortChange={selectMidiInputPort}
+                onStartLearn={handleStartLearn}
+                learningMappingId={learningMappingId}
+              />
+            </ProGate>
           )}
 
           {rightTab === 'structure' && (
-            <StructurePanel onSeek={handleSeek} />
+            <ProGate onUpgrade={() => setShowLicenseDialog(true)}>
+              <StructurePanel onSeek={handleSeek} />
+            </ProGate>
           )}
         </div>
       </div>
@@ -1114,6 +1142,9 @@ export default function App(): React.JSX.Element {
 
       {showLtcWavDialog && (
         <LtcWavExportDialog onClose={() => setShowLtcWavDialog(false)} />
+      )}
+      {showLicenseDialog && (
+        <LicenseDialog onClose={() => setShowLicenseDialog(false)} />
       )}
     </div>
   )

@@ -196,7 +196,20 @@ export const strings = {
     markerType_outro: 'Outro',
     markerType_break: 'Break',
     'markerType_song-title': 'Song Title',
-    markerType_custom: 'Custom'
+    markerType_custom: 'Custom',
+    // License
+    licenseTitle: 'LTCast Pro License',
+    licenseCurrentStatus: 'Current status',
+    licenseKeyPlaceholder: 'Enter your license key...',
+    licenseActivate: 'Activate',
+    licenseDeactivate: 'Deactivate',
+    licenseActivated: 'License activated! Pro features unlocked.',
+    licenseDeactivated: 'License deactivated.',
+    licenseInvalid: 'Invalid license key.',
+    licenseNetworkError: 'Network error. Please check your connection.',
+    licenseBuyPro: 'Buy LTCast Pro →',
+    licenseRequired: 'Pro feature — activate license to use',
+    upgradeToPro: 'Upgrade to Pro'
   },
   zh: {
     appTitle: 'LTCast',
@@ -394,7 +407,19 @@ export const strings = {
     markerType_outro: '尾奏',
     markerType_break: '間奏',
     'markerType_song-title': '歌曲名稱',
-    markerType_custom: '自訂'
+    markerType_custom: '自訂',
+    licenseTitle: 'LTCast Pro 授權',
+    licenseCurrentStatus: '目前狀態',
+    licenseKeyPlaceholder: '輸入授權金鑰...',
+    licenseActivate: '啟用',
+    licenseDeactivate: '解除綁定',
+    licenseActivated: '授權已啟用！Pro 功能已解鎖。',
+    licenseDeactivated: '授權已解除。',
+    licenseInvalid: '授權金鑰無效。',
+    licenseNetworkError: '網路錯誤，請檢查連線。',
+    licenseBuyPro: '購買 LTCast Pro →',
+    licenseRequired: 'Pro 功能 — 請啟用授權',
+    upgradeToPro: '升級 Pro'
   },
   ja: {
     appTitle: 'LTCast',
@@ -592,7 +617,19 @@ export const strings = {
     markerType_outro: 'アウトロ',
     markerType_break: '間奏',
     'markerType_song-title': '曲名',
-    markerType_custom: 'カスタム'
+    markerType_custom: 'カスタム',
+    licenseTitle: 'LTCast Pro ライセンス',
+    licenseCurrentStatus: '現在のステータス',
+    licenseKeyPlaceholder: 'ライセンスキーを入力...',
+    licenseActivate: 'アクティベート',
+    licenseDeactivate: 'ディアクティベート',
+    licenseActivated: 'ライセンスがアクティブ化されました！Pro 機能が使えます。',
+    licenseDeactivated: 'ライセンスが解除されました。',
+    licenseInvalid: '無効なライセンスキーです。',
+    licenseNetworkError: 'ネットワークエラー。接続を確認してください。',
+    licenseBuyPro: 'LTCast Pro を購入 →',
+    licenseRequired: 'Pro 機能 — ライセンスを有効化してください',
+    upgradeToPro: 'Pro にアップグレード'
   }
 }
 
