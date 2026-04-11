@@ -440,7 +440,7 @@ export class AudioEngine {
       this.ltcWorkletReady = await this._loadWorklet(ltcProcessorCode, 'LTC decoder')
       this.ltcEncoderReady = await this._loadWorklet(ltcEncoderCode, 'LTC encoder')
 
-      console.log('LTC device warmed up:', this.ltcOutputDeviceId)
+      // LTC device warmed up successfully
     } catch (e) {
       console.warn('LTC device warm-up failed, will retry on play:', e)
       this.callbacks.onLtcError?.('warmup')
