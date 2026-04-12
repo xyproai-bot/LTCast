@@ -209,7 +209,9 @@ export const strings = {
     licenseNetworkError: 'Network error. Please check your connection.',
     licenseBuyPro: 'Buy LTCast Pro →',
     licenseRequired: 'Pro feature — activate license to use',
-    upgradeToPro: 'Upgrade to Pro'
+    upgradeToPro: 'Upgrade to Pro',
+    trialDaysLeft: '{days} days left in trial',
+    trialExpired: 'Trial expired — upgrade to Pro'
   },
   zh: {
     appTitle: 'LTCast',
@@ -419,7 +421,9 @@ export const strings = {
     licenseNetworkError: '網路錯誤，請檢查連線。',
     licenseBuyPro: '購買 LTCast Pro →',
     licenseRequired: 'Pro 功能 — 請啟用授權',
-    upgradeToPro: '升級 Pro'
+    upgradeToPro: '升級 Pro',
+    trialDaysLeft: '試用剩餘 {days} 天',
+    trialExpired: '試用已到期 — 升級 Pro'
   },
   ja: {
     appTitle: 'LTCast',
@@ -629,7 +633,9 @@ export const strings = {
     licenseNetworkError: 'ネットワークエラー。接続を確認してください。',
     licenseBuyPro: 'LTCast Pro を購入 →',
     licenseRequired: 'Pro 機能 — ライセンスを有効化してください',
-    upgradeToPro: 'Pro にアップグレード'
+    upgradeToPro: 'Pro にアップグレード',
+    trialDaysLeft: 'トライアル残り {days} 日',
+    trialExpired: 'トライアル終了 — Pro にアップグレード'
   }
 }
 

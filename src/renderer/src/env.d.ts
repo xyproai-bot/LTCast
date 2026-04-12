@@ -20,6 +20,9 @@ interface Window {
     licenseDeactivate(key: string): Promise<{ valid: boolean; error?: string }>
     licenseValidate(key: string): Promise<{ valid: boolean; error?: string }>
 
+    // Trial
+    trialCheck(): Promise<{ daysLeft: number; expired: boolean }>
+
     // Preset / project management (filesystem)
     getLTCastPath(): Promise<string>
     listPresets(): Promise<Array<{ name: string; data: unknown; updatedAt: string }>>

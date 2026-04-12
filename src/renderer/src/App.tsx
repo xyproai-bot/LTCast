@@ -105,25 +105,25 @@ export default function App(): React.JSX.Element {
     return cleanup
   }, [])
 
-  // Validate license on startup (if key exists)
+  // Validate license + check trial on startup
   useEffect(() => {
     const s = useStore.getState()
+    // License check
     if (s.licenseKey) {
       window.api.licenseValidate(s.licenseKey).then((result) => {
         if (result.valid) {
           s.setLicenseStatus('valid')
           s.setLicenseValidatedAt(Date.now())
-        } else {
-          // Don't immediately invalidate — check offline grace period
-          if (s.licenseValidatedAt) {
-            const daysSince = (Date.now() - s.licenseValidatedAt) / (1000 * 60 * 60 * 24)
-            if (daysSince > 7) s.setLicenseStatus('expired')
-          }
+        } else if (s.licenseValidatedAt) {
+          const daysSince = (Date.now() - s.licenseValidatedAt) / (1000 * 60 * 60 * 24)
+          if (daysSince > 7) s.setLicenseStatus('expired')
         }
-      }).catch(() => {
-        // Network error — keep existing status, rely on offline grace
-      })
+      }).catch(() => {})
     }
+    // Trial check (always, even if licensed — to show days left in UI)
+    window.api.trialCheck().then((result) => {
+      useStore.getState().setTrialDaysLeft(result.daysLeft)
+    }).catch(() => {})
   }, [])
 
   // Init engine + MIDI once

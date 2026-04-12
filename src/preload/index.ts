@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('api', {
   licenseDeactivate: (key: string) => ipcRenderer.invoke('license-deactivate', key),
   licenseValidate: (key: string) => ipcRenderer.invoke('license-validate', key),
 
+  // Trial
+  trialCheck: () => ipcRenderer.invoke('trial-check'),
+
   // Preset / project management (filesystem-based)
   getLTCastPath: () => ipcRenderer.invoke('get-ltcast-path'),
   listPresets: () => ipcRenderer.invoke('list-presets'),

@@ -1,0 +1,13 @@
+name = "ltcast-trial"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+# Create KV namespace first:
+#   wrangler kv:namespace create TRIAL_KV
+# Then paste the ID below:
+[[kv_namespaces]]
+binding = "TRIAL_KV"
+id = "YOUR_KV_NAMESPACE_ID_HERE"
+
+# Set admin key for trial reset (testing only):
+#   wrangler secret put ADMIN_KEY

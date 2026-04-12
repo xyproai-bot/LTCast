@@ -2149,4 +2149,12 @@ html, body, #root {
   z-index: 5; white-space: nowrap;
 }
 .pro-gate-badge:hover { background: #004d5c; }
+.trial-banner {
+  background: #1a3a20; border: 1px solid #2e7d32; border-radius: 4px;
+  padding: 6px 12px; font-size: 11px; color: #a5d6a7;
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.trial-buy-link { color: #00d4ff; text-decoration: none; font-size: 11px; }
+.trial-buy-link:hover { text-decoration: underline; }
 

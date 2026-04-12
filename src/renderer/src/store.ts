@@ -312,6 +312,7 @@ export interface AppState {
   licenseKey: string | null
   licenseStatus: 'none' | 'valid' | 'expired' | 'invalid'
   licenseValidatedAt: number | null  // timestamp of last successful validation
+  trialDaysLeft: number | null       // null = not checked yet, 0 = expired
 
   // Project
   presetName: string | null
@@ -479,6 +480,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   licenseKey: null,
   licenseStatus: 'none',
   licenseValidatedAt: null,
+  trialDaysLeft: null,
 
   rightTab: 'devices',
   lang: 'en',
@@ -740,14 +742,19 @@ export const useStore = create<AppState>()(persist((set) => ({
   setLicenseValidatedAt: (licenseValidatedAt) => set({ licenseValidatedAt }),
   isPro: () => {
     const s = useStore.getState()
-    if (s.licenseStatus !== 'valid') return false
-    // Offline grace: valid for 7 days without re-validation
-    if (s.licenseValidatedAt) {
-      const daysSince = (Date.now() - s.licenseValidatedAt) / (1000 * 60 * 60 * 24)
-      if (daysSince > 7) return false
+    // Licensed user
+    if (s.licenseStatus === 'valid') {
+      if (s.licenseValidatedAt) {
+        const daysSince = (Date.now() - s.licenseValidatedAt) / (1000 * 60 * 60 * 24)
+        if (daysSince > 7) return false // offline grace expired
+      }
+      return true
     }
-    return true
+    // Trial user
+    if (s.trialDaysLeft !== null && s.trialDaysLeft > 0) return true
+    return false
   },
+  setTrialDaysLeft: (trialDaysLeft: number | null) => set({ trialDaysLeft }),
 
   newPreset: () => {
     set({

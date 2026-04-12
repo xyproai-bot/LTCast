@@ -213,6 +213,83 @@ async function lemonSqueezyRequest(
 }
 
 // ════════════════════════════════════════════════════════════
+// Trial System — server-side fingerprint tracking
+// ════════════════════════════════════════════════════════════
+
+const TRIAL_API = 'https://ltcast-trial.xypro-ai.workers.dev'
+
+/** Generate machine fingerprint from CPU + MAC + hostname */
+function getMachineFingerprint(): string {
+  const os = require('os')
+  const crypto = require('crypto')
+  const cpus = os.cpus()
+  const cpuModel = cpus.length > 0 ? cpus[0].model : 'unknown'
+  const hostname = os.hostname()
+  const platform = os.platform()
+  // Get first non-internal MAC address
+  const nets = os.networkInterfaces()
+  let mac = ''
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (!net.internal && net.mac && net.mac !== '00:00:00:00:00:00') {
+        mac = net.mac
+        break
+      }
+    }
+    if (mac) break
+  }
+  const raw = `${cpuModel}|${mac}|${hostname}|${platform}`
+  return crypto.createHash('sha256').update(raw).digest('hex')
+}
+
+async function checkTrial(): Promise<{ daysLeft: number; expired: boolean }> {
+  try {
+    const { net } = require('electron')
+    const fingerprint = getMachineFingerprint()
+    const response = await net.fetch(`${TRIAL_API}/trial/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fingerprint })
+    })
+    const data = await response.json()
+    return { daysLeft: data.daysLeft ?? 0, expired: data.expired ?? true }
+  } catch {
+    // Offline — fall back to local trial (stored in system registry/file)
+    return checkLocalTrial()
+  }
+}
+
+/** Local fallback: store trial start in a system-level location that survives app reinstall */
+function getLocalTrialPath(): string {
+  const os = require('os')
+  if (process.platform === 'win32') {
+    return join(os.homedir(), 'AppData', 'Local', '.ltcast-trial')
+  }
+  return join(os.homedir(), 'Library', 'Application Support', '.ltcast-trial')
+}
+
+function checkLocalTrial(): { daysLeft: number; expired: boolean } {
+  const trialPath = getLocalTrialPath()
+  let trialStart: number
+  if (existsSync(trialPath)) {
+    try {
+      trialStart = parseInt(readFileSync(trialPath, 'utf8').trim(), 10)
+    } catch {
+      trialStart = Date.now()
+      writeFileSync(trialPath, String(trialStart))
+    }
+  } else {
+    trialStart = Date.now()
+    const dir = dirname(trialPath)
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    writeFileSync(trialPath, String(trialStart))
+  }
+  const daysUsed = Math.floor((Date.now() - trialStart) / (1000 * 60 * 60 * 24))
+  const daysLeft = Math.max(0, 14 - daysUsed)
+  return { daysLeft, expired: daysLeft <= 0 }
+}
+
+// ════════════════════════════════════════════════════════════
 // OSC Output — UDP sender (user-configured port, default 8000)
 // ════════════════════════════════════════════════════════════
 
@@ -1087,6 +1164,8 @@ app.whenReady().then(() => {
   ipcMain.handle('license-activate', async (_event, key: string) => lemonSqueezyRequest('activate', key))
   ipcMain.handle('license-deactivate', async (_event, key: string) => lemonSqueezyRequest('deactivate', key))
   ipcMain.handle('license-validate', async (_event, key: string) => lemonSqueezyRequest('validate', key))
+  ipcMain.handle('trial-check', async () => checkTrial())
+  ipcMain.handle('get-machine-fingerprint', () => getMachineFingerprint())
 
   ipcMain.handle('show-input-dialog', async (_event, title: string, label: string, defaultValue: string) => {
     const focusedWin = BrowserWindow.getFocusedWindow()
