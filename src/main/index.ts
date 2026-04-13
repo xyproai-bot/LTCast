@@ -1162,6 +1162,7 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('get-app-version', () => app.getVersion())
+  ipcMain.handle('check-for-updates', () => checkForUpdates(false))
 
   // ── Window controls (custom title bar) ──
   ipcMain.handle('window:minimize', () => { BrowserWindow.getFocusedWindow()?.minimize() })
