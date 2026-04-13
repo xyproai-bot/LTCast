@@ -70,8 +70,9 @@ jobs:
           fi
           # Build JS
           npm run build
-          # Pack x64 and arm64 separately
+          # Pack x64 and arm64 separately (clean between to avoid icon hardlink conflict)
           npx electron-builder --mac --dir --x64
+          rm -rf dist/mac
           npx electron-builder --mac --dir --arm64
           # Merge into Universal binary
           node scripts/create-universal.js
