@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   readAudioFile: (path: string) => ipcRenderer.invoke('read-audio-file', path),
   getAudioDurations: (paths: string[]) => ipcRenderer.invoke('get-audio-durations', paths),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   openVideoDialog: () => ipcRenderer.invoke('open-video-dialog'),
   extractAudioFromVideo: (path: string) => ipcRenderer.invoke('extract-audio-from-video', path),
 
