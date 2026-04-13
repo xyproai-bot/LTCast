@@ -1774,27 +1774,32 @@ html, body, #root {
   50% { opacity: 0.5; }
 }
 
-/* When locked: disable all interactive elements in sidebars and settings.
-   Transport play/pause/stop/seek and fullscreen are exempt via .can-unlock. */
-.ui-locked .setlist-panel button:not(.status-pill--lock),
-.ui-locked .setlist-panel input,
-.ui-locked .setlist-panel select,
-.ui-locked .device-panel button,
-.ui-locked .device-panel input,
-.ui-locked .device-panel select,
-.ui-locked .cp-section button,
-.ui-locked .cp-section input,
-.ui-locked .cp-section select,
-.ui-locked .transport-offset button,
-.ui-locked .transport-offset input,
-.ui-locked .transport-loop button,
-.ui-locked .tc-fps-buttons button,
-.ui-locked .tc-gen-row button,
-.ui-locked .tc-gen-row input,
-.ui-locked .tc-gen-row select {
-  opacity: 0.35;
+/* When locked: disable entire panel areas.
+   Only transport play/pause/stop/seek and scrub bar remain usable. */
+.ui-locked .setlist-sidebar {
   pointer-events: none;
-  cursor: not-allowed;
+  opacity: 0.5;
+}
+.ui-locked .right-panel {
+  pointer-events: none;
+  opacity: 0.5;
+}
+.ui-locked .transport-offset {
+  pointer-events: none;
+  opacity: 0.35;
+}
+.ui-locked .transport-loop {
+  pointer-events: none;
+  opacity: 0.35;
+}
+.ui-locked .tc-generator-controls {
+  pointer-events: none;
+  opacity: 0.35;
+}
+/* Keep status bar clickable (lock indicator needs to be tappable to unlock) */
+.ui-locked .status-bar {
+  pointer-events: auto;
+  opacity: 1;
 }
 
 /* ── Error Boundary ──────────────────────────────────────── */

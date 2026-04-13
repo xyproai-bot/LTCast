@@ -12,7 +12,9 @@ interface Props {
  * Otherwise dims the content and shows an upgrade badge.
  */
 export function ProGate({ children, onUpgrade }: Props): React.JSX.Element {
+  // Subscribe to state fields that isPro() depends on, so component re-renders on changes
   const { lang, licenseStatus, trialDaysLeft } = useStore()
+  // Use store's unified isPro() — includes clock rollback detection, grace period, etc.
   const isPro = useStore.getState().isPro()
 
   if (isPro) {

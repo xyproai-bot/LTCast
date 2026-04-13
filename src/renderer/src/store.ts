@@ -755,10 +755,12 @@ export const useStore = create<AppState>()(persist((set) => ({
     const s = useStore.getState()
     // Licensed user — 30-day offline grace period (live events often have no internet)
     if (s.licenseStatus === 'valid') {
-      if (s.licenseValidatedAt) {
-        const daysSince = (Date.now() - s.licenseValidatedAt) / (1000 * 60 * 60 * 24)
-        if (daysSince > 30) return false
-      }
+      // Must have a validation timestamp — reject if missing (corrupt/tampered state)
+      if (!s.licenseValidatedAt) return false
+      const daysSince = (Date.now() - s.licenseValidatedAt) / (1000 * 60 * 60 * 24)
+      // Clock rollback detection: if validatedAt is in the future, reject
+      if (daysSince < -1) return false
+      if (daysSince > 30) return false
       return true
     }
     // Trial user
