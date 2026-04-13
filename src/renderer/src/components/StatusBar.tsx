@@ -8,12 +8,21 @@ interface Props {
 }
 
 export function StatusBar({ version, onToggleFullscreen }: Props): React.JSX.Element {
-  const { lang, setLang, midiConnected, ltcSignalOk, artnetEnabled, oscEnabled, setRightTab } = useStore()
+  const { lang, setLang, midiConnected, ltcSignalOk, artnetEnabled, oscEnabled, setRightTab, showLocked, setShowLocked } = useStore()
 
   const goDevices = (): void => setRightTab('devices')
 
   return (
     <div className="status-bar">
+      {showLocked && (
+        <button
+          className="status-pill status-pill--lock"
+          onClick={() => setShowLocked(false)}
+          title={t(lang, 'uiLocked')}
+        >
+          {'🔒 '}{t(lang, 'locked')}
+        </button>
+      )}
       <button
         className={`status-pill${ltcSignalOk ? ' status-pill--active' : ''}`}
         onClick={goDevices}
