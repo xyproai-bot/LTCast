@@ -405,7 +405,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
               title={t(lang, 'sortAZ')}
             >⇅</button>
             {showSortMenu && (
-              <div className="setlist-sort-menu setlist-sort-menu--down">
+              <div className="setlist-sort-menu--down">
                 <button onClick={() => handleSort('az')}>{t(lang, 'sortAZ')}</button>
                 <button onClick={() => handleSort('za')}>{t(lang, 'sortZA')}</button>
                 <button onClick={() => handleSort('ext')}>{t(lang, 'sortExt')}</button>
