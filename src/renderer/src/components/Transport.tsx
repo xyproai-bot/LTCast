@@ -2,6 +2,56 @@ import React, { useRef, useState, useEffect } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 
+/* ── SVG icon helpers ─────────────────────────────────────── */
+const IconStop = (): React.JSX.Element => (
+  <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
+    <rect x="1.5" y="1.5" width="10" height="10" rx="1"/>
+  </svg>
+)
+const IconPlay = (): React.JSX.Element => (
+  <svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor">
+    <polygon points="3,1 14,7.5 3,14"/>
+  </svg>
+)
+const IconPause = (): React.JSX.Element => (
+  <svg width="13" height="15" viewBox="0 0 13 15" fill="currentColor">
+    <rect x="1" y="1" width="4" height="13" rx="1"/>
+    <rect x="8" y="1" width="4" height="13" rx="1"/>
+  </svg>
+)
+const IconLoop = (): React.JSX.Element => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="17 1 21 5 17 9"/>
+    <path d="M3 11V9a4 4 0 014-4h14"/>
+    <polyline points="7 23 3 19 7 15"/>
+    <path d="M21 13v2a4 4 0 01-4 4H3"/>
+  </svg>
+)
+const IconSkipBack = (): React.JSX.Element => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <polygon points="19,20 9,12 19,4"/>
+    <rect x="5" y="4" width="2.5" height="16" rx="1"/>
+  </svg>
+)
+const IconSkipForward = (): React.JSX.Element => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <polygon points="5,4 15,12 5,20"/>
+    <rect x="16.5" y="4" width="2.5" height="16" rx="1"/>
+  </svg>
+)
+const IconRewind = (): React.JSX.Element => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <polygon points="22,19 12,12 22,5"/>
+    <polygon points="11,19 1,12 11,5"/>
+  </svg>
+)
+const IconFastForward = (): React.JSX.Element => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <polygon points="2,5 12,12 2,19"/>
+    <polygon points="13,5 23,12 13,19"/>
+  </svg>
+)
+
 interface Props {
   onPlay:  () => void
   onPause: () => void
@@ -34,7 +84,6 @@ export function Transport({ onPlay, onPause, onStop, onSeek }: Props): React.JSX
     if (!isScrubbing.current) setScrubValue(currentTime)
   }, [currentTime])
 
-  // Reset scrub state if mouse is released outside the slider element
   useEffect(() => {
     const onGlobalMouseUp = (): void => { isScrubbing.current = false }
     window.addEventListener('mouseup', onGlobalMouseUp)
@@ -65,6 +114,7 @@ export function Transport({ onPlay, onPause, onStop, onSeek }: Props): React.JSX
   }
 
   const hasLoopRegion = loopA !== null && loopB !== null
+  const remaining = duration > 0 ? Math.max(0, duration - scrubValue) : 0
 
   return (
     <div className="transport">
@@ -83,35 +133,85 @@ export function Transport({ onPlay, onPause, onStop, onSeek }: Props): React.JSX
           onMouseUp={handleScrubEnd}
           disabled={!duration}
         />
-        <span className={`scrub-time scrub-time--remaining${duration > 0 && (duration - scrubValue) <= 30 ? ' scrub-time--warn' : ''}`}>{duration > 0 ? `-${formatTime(Math.max(0, duration - scrubValue))}` : formatTime(0)}</span>
+        <span className={`scrub-time scrub-time--remaining${remaining <= 30 && duration > 0 ? ' scrub-time--warn' : ''}`}>
+          {duration > 0 ? `-${formatTime(remaining)}` : formatTime(0)}
+        </span>
         <span className="scrub-time scrub-time--right">{formatTime(duration)}</span>
       </div>
 
-      {/* Buttons row */}
-      <div className="transport-row">
+      {/* Main transport row */}
+      <div className="transport-main">
+        {/* Left: offset control */}
+        <div className="transport-offset">
+          <span className="offset-label">{t(lang, 'offset')}</span>
+          <button className="btn-offset" onClick={() => setOffsetFrames(Math.max(-999, offsetFrames - 1))}>−</button>
+          <input
+            type="range"
+            className="offset-slider"
+            min={-999}
+            max={999}
+            step={1}
+            value={offsetFrames}
+            onChange={handleOffsetSlider}
+          />
+          <input
+            type="number"
+            className="offset-input"
+            min={-999}
+            max={999}
+            value={offsetFrames}
+            onChange={handleOffsetInput}
+          />
+          <button className="btn-offset" onClick={() => setOffsetFrames(Math.min(999, offsetFrames + 1))}>+</button>
+          <span className="offset-unit">{t(lang, 'frames')}</span>
+        </div>
+
+        {/* Center: playback buttons */}
         <div className="transport-buttons">
-          <button className="btn-transport btn-stop" onClick={onStop} disabled={!duration} title={t(lang, 'stop')}>⏹</button>
-
+          <button className="btn-transport btn-skip" onClick={() => onSeek(0)} disabled={!duration} title="Go to start">
+            <IconSkipBack />
+          </button>
+          <button className="btn-transport btn-skip" onClick={() => onSeek(Math.max(0, currentTime - 5))} disabled={!duration} title="−5s">
+            <IconRewind />
+          </button>
+          <button className="btn-transport btn-stop" onClick={onStop} disabled={!duration} title={t(lang, 'stop')}>
+            <IconStop />
+          </button>
           {playState === 'playing' ? (
-            <button className="btn-transport btn-play active" onClick={onPause} disabled={!duration} title={t(lang, 'pause')}>⏸</button>
+            <button className="btn-transport btn-play active" onClick={onPause} disabled={!duration} title={t(lang, 'pause')}>
+              <IconPause />
+            </button>
           ) : (
-            <button className="btn-transport btn-play" onClick={onPlay} disabled={!duration} title={t(lang, 'play')}>▶</button>
+            <button className="btn-transport btn-play" onClick={onPlay} disabled={!duration} title={t(lang, 'play')}>
+              <IconPlay />
+            </button>
           )}
+          <button className="btn-transport btn-skip" onClick={() => onSeek(Math.min(duration, currentTime + 5))} disabled={!duration} title="+5s">
+            <IconFastForward />
+          </button>
+          <button className="btn-transport btn-skip" onClick={() => onSeek(duration)} disabled={!duration} title="Go to end">
+            <IconSkipForward />
+          </button>
+        </div>
 
+        {/* Right: A-B loop */}
+        <div className="transport-loop">
           <button
             className={`btn-transport btn-loop${loop ? ' active' : ''}`}
             onClick={() => setLoop(!loop)}
             title={t(lang, 'loop')}
-          >🔁</button>
+          ><IconLoop /></button>
 
-          {/* A-B Loop controls */}
-          <div className="ab-loop-controls">
+          <div className="ab-loop-box">
             <button
               className={`btn-ab${loopA !== null ? ' active' : ''}`}
               onClick={() => setLoopA(loopA !== null ? null : currentTime)}
               disabled={!duration}
               title={t(lang, 'loopA')}
             >A</button>
+            {hasLoopRegion && (
+              <span className="ab-loop-range">{formatTime(loopA!)} → {formatTime(loopB!)}</span>
+            )}
             <button
               className={`btn-ab${loopB !== null ? ' active' : ''}`}
               onClick={() => setLoopB(loopB !== null ? null : currentTime)}
@@ -122,38 +222,7 @@ export function Transport({ onPlay, onPause, onStop, onSeek }: Props): React.JSX
               <button className="btn-ab btn-ab-clear" onClick={clearLoop} title={t(lang, 'clearLoop')}>✕</button>
             )}
           </div>
-
-          {hasLoopRegion && (
-            <span className="ab-loop-times">
-              {formatTime(loopA!)} → {formatTime(loopB!)}
-            </span>
-          )}
         </div>
-      </div>
-
-      {/* Offset control */}
-      <div className="offset-row">
-        <span className="offset-label">{t(lang, 'offset')}</span>
-        <button className="btn-offset" onClick={() => setOffsetFrames(Math.max(-999, offsetFrames - 1))}>−</button>
-        <input
-          type="range"
-          className="offset-slider"
-          min={-999}
-          max={999}
-          step={1}
-          value={offsetFrames}
-          onChange={handleOffsetSlider}
-        />
-        <input
-          type="number"
-          className="offset-input"
-          min={-999}
-          max={999}
-          value={offsetFrames}
-          onChange={handleOffsetInput}
-        />
-        <button className="btn-offset" onClick={() => setOffsetFrames(Math.min(999, offsetFrames + 1))}>+</button>
-        <span className="offset-unit">{t(lang, 'frames')}</span>
       </div>
     </div>
   )

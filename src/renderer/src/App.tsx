@@ -12,6 +12,7 @@ import { SetlistPanel } from './components/SetlistPanel'
 import { MidiCuePanel } from './components/MidiCuePanel'
 import { StructurePanel } from './components/StructurePanel'
 import { PresetBar } from './components/PresetBar'
+import { TapBpm } from './components/TapBpm'
 import { StatusBar } from './components/StatusBar'
 import { LtcWavExportDialog } from './components/LtcWavExportDialog'
 import { LicenseDialog } from './components/LicenseDialog'
@@ -37,8 +38,10 @@ export default function App(): React.JSX.Element {
   const [dragging, setDragging]           = useState(false)
   const dragCounter = useRef(0)
   const [fullscreenTc, setFullscreenTc]   = useState(false)
-  const [sidebarWidth, setSidebarWidth]   = useState(200)
+  const [sidebarWidth, setSidebarWidth]       = useState(200)
   const isResizingSidebar = useRef(false)
+  const [rightPanelWidth, setRightPanelWidth] = useState(250)
+  const isResizingRightPanel = useRef(false)
   const [showLtcWavDialog, setShowLtcWavDialog] = useState(false)
   const [showLicenseDialog, setShowLicenseDialog] = useState(false)
   const lastBpmUpdateTime = useRef(0)
@@ -46,6 +49,11 @@ export default function App(): React.JSX.Element {
   const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [autoAdvanceCountdown, setAutoAdvanceCountdown] = useState<{ name: string; remaining: number } | null>(null)
   const autoAdvanceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // FPS mismatch warning: track last shown mismatch to avoid spam
+  const fpsMismatchKey = useRef<string | null>(null)
+  // LTC signal-lost prompt: track whether toast has been shown
+  const signalLostToastShown = useRef(false)
+  const signalLostToastId = useRef<number | null>(null)
   // MIDI cue: track last triggered cue IDs per playback session
   const triggeredCueIds = useRef<Set<string>>(new Set())
   // MIDI input: learning state
@@ -62,7 +70,7 @@ export default function App(): React.JSX.Element {
   }, [])
 
   const {
-    filePath, fileName, presetName, lang, loop,
+    filePath, fileName, presetName, presetDirty, lang, loop,
     setFilePath, setPlayState, setCurrentTime,
     setTimecode, setDetectedFps, setLtcSignalOk,
     setDetectedLtcChannel, setMidiConnected, setMidiOutputs,
@@ -73,14 +81,16 @@ export default function App(): React.JSX.Element {
     generatorStartTC, generatorFps,
     forceFps,
     ltcChannel,
+    ltcSignalOk, ltcConfidence, detectedLtcChannel,
     setLtcConfidence, setDetectedBpm,
     artnetEnabled, artnetTargetIp,
     oscEnabled, oscTargetIp, oscTargetPort,
     setSelectedMidiPort,
-    rightTab, setMidiInputs,
+    rightTab, setMidiInputs, showLocked, setShowLocked,
     selectedCueMidiPort, setSelectedCueMidiPort,
     midiInputPort, setMidiInputPort,
-    midiMappings, updateMidiMapping
+    midiMappings, updateMidiMapping,
+    trialDaysLeft, isPro, savePreset
   } = useStore()
 
   // Sync window title bar with preset name
@@ -108,15 +118,25 @@ export default function App(): React.JSX.Element {
   // Validate license + check trial on startup
   useEffect(() => {
     const s = useStore.getState()
-    // License check
+    // License check — only on startup, NEVER during playback (live show safety)
     if (s.licenseKey) {
+      // 1. Validate with LemonSqueezy (existing flow)
       window.api.licenseValidate(s.licenseKey).then((result) => {
         if (result.valid) {
           s.setLicenseStatus('valid')
           s.setLicenseValidatedAt(Date.now())
         } else if (s.licenseValidatedAt) {
           const daysSince = (Date.now() - s.licenseValidatedAt) / (1000 * 60 * 60 * 24)
-          if (daysSince > 7) s.setLicenseStatus('expired')
+          if (daysSince > 30) s.setLicenseStatus('expired')
+        }
+      }).catch(() => {})
+
+      // 2. Also check our Worker for refunds/cancellations (webhook-driven)
+      window.api.licenseStatus(s.licenseKey).then((result: { status: string }) => {
+        if (result.status === 'refunded' || result.status === 'revoked') {
+          s.setLicenseStatus('expired')
+          s.setLicenseKey(null)
+          s.setLicenseValidatedAt(null)
         }
       }).catch(() => {})
     }
@@ -466,6 +486,74 @@ export default function App(): React.JSX.Element {
     engine.current?.setForceFps(forceFps)
   }, [forceFps])
 
+  // FPS mismatch warning: toast when forced FPS differs from detected.
+  // Subscribe to detectedFps changes via Zustand (not in dep array — changes every frame).
+  useEffect(() => {
+    const checkFpsMismatch = (): void => {
+      const s = useStore.getState()
+      const detected = s.detectedFps
+      const forced = s.forceFps
+      if (forced === null || detected === null) {
+        fpsMismatchKey.current = null
+        return
+      }
+      if (forced === detected) {
+        fpsMismatchKey.current = null
+        return
+      }
+      const key = `${detected}-${forced}`
+      if (fpsMismatchKey.current === key) return
+      fpsMismatchKey.current = key
+      toast.warning(t(s.lang, 'fpsMismatch', {
+        detected: detected % 1 !== 0 ? detected.toFixed(2) : String(detected),
+        forced: forced % 1 !== 0 ? forced.toFixed(2) : String(forced)
+      }))
+    }
+    checkFpsMismatch()
+    // Also re-check when detectedFps changes (e.g. loading new file with different FPS)
+    const unsub = useStore.subscribe(
+      (s, prev) => { if (s.detectedFps !== prev.detectedFps) checkFpsMismatch() }
+    )
+    return unsub
+  }, [forceFps])
+
+  // LTC signal-lost prompt: offer one-click switch to Generator mode
+  useEffect(() => {
+    const s = useStore.getState()
+    if (!ltcSignalOk && s.playState === 'playing' && !s.tcGeneratorMode) {
+      if (!signalLostToastShown.current) {
+        signalLostToastShown.current = true
+        signalLostToastId.current = toast.action(
+          t(s.lang, 'ltcSignalLostPrompt'),
+          t(s.lang, 'switchToGenerator'),
+          () => {
+            const cur = useStore.getState()
+            // Relay from last known timecode position (don't jump to 0)
+            const lastTc = cur.timecode
+            if (lastTc) {
+              const startTc = [lastTc.hours, lastTc.minutes, lastTc.seconds, lastTc.frames]
+                .map(n => String(n).padStart(2, '0')).join(':')
+              cur.setGeneratorStartTC(startTc)
+              cur.setGeneratorFps(lastTc.fps)
+              engine.current?.setGeneratorStartTC(startTc, lastTc.fps)
+            }
+            cur.setTcGeneratorMode(true)
+            engine.current?.setGeneratorMode(true)
+          },
+          'warning'
+        )
+      }
+    }
+    // Signal restored: reset and dismiss toast
+    if (ltcSignalOk) {
+      signalLostToastShown.current = false
+      if (signalLostToastId.current !== null) {
+        toast.dismiss(signalLostToastId.current)
+        signalLostToastId.current = null
+      }
+    }
+  }, [ltcSignalOk])
+
   // Sync manual LTC channel override to engine
   // When switching back to 'auto', restore the auto-detected channel index
   useEffect(() => {
@@ -514,6 +602,19 @@ export default function App(): React.JSX.Element {
       // Don't intercept shortcuts when typing in input fields
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      // Ctrl+L: toggle UI lock
+      if (e.code === 'KeyL' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        const s = useStore.getState()
+        s.setShowLocked(!s.showLocked)
+        return
+      }
+
+      // When locked, only allow Space (play/pause), Escape (stop), F11 (fullscreen)
+      if (useStore.getState().showLocked) {
+        if (e.code !== 'Space' && e.code !== 'Escape' && e.code !== 'F11') return
+      }
 
       // Space: play/pause
       if (e.code === 'Space') {
@@ -918,6 +1019,25 @@ export default function App(): React.JSX.Element {
     window.addEventListener('mouseup', onMouseUp)
   }
 
+  const handleRightPanelResizeStart = (e: React.MouseEvent): void => {
+    e.preventDefault()
+    isResizingRightPanel.current = true
+    const startX = e.clientX
+    const startWidth = rightPanelWidth
+    const onMouseMove = (ev: MouseEvent): void => {
+      if (!isResizingRightPanel.current) return
+      const newWidth = Math.max(180, Math.min(520, startWidth - (ev.clientX - startX)))
+      setRightPanelWidth(newWidth)
+    }
+    const onMouseUp = (): void => {
+      isResizingRightPanel.current = false
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }
+
   const resyncVideo = (): void => {
     const s = useStore.getState()
     if (!musicWaveform || !s.videoWaveform || !s.duration || !s.videoDuration) return
@@ -997,32 +1117,92 @@ export default function App(): React.JSX.Element {
 
   return (
     <div
-      className={`app${dragging ? ' app--drag' : ''}`}
+      className={`app${dragging ? ' app--drag' : ''}${showLocked ? ' ui-locked' : ''}`}
       onDragEnter={(e) => { e.preventDefault(); dragCounter.current++; setDragging(true) }}
       onDragOver={(e) => { e.preventDefault() }}
       onDragLeave={() => { dragCounter.current--; if (dragCounter.current <= 0) { dragCounter.current = 0; setDragging(false) } }}
       onDrop={handleDrop}
     >
-      {/* Header */}
-      <div className="header">
-        <span className="app-title">LTCast{fileName ? ` — ${fileName}` : ''}</span>
-        <PresetBar />
-        <button className="btn-open" onClick={() => openFile()}>
-          {t(lang, 'openFile')}
-        </button>
-        <button className="btn-open" onClick={openVideo} disabled={!filePath}>
-          {t(lang, 'importVideo')}
-        </button>
-        <button className="btn-open" onClick={() => setShowLtcWavDialog(true)}>
-          {t(lang, 'exportLtcWav')}
-        </button>
+      {/* Custom Title Bar */}
+      <div className="title-bar">
+        {/* Left: logo + file ops */}
+        <div className="title-bar-left">
+          <span className="title-bar-logo">LTCast</span>
+          <div className="title-bar-ops">
+            <button className="title-bar-btn" onClick={() => openFile()}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+              </svg>
+              {t(lang, 'openFile')}
+            </button>
+            <button className="title-bar-btn" onClick={openVideo} disabled={!filePath}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+                <line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/>
+                <line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/>
+                <line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/>
+                <line x1="17" y1="7" x2="22" y2="7"/>
+              </svg>
+              {t(lang, 'importVideo')}
+            </button>
+            <button className="title-bar-btn" onClick={() => setShowLtcWavDialog(true)}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              {t(lang, 'exportLtcWav')}
+            </button>
+          </div>
+        </div>
+
+        {/* Center: preset name */}
+        <div className="title-bar-center">
+          <PresetBar />
+        </div>
+
+        {/* Right: save + trial + window controls */}
+        <div className="title-bar-right">
+          <button className="title-bar-btn" onClick={() => savePreset()} disabled={!presetName}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+            </svg>
+            {t(lang, 'save')}{presetDirty ? ' *' : ''}
+          </button>
+          {!isPro() && trialDaysLeft !== null && trialDaysLeft > 0 && (
+            <button className="title-bar-trial" onClick={() => setShowLicenseDialog(true)}>
+              {trialDaysLeft}d Trial
+            </button>
+          )}
+          {!isPro() && trialDaysLeft === 0 && (
+            <button className="title-bar-trial title-bar-trial--expired" onClick={() => setShowLicenseDialog(true)}>
+              Trial Expired
+            </button>
+          )}
+          {isPro() && (
+            <span className="title-bar-pro">PRO</span>
+          )}
+          {/* Window controls — Windows only (Mac uses native traffic lights) */}
+          {window.api.platform === 'win32' && (
+            <div className="title-bar-wc">
+              <button className="wc-btn" onClick={() => window.api.windowMinimize()} title="Minimize">
+                <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>
+              </button>
+              <button className="wc-btn" onClick={() => window.api.windowMaximize()} title="Maximize">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1"><rect x="0.5" y="0.5" width="9" height="9"/></svg>
+              </button>
+              <button className="wc-btn wc-btn--close" onClick={() => window.api.windowClose()} title="Close">
+                <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.2"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Main content */}
       <div className="main-content">
         {/* Left: Setlist sidebar */}
         <div className="setlist-sidebar" style={{ width: sidebarWidth }}>
-          <div className="setlist-sidebar-title">{t(lang, 'setlist')}</div>
           <SetlistPanel
             onLoadFile={(path, offsetFrames) => openFile(path, offsetFrames)}
             onImportFiles={async () => {
@@ -1042,13 +1222,53 @@ export default function App(): React.JSX.Element {
 
         {/* Center: TC + waveform */}
         <div className="center-panel">
+          {/* Mode tabs + signal/BPM row */}
+          <div className="center-top-bar">
+            <div className="mode-tabs">
+              <button
+                className={`mode-tab${!tcGeneratorMode ? ' active' : ''}`}
+                onClick={() => setTcGeneratorMode(false)}
+              >{t(lang, 'tcModeLtc')}</button>
+              <button
+                className={`mode-tab${tcGeneratorMode ? ' active' : ''}`}
+                onClick={() => setTcGeneratorMode(true)}
+              >{t(lang, 'tcModeGenerator')}</button>
+            </div>
+            <div className="center-top-right">
+              {!tcGeneratorMode && (
+                <div className={`signal-badge${ltcSignalOk ? ' signal-badge--ok' : ' signal-badge--lost'}`}>
+                  <span className="signal-dot" />
+                  <span>{ltcSignalOk ? 'SIGNAL OK' : 'NO SIGNAL'}</span>
+                  {ltcSignalOk && ltcConfidence > 0 && (
+                    <span className="signal-confidence">{Math.round(ltcConfidence * 100)}%</span>
+                  )}
+                  {ltcSignalOk && detectedLtcChannel && (
+                    <span className="signal-ch">CH{detectedLtcChannel === 'left' ? '1' : '2'}</span>
+                  )}
+                </div>
+              )}
+              {tcGeneratorMode && (
+                <div className="signal-badge signal-badge--gen">
+                  <span className="signal-dot" />
+                  <span>GENERATING</span>
+                </div>
+              )}
+              <TapBpm />
+            </div>
+          </div>
+
           <TimecodeDisplay />
 
           {filePath ? (
             <div className="file-info">{fileName}</div>
           ) : (
             <div className="drop-zone" onClick={() => openFile()}>
-              <div className="drop-icon">🎵</div>
+              <div className="drop-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 18V5l12-2v13"/>
+                  <circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                </svg>
+              </div>
               <div>{t(lang, 'dropFile')}</div>
               <div className="drop-formats">{t(lang, 'supportedFormats')}</div>
             </div>
@@ -1085,7 +1305,8 @@ export default function App(): React.JSX.Element {
         </div>
 
         {/* Right: Device / Cue panel */}
-        <div className="right-panel">
+        <div className="right-panel" style={{ width: rightPanelWidth }}>
+          <div className="right-panel-resize-handle" onMouseDown={handleRightPanelResizeStart} />
           {/* Tab switcher */}
           <div className="right-panel-tabs">
             <button

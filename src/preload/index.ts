@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('api', {
   licenseActivate: (key: string) => ipcRenderer.invoke('license-activate', key),
   licenseDeactivate: (key: string) => ipcRenderer.invoke('license-deactivate', key),
   licenseValidate: (key: string) => ipcRenderer.invoke('license-validate', key),
+  licenseStatus: (key: string) => ipcRenderer.invoke('license-status', key),
 
   // Trial
   trialCheck: () => ipcRenderer.invoke('trial-check'),
@@ -95,6 +96,11 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('artnet-socket-failed', handler)
     return () => { ipcRenderer.removeListener('artnet-socket-failed', handler) }
   },
+
+  // Window controls (custom title bar)
+  windowMinimize: () => ipcRenderer.invoke('window:minimize'),
+  windowMaximize: () => ipcRenderer.invoke('window:maximize'),
+  windowClose: () => ipcRenderer.invoke('window:close'),
 
   // Platform detection (for platform-specific UI text)
   platform: process.platform

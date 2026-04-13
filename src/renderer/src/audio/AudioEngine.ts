@@ -89,6 +89,11 @@ export class AudioEngine {
   private musicOutputDeviceId = 'default'
   private ltcOutputDeviceId = 'default'   // 'default' = muted
   private ltcGainValue = 1.0
+
+  /** Returns 0 when no LTC device is selected, so audio never leaks to default output */
+  private _effectiveLtcGain(): number {
+    return (!this.ltcOutputDeviceId || this.ltcOutputDeviceId === 'default') ? 0 : this.ltcGainValue
+  }
   private playing = false
   /** Monotonically increasing counter to guard against play/seek race conditions */
   private playId = 0
@@ -278,7 +283,7 @@ export class AudioEngine {
   setLtcGain(value: number): void {
     this.ltcGainValue = Math.max(0, Math.min(LTC_GAIN_MAX, value))
     if (this.ltcGainNode && this.ltcCtx) {
-      this.ltcGainNode.gain.setTargetAtTime(this.ltcGainValue, this.ltcCtx.currentTime, 0.01)
+      this.ltcGainNode.gain.setTargetAtTime(this._effectiveLtcGain(), this.ltcCtx.currentTime, 0.01)
     }
   }
 
@@ -453,6 +458,7 @@ export class AudioEngine {
       // Create a fresh context targeting the saved device
       await this._closeLtcCtx()
       this.ltcCtx = new AudioContext()
+      this._attachLtcStateMonitor()
 
       // @ts-expect-error - setSinkId newer API
       await this.ltcCtx.setSinkId(this.ltcOutputDeviceId)
@@ -500,6 +506,7 @@ export class AudioEngine {
 
     // Create new context — old nodes are invalid, must clear them
     this.ltcCtx = new AudioContext()
+    this._attachLtcStateMonitor()
     this.ltcWorkletReady = false
     this.ltcWorkletNode = null
     this.ltcGainNode = null
@@ -556,6 +563,27 @@ export class AudioEngine {
   }
 
   /**
+   * Attach onstatechange listener to ltcCtx.
+   * Auto-resumes if the USB audio device gets suspended (e.g. USB disconnect/reconnect).
+   * Notifies UI via onLtcError so the user can see the device went away.
+   */
+  private _attachLtcStateMonitor(): void {
+    if (!this.ltcCtx) return
+    this.ltcCtx.onstatechange = () => {
+      if (!this.ltcCtx) return
+      if (this.ltcCtx.state === 'suspended' && this.playing) {
+        // Attempt automatic recovery first
+        this.ltcCtx.resume().catch(() => {
+          // Resume failed — device is likely gone; notify UI
+          this.callbacks.onLtcError?.('device-suspended')
+        })
+      } else if (this.ltcCtx.state === 'closed') {
+        this.callbacks.onLtcError?.('device-suspended')
+      }
+    }
+  }
+
+  /**
    * Start LTC source and connect audio nodes.
    * Reuses existing worklet node and gain if available (from previous play cycle).
    * Must be called AFTER _setupLtcContext().
@@ -609,11 +637,12 @@ export class AudioEngine {
 
     // Pause/resume: no mute. Seek: brief 50ms mute.
     const isResume = Math.abs(offset - this.ltcLastStopOffset) < 0.5
+    const effectiveGain = this._effectiveLtcGain()
     if (isResume) {
-      this.ltcGainNode.gain.value = this.ltcGainValue
+      this.ltcGainNode.gain.value = effectiveGain
     } else {
       this.ltcGainNode.gain.setValueAtTime(0, this.ltcCtx.currentTime)
-      this.ltcGainNode.gain.setValueAtTime(this.ltcGainValue, when + 0.05)
+      this.ltcGainNode.gain.setValueAtTime(effectiveGain, when + 0.05)
     }
 
     this.ltcSource.start(when, offset)
@@ -646,11 +675,12 @@ export class AudioEngine {
 
       const when = this.ltcCtx.currentTime + SCHEDULING_DELAY
       const isResume = Math.abs(offset - this.ltcLastStopOffset) < 0.5
+      const effectiveGain = this._effectiveLtcGain()
       if (isResume) {
-        this.ltcGainNode.gain.value = this.ltcGainValue
+        this.ltcGainNode.gain.value = effectiveGain
       } else {
         this.ltcGainNode.gain.setValueAtTime(0, this.ltcCtx.currentTime)
-        this.ltcGainNode.gain.setValueAtTime(this.ltcGainValue, when + 0.05)
+        this.ltcGainNode.gain.setValueAtTime(effectiveGain, when + 0.05)
       }
 
       this.ltcEncoderNode.connect(this.ltcGainNode)

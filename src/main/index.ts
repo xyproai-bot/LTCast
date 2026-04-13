@@ -213,20 +213,62 @@ async function lemonSqueezyRequest(
 }
 
 // ════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
+// License Status Check — our Worker catches refunds/cancellations
+// ════════════════════════════════════════════════════════════
+
+const WORKER_API = 'https://ltcast-trial.xypro-ai.workers.dev'
+
+/**
+ * Check license status against our Cloudflare Worker.
+ * The Worker receives LemonSqueezy webhooks and tracks refunds/cancellations.
+ * Returns 'active', 'expired', 'refunded', 'revoked', or 'unknown' (no record).
+ */
+async function checkLicenseStatus(licenseKey: string): Promise<{ status: string }> {
+  try {
+    const { net } = require('electron')
+    const response = await net.fetch(`${WORKER_API}/license/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ licenseKey })
+    })
+    return await response.json()
+  } catch {
+    return { status: 'unknown' }
+  }
+}
+
+// ════════════════════════════════════════════════════════════
 // Trial System — server-side fingerprint tracking
 // ════════════════════════════════════════════════════════════
 
-const TRIAL_API = 'https://ltcast-trial.xypro-ai.workers.dev'
+const TRIAL_API = WORKER_API
 
-/** Generate machine fingerprint from CPU + MAC + hostname */
+/**
+ * Generate stable machine fingerprint using hardware UUID.
+ * Falls back to CPU+hostname if UUID is unavailable.
+ * Does NOT use MAC address (changes with VPN/dock/virtual adapters).
+ */
 function getMachineFingerprint(): string {
+  const crypto = require('crypto')
+  const uuid = _getHardwareUUID()
+  if (uuid) {
+    return crypto.createHash('sha256').update(`uuid|${uuid}`).digest('hex')
+  }
+  // Fallback: CPU model + hostname + platform (no MAC)
+  const os = require('os')
+  const cpuModel = os.cpus().length > 0 ? os.cpus()[0].model : 'unknown'
+  const raw = `${cpuModel}|${os.hostname()}|${os.platform()}`
+  return crypto.createHash('sha256').update(raw).digest('hex')
+}
+
+/** Legacy fingerprint for backward compatibility with existing activations. */
+function getLegacyFingerprint(): string {
   const os = require('os')
   const crypto = require('crypto')
-  const cpus = os.cpus()
-  const cpuModel = cpus.length > 0 ? cpus[0].model : 'unknown'
+  const cpuModel = os.cpus().length > 0 ? os.cpus()[0].model : 'unknown'
   const hostname = os.hostname()
   const platform = os.platform()
-  // Get first non-internal MAC address
   const nets = os.networkInterfaces()
   let mac = ''
   for (const name of Object.keys(nets)) {
@@ -240,6 +282,33 @@ function getMachineFingerprint(): string {
   }
   const raw = `${cpuModel}|${mac}|${hostname}|${platform}`
   return crypto.createHash('sha256').update(raw).digest('hex')
+}
+
+/** Get hardware UUID (motherboard/platform). Stable across network changes. */
+function _getHardwareUUID(): string | null {
+  try {
+    const { execSync } = require('child_process')
+    if (process.platform === 'win32') {
+      // Windows: SMBIOS UUID from motherboard
+      const out = execSync('wmic csproduct get uuid', { timeout: 5000 }).toString()
+      const lines = out.trim().split('\n').map((l: string) => l.trim()).filter(Boolean)
+      if (lines.length >= 2 && lines[1] !== 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF') {
+        return lines[1]
+      }
+    } else if (process.platform === 'darwin') {
+      // macOS: IOPlatformUUID
+      const out = execSync('ioreg -rd1 -c IOPlatformExpertDevice', { timeout: 5000 }).toString()
+      const match = out.match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/)
+      if (match) return match[1]
+    } else {
+      // Linux: machine-id
+      const { readFileSync, existsSync } = require('fs')
+      if (existsSync('/etc/machine-id')) {
+        return readFileSync('/etc/machine-id', 'utf8').trim()
+      }
+    }
+  } catch { /* UUID unavailable — use fallback */ }
+  return null
 }
 
 async function checkTrial(): Promise<{ daysLeft: number; expired: boolean }> {
@@ -396,7 +465,7 @@ function createWindow(): BrowserWindow {
     backgroundColor: '#1a1a1a',
     // hiddenInset on Mac: hides the native title bar chrome but keeps the
     // traffic light buttons inset into the content area (no double-header)
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -1094,6 +1163,14 @@ app.whenReady().then(() => {
 
   ipcMain.handle('get-app-version', () => app.getVersion())
 
+  // ── Window controls (custom title bar) ──
+  ipcMain.handle('window:minimize', () => { BrowserWindow.getFocusedWindow()?.minimize() })
+  ipcMain.handle('window:maximize', () => {
+    const w = BrowserWindow.getFocusedWindow()
+    if (w?.isMaximized()) w.unmaximize(); else w?.maximize()
+  })
+  ipcMain.handle('window:close', () => { BrowserWindow.getFocusedWindow()?.close() })
+
   // ── Art-Net Timecode IPC ──
   ipcMain.handle('artnet-start', () => {
     ensureArtnetSocket()
@@ -1164,6 +1241,7 @@ app.whenReady().then(() => {
   ipcMain.handle('license-activate', async (_event, key: string) => lemonSqueezyRequest('activate', key))
   ipcMain.handle('license-deactivate', async (_event, key: string) => lemonSqueezyRequest('deactivate', key))
   ipcMain.handle('license-validate', async (_event, key: string) => lemonSqueezyRequest('validate', key))
+  ipcMain.handle('license-status', async (_event, key: string) => checkLicenseStatus(key))
   ipcMain.handle('trial-check', async () => checkTrial())
   ipcMain.handle('get-machine-fingerprint', () => getMachineFingerprint())
 

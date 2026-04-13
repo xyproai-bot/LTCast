@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useStore } from '../store'
-import { TapBpm } from './TapBpm'
 import { t } from '../i18n'
 
 function pad2(n: number): string { return String(Math.floor(n)).padStart(2, '0') }
@@ -52,24 +51,6 @@ export function TimecodeDisplay({ fullscreen }: Props): React.JSX.Element {
 
   return (
     <div className={`tc-display${fullscreen ? ' tc-display--fullscreen' : ''}${signalLost ? ' tc-signal-lost' : ''}`}>
-      {/* Mode toggle */}
-      {!fullscreen && (
-        <div className="tc-mode-row">
-          <button
-            className={`tc-mode-btn${!tcGeneratorMode ? ' active' : ''}`}
-            onClick={() => setTcGeneratorMode(false)}
-          >
-            {t(lang, 'tcModeLtc')}
-          </button>
-          <button
-            className={`tc-mode-btn${tcGeneratorMode ? ' active' : ''}`}
-            onClick={() => setTcGeneratorMode(true)}
-          >
-            {t(lang, 'tcModeGenerator')}
-          </button>
-        </div>
-      )}
-
       <div className="tc-label">{t(lang, 'timecode')}</div>
       <div className="tc-digits">
         <span className="tc-seg">{h}</span>
@@ -101,7 +82,6 @@ export function TimecodeDisplay({ fullscreen }: Props): React.JSX.Element {
           {t(lang, 'ltcPreroll').replace('{time}', formatCountdown(ltcStartTime))}
         </div>
       )}
-      {!fullscreen && <TapBpm />}
 
       {/* Force FPS — only shown in LTC Reader mode */}
       {!tcGeneratorMode && !fullscreen && (

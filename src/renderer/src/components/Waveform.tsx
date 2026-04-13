@@ -207,12 +207,8 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     ctx.clearRect(0, 0, cssW, cssH)
 
     const fp = filePathRef.current
-    if (!fp) return
-    const fileMarkers = markersRef.current[fp] ?? []
-    if (fileMarkers.length === 0) return
-
     const dur = durationRef.current
-    if (dur <= 0) return
+    if (!fp || dur <= 0) return
 
     // Read scroll state from WaveSurfer's scrollContainer (parent of wrapper)
     const wrapper = (ws as unknown as { getWrapper(): HTMLElement }).getWrapper?.()
@@ -221,6 +217,36 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     const scrollLeft = scrollContainer ? scrollContainer.scrollLeft : 0
     const pxPerSec = totalWidth / dur
 
+    // Draw A-B loop region (scroll-aware)
+    const la = loopARef.current, lb = loopBRef.current
+    if (la !== null && lb !== null) {
+      const aX = la * pxPerSec - scrollLeft
+      const bX = lb * pxPerSec - scrollLeft
+      const startX = Math.min(aX, bX)
+      const endX   = Math.max(aX, bX)
+      // Fill
+      ctx.fillStyle = 'rgba(0, 212, 255, 0.08)'
+      ctx.fillRect(startX, 0, endX - startX, cssH)
+      // Dashed border lines
+      ctx.strokeStyle = '#00d4ff'
+      ctx.lineWidth = 1
+      ctx.setLineDash([4, 4])
+      if (aX > -10 && aX < cssW + 10) {
+        ctx.beginPath(); ctx.moveTo(aX, 0); ctx.lineTo(aX, cssH); ctx.stroke()
+      }
+      if (bX > -10 && bX < cssW + 10) {
+        ctx.beginPath(); ctx.moveTo(bX, 0); ctx.lineTo(bX, cssH); ctx.stroke()
+      }
+      ctx.setLineDash([])
+      // A / B labels
+      ctx.font = 'bold 10px sans-serif'
+      ctx.fillStyle = '#00d4ff'
+      if (aX > -10 && aX < cssW + 10) ctx.fillText('A', aX + 3, 11)
+      if (bX > -10 && bX < cssW + 10) ctx.fillText('B', bX + 3, 11)
+    }
+
+    // Draw file markers
+    const fileMarkers = markersRef.current[fp] ?? []
     for (const marker of fileMarkers) {
       const absX = marker.time * pxPerSec
       const x = absX - scrollLeft
@@ -261,8 +287,8 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   // Keep drawMarkersRef in sync so WaveSurfer event handlers can call it
   drawMarkersRef.current = drawMarkers
 
-  // Redraw markers whenever markers, filePath, duration, currentTime changes
-  useEffect(() => { drawMarkers() }, [markers, filePath, duration, currentTime, drawMarkers])
+  // Redraw markers whenever markers, filePath, duration, currentTime, or loop points change
+  useEffect(() => { drawMarkers() }, [markers, filePath, duration, currentTime, loopA, loopB, drawMarkers])
 
   // ResizeObserver for music waveform wrap
   useEffect(() => {
