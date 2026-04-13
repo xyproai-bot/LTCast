@@ -23,6 +23,7 @@ export class MtcOutput {
   private lastQfPiece = -1  // tracks which quarter-frame piece (0-7) was last sent
   private _perfNowAtPlayStart = 0
   private _audioTimeAtPlayStart = 0
+  private _lastQfTimestamp = 0  // chained timestamp of the last QF sent (ms, performance.now() scale)
   onPortsChanged: (() => void) | null = null
   onPortDisconnected: ((portName: string) => void) | null = null
 
@@ -59,6 +60,7 @@ export class MtcOutput {
     this.selectedOutput = out
     this.lastSentFrame = -1
     this.lastQfPiece = -1
+    this._lastQfTimestamp = 0
     return true
   }
 
@@ -66,6 +68,7 @@ export class MtcOutput {
     this.selectedOutput = null
     this.lastSentFrame = -1
     this.lastQfPiece = -1
+    this._lastQfTimestamp = 0
   }
 
   // ── Cue output port (separate from MTC port) ───────────────
@@ -125,6 +128,7 @@ export class MtcOutput {
   setMode(mode: MtcMode): void {
     this.mtcMode = mode
     this.lastQfPiece = -1
+    this._lastQfTimestamp = 0
   }
 
   getMode(): MtcMode {
@@ -139,6 +143,9 @@ export class MtcOutput {
   setPlayStartClocks(perfNow: number, audioTime: number): void {
     this._perfNowAtPlayStart = perfNow
     this._audioTimeAtPlayStart = audioTime
+    this._lastQfTimestamp = perfNow  // prime chain at play start
+    this.lastSentFrame = -1
+    this.lastQfPiece = -1
   }
 
   /**
@@ -165,9 +172,17 @@ export class MtcOutput {
   /**
    * Send 4 quarter-frame MTC messages per frame change.
    *
-   * #4 fix: MIDI spec requires 8 quarter-frame pieces over 2 frames,
-   * meaning 4 pieces per frame. Each piece is spaced at 1/4 frame intervals
-   * using scheduled MIDI timestamps for precise timing.
+   * MIDI spec requires 8 QF pieces over 2 frames (4 per frame), evenly spaced
+   * at 1/4 frame intervals using Web MIDI scheduled timestamps.
+   *
+   * Key improvement over naive implementation: timestamps are CHAINED from the
+   * previous QF rather than re-derived from AudioContext on every call.
+   * This means JS event-loop delays do not shift QF spacing — the MIDI driver
+   * sees perfectly uniform 1/4-frame intervals regardless of JS jitter.
+   *
+   * Drift guard: if the chain drifts more than one full frame from the
+   * AudioContext anchor (e.g. after a seek or long pause), it re-anchors
+   * silently without causing a burst of out-of-order messages.
    *
    * Quarter-frame format: [0xF1, (pieceType << 4) | nibble]
    * Pieces cycle 0→7 continuously. Complete TC update every 2 frames.
@@ -192,23 +207,38 @@ export class MtcOutput {
     // Quarter-frame interval in ms (1/4 of one frame duration)
     const qfIntervalMs = 1000 / (tc.fps * 4)
 
-    // Map AudioContext time → performance.now() coordinate
-    const basePerfTime = this._perfNowAtPlayStart +
+    // AudioContext → performance.now() anchor (single mapping, accumulated drift is tiny)
+    const anchorPerfTime = this._perfNowAtPlayStart +
       Math.max(0, audioContextCurrentTime - this._audioTimeAtPlayStart) * 1000
 
-    // Send 4 pieces per frame, scheduled at quarter-frame intervals
+    // First send after play start: init chain at anchor
+    if (this._lastQfTimestamp === 0) {
+      this._lastQfTimestamp = anchorPerfTime
+    }
+
+    // Drift guard: if chain is > 1 frame ahead or behind the anchor, re-anchor.
+    // This handles seeks and long pauses without breaking continuous QF spacing.
+    const driftMs = this._lastQfTimestamp - anchorPerfTime
+    const frameMs = 1000 / tc.fps
+    if (driftMs > frameMs || driftMs < -frameMs) {
+      this._lastQfTimestamp = anchorPerfTime
+    }
+
+    // Send 4 pieces, each chained exactly qfIntervalMs from the previous.
+    // JS event-loop jitter does NOT affect spacing — only the absolute position.
     try {
       for (let i = 0; i < 4; i++) {
+        this._lastQfTimestamp += qfIntervalMs
         this.lastQfPiece = (this.lastQfPiece + 1) % 8
         const piece = this.lastQfPiece
-        const timestamp = basePerfTime + i * qfIntervalMs
-        this.selectedOutput!.send([0xf1, (piece << 4) | nibbles[piece]], timestamp)
+        this.selectedOutput!.send([0xf1, (piece << 4) | nibbles[piece]], this._lastQfTimestamp)
       }
     } catch {
       const name = this.selectedOutput?.name ?? 'Unknown'
       this.selectedOutput = null
       this.lastSentFrame = -1
       this.lastQfPiece = -1
+      this._lastQfTimestamp = 0
       this.onPortDisconnected?.(name)
     }
   }

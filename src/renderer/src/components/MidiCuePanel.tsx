@@ -15,17 +15,27 @@ interface Props {
   learningMappingId: string | null
 }
 
+const MSG_TYPES: Array<{ value: MidiCuePoint['messageType']; label: string }> = [
+  { value: 'note-on',        label: 'NOTE' },
+  { value: 'control-change', label: 'CC'   },
+  { value: 'program-change', label: 'PC'   },
+]
+
 function formatTcInput(value: string): string {
-  // Strip non-digits
   const digits = value.replace(/\D/g, '').slice(0, 8)
   if (digits.length === 0) return ''
-  // Pad to 8 digits
   const padded = digits.padStart(8, '0')
   return `${padded.slice(0, 2)}:${padded.slice(2, 4)}:${padded.slice(4, 6)}:${padded.slice(6, 8)}`
 }
 
 function isValidTimecode(tc: string): boolean {
   return /^\d{2}:\d{2}:\d{2}:\d{2}$/.test(tc)
+}
+
+function typeColor(type: MidiCuePoint['messageType']): string {
+  if (type === 'note-on')        return 'note'
+  if (type === 'control-change') return 'cc'
+  return 'pc'
 }
 
 export function MidiCuePanel({ onCueMidiPortChange, onMidiInputPortChange, onStartLearn, learningMappingId }: Props): React.JSX.Element {
@@ -44,15 +54,13 @@ export function MidiCuePanel({ onCueMidiPortChange, onMidiInputPortChange, onSta
   const activeSong = activeSetlistIndex !== null ? setlist[activeSetlistIndex] : null
   const cues: MidiCuePoint[] = activeSong?.midiCues ?? []
 
-  // Local state for new cue form
-  const [newTc, setNewTc] = useState('00:00:00:00')
-  const [newType, setNewType] = useState<MidiCuePoint['messageType']>('note-on')
+  const [newTc, setNewTc]           = useState('00:00:00:00')
+  const [newType, setNewType]       = useState<MidiCuePoint['messageType']>('note-on')
   const [newChannel, setNewChannel] = useState(1)
-  const [newData1, setNewData1] = useState(60)
-  const [newData2, setNewData2] = useState(100)
-  const [newLabel, setNewLabel] = useState('')
+  const [newData1, setNewData1]     = useState(60)
+  const [newData2, setNewData2]     = useState(100)
+  const [newLabel, setNewLabel]     = useState('')
 
-  // --- Cue helpers ---
   const updateCues = (updated: MidiCuePoint[]): void => {
     if (activeSetlistIndex === null) return
     setSetlistItemMidiCues(activeSetlistIndex, updated)
@@ -93,7 +101,6 @@ export function MidiCuePanel({ onCueMidiPortChange, onMidiInputPortChange, onSta
     onMidiInputPortChange(portId)
   }
 
-  // --- Mapping helpers ---
   const handleAddMapping = (): void => {
     const mapping: MidiMapping = {
       id: nextMappingId(),
@@ -135,109 +142,121 @@ export function MidiCuePanel({ onCueMidiPortChange, onMidiInputPortChange, onSta
 
   return (
     <div className="midi-cue-panel">
+
       {/* ── Cue Output Port ── */}
-      <div className="cue-section">
-        <div className="cue-section-title">{t(lang, 'cueMidiOutput')}</div>
-        <div className="device-row">
-          <select
-            className="device-select"
-            value={selectedCueMidiPort ?? ''}
-            onChange={(e) => handleCueMidiPort(e.target.value)}
-          >
-            <option value="">{t(lang, 'selectMidiPort')}</option>
-            {midiOutputs.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          <span className={`signal-dot${selectedCueMidiPort ? ' signal-ok' : ' signal-off'}`} />
+      <div className="cp-section">
+        <div className="cp-section-head">
+          <span className="cp-section-label">{t(lang, 'cueMidiOutput')}</span>
+          <span className={`cp-port-dot${selectedCueMidiPort ? ' cp-port-dot--ok' : ''}`} />
         </div>
+        <select
+          className="device-select"
+          value={selectedCueMidiPort ?? ''}
+          onChange={(e) => handleCueMidiPort(e.target.value)}
+        >
+          <option value="">{t(lang, 'selectMidiPort')}</option>
+          {midiOutputs.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
       </div>
 
       {/* ── Cue List ── */}
-      <div className="cue-section">
-        <div className="cue-section-title">
-          {t(lang, 'midiCues')}
-          {activeSong ? ` — ${activeSong.name}` : ''}
+      <div className="cp-section">
+        <div className="cp-section-head">
+          <span className="cp-section-label">
+            {t(lang, 'midiCues')}
+            {activeSong && <span className="cp-section-song"> — {activeSong.name}</span>}
+          </span>
         </div>
 
-        {activeSetlistIndex === null && (
-          <div className="cue-empty">{t(lang, 'selectSongForCues')}</div>
-        )}
-
-        {activeSetlistIndex !== null && (
+        {activeSetlistIndex === null ? (
+          <div className="cp-empty">{t(lang, 'selectSongForCues')}</div>
+        ) : (
           <>
-            {/* Cue list */}
-            {cues.length === 0 && (
-              <div className="cue-empty">{t(lang, 'noCues')}</div>
-            )}
-            {cues.map((cue) => (
-              <div key={cue.id} className={`cue-row${cue.enabled ? '' : ' cue-row--disabled'}`}>
-                <input
-                  type="checkbox"
-                  className="cue-enable"
-                  checked={cue.enabled}
-                  onChange={() => handleToggleCue(cue.id)}
-                  title={t(lang, 'cueEnabled')}
-                />
-                <span className="cue-tc">{cue.triggerTimecode}</span>
-                <span className="cue-type">{cue.messageType === 'program-change' ? 'PC' : cue.messageType === 'note-on' ? 'Note' : 'CC'}</span>
-                <span className="cue-ch">Ch{cue.channel}</span>
-                <span className="cue-data">
-                  {cue.data1}{cue.data2 !== undefined ? `,${cue.data2}` : ''}
-                </span>
-                {cue.label && <span className="cue-label">{cue.label}</span>}
-                <button
-                  className="cue-delete"
-                  onClick={() => handleDeleteCue(cue.id)}
-                  title={t(lang, 'remove')}
-                >✕</button>
-              </div>
-            ))}
+            {/* Cue rows */}
+            <div className="cp-cue-list">
+              {cues.length === 0 && (
+                <div className="cp-empty">{t(lang, 'noCues')}</div>
+              )}
+              {cues.map((cue) => (
+                <div key={cue.id} className={`cp-cue-item${cue.enabled ? '' : ' cp-cue-item--off'}`}>
+                  <button
+                    className={`cp-cue-toggle${cue.enabled ? ' cp-cue-toggle--on' : ''}`}
+                    onClick={() => handleToggleCue(cue.id)}
+                    title={t(lang, 'cueEnabled')}
+                  />
+                  <span className="cp-cue-tc">{cue.triggerTimecode}</span>
+                  <span className={`cp-cue-badge cp-cue-badge--${typeColor(cue.messageType)}`}>
+                    {cue.messageType === 'note-on' ? 'NOTE' : cue.messageType === 'control-change' ? 'CC' : 'PC'}
+                  </span>
+                  <span className="cp-cue-params">
+                    Ch{cue.channel} · {cue.data1}{cue.data2 !== undefined ? ` · ${cue.data2}` : ''}
+                  </span>
+                  {cue.label && (
+                    <span className="cp-cue-label" title={cue.label}>{cue.label}</span>
+                  )}
+                  <button
+                    className="cp-cue-del"
+                    onClick={() => handleDeleteCue(cue.id)}
+                    title={t(lang, 'remove')}
+                  >
+                    <svg width="8" height="8" viewBox="0 0 8 8" stroke="currentColor" strokeWidth="1.5">
+                      <line x1="1" y1="1" x2="7" y2="7"/><line x1="7" y1="1" x2="1" y2="7"/>
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
 
             {/* Add cue form */}
-            <div className="cue-add-form">
-              <div className="cue-form-row">
+            <div className="cp-add-form">
+              {/* Row 1: TC + type tabs */}
+              <div className="cp-form-row">
                 <input
                   type="text"
-                  className="cue-tc-input"
+                  className="cp-tc-input"
                   value={newTc}
                   onChange={(e) => setNewTc(formatTcInput(e.target.value))}
                   placeholder="HH:MM:SS:FF"
                   maxLength={11}
                 />
-                <select
-                  className="cue-type-select"
-                  value={newType}
-                  onChange={(e) => setNewType(e.target.value as MidiCuePoint['messageType'])}
-                >
-                  <option value="note-on">Note On</option>
-                  <option value="control-change">CC</option>
-                  <option value="program-change">PC</option>
-                </select>
+                <div className="cp-type-tabs">
+                  {MSG_TYPES.map(({ value, label }) => (
+                    <button
+                      key={value}
+                      className={`cp-type-tab${newType === value ? ' active' : ''}`}
+                      onClick={() => setNewType(value)}
+                    >{label}</button>
+                  ))}
+                </div>
               </div>
-              <div className="cue-form-row">
-                <label className="cue-form-label">Ch</label>
+              {/* Row 2: channel + data */}
+              <div className="cp-form-row cp-form-row--params">
+                <span className="cp-form-lbl">Ch</span>
                 <input
                   type="number"
-                  className="cue-num-input"
+                  className="cp-num"
                   min={1} max={16}
                   value={newChannel}
                   onChange={(e) => setNewChannel(Math.max(1, Math.min(16, parseInt(e.target.value) || 1)))}
                 />
-                <label className="cue-form-label">{newType === 'program-change' ? 'Prog' : newType === 'note-on' ? 'Note' : 'CC'}</label>
+                <span className="cp-form-lbl">
+                  {newType === 'program-change' ? 'Prog' : newType === 'note-on' ? 'Note' : 'CC'}
+                </span>
                 <input
                   type="number"
-                  className="cue-num-input"
+                  className="cp-num"
                   min={0} max={127}
                   value={newData1}
                   onChange={(e) => setNewData1(Math.max(0, Math.min(127, parseInt(e.target.value) || 0)))}
                 />
                 {newType !== 'program-change' && (
                   <>
-                    <label className="cue-form-label">{newType === 'note-on' ? 'Vel' : 'Val'}</label>
+                    <span className="cp-form-lbl">{newType === 'note-on' ? 'Vel' : 'Val'}</span>
                     <input
                       type="number"
-                      className="cue-num-input"
+                      className="cp-num"
                       min={0} max={127}
                       value={newData2}
                       onChange={(e) => setNewData2(Math.max(0, Math.min(127, parseInt(e.target.value) || 0)))}
@@ -245,16 +264,18 @@ export function MidiCuePanel({ onCueMidiPortChange, onMidiInputPortChange, onSta
                   </>
                 )}
               </div>
-              <div className="cue-form-row">
+              {/* Row 3: label + add button */}
+              <div className="cp-form-row">
                 <input
                   type="text"
-                  className="cue-label-input"
+                  className="cp-label-input"
                   value={newLabel}
                   onChange={(e) => setNewLabel(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddCue() }}
                   placeholder={t(lang, 'cueLabelPlaceholder')}
                 />
                 <button
-                  className="btn-sm cue-add-btn"
+                  className="cp-add-btn"
                   onClick={handleAddCue}
                   disabled={!isValidTimecode(newTc)}
                 >
@@ -267,62 +288,70 @@ export function MidiCuePanel({ onCueMidiPortChange, onMidiInputPortChange, onSta
       </div>
 
       {/* ── MIDI Input / Mappings ── */}
-      <div className="cue-section">
-        <div className="cue-section-title">{t(lang, 'midiInput')}</div>
-        <div className="device-row">
-          <select
-            className="device-select"
-            value={midiInputPort ?? ''}
-            onChange={(e) => handleMidiInputPort(e.target.value)}
-          >
-            <option value="">{t(lang, 'selectMidiInputPort')}</option>
-            {midiInputs.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          <span className={`signal-dot${midiInputPort ? ' signal-ok' : ' signal-off'}`} />
+      <div className="cp-section">
+        <div className="cp-section-head">
+          <span className="cp-section-label">{t(lang, 'midiInput')}</span>
+          <span className={`cp-port-dot${midiInputPort ? ' cp-port-dot--ok' : ''}`} />
+        </div>
+        <select
+          className="device-select"
+          value={midiInputPort ?? ''}
+          onChange={(e) => handleMidiInputPort(e.target.value)}
+        >
+          <option value="">{t(lang, 'selectMidiInputPort')}</option>
+          {midiInputs.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+
+        <div className="cp-subsection-head">
+          <span className="cp-section-label">{t(lang, 'midiMappings')}</span>
+          <button className="cp-add-mapping-btn" onClick={handleAddMapping}>
+            + {t(lang, 'addMapping')}
+          </button>
         </div>
 
-        <div className="cue-section-subtitle">{t(lang, 'midiMappings')}</div>
-
         {midiMappings.length === 0 && (
-          <div className="cue-empty">{t(lang, 'noMappings')}</div>
+          <div className="cp-empty">{t(lang, 'noMappings')}</div>
         )}
 
         {midiMappings.map((mapping) => (
-          <div key={mapping.id} className={`mapping-row${learningMappingId === mapping.id ? ' mapping-row--learning' : ''}`}>
-            <div className="mapping-trigger">
+          <div key={mapping.id} className={`cp-mapping${learningMappingId === mapping.id ? ' cp-mapping--learning' : ''}`}>
+            {/* Trigger row */}
+            <div className="cp-mapping-trigger">
+              <span className="cp-mapping-label">IN</span>
               <select
-                className="mapping-select"
+                className="cp-mini-select"
                 value={mapping.trigger.type}
                 onChange={(e) => handleUpdateMappingTriggerType(mapping.id, e.target.value as MidiMapping['trigger']['type'])}
               >
-                <option value="note-on">Note</option>
+                <option value="note-on">NOTE</option>
                 <option value="control-change">CC</option>
                 <option value="program-change">PC</option>
               </select>
-              <span className="mapping-label-sm">Ch</span>
+              <span className="cp-form-lbl">Ch</span>
               <input
                 type="number"
-                className="mapping-num"
+                className="cp-num"
                 min={0} max={16}
                 value={mapping.trigger.channel}
                 onChange={(e) => handleUpdateMappingTriggerCh(mapping.id, Math.max(0, Math.min(16, parseInt(e.target.value) || 0)))}
                 title="0 = any channel"
               />
-              <span className="mapping-label-sm">#</span>
+              <span className="cp-form-lbl">#</span>
               <input
                 type="number"
-                className="mapping-num"
+                className="cp-num"
                 min={0} max={127}
                 value={mapping.trigger.data1}
                 onChange={(e) => handleUpdateMappingTriggerData1(mapping.id, Math.max(0, Math.min(127, parseInt(e.target.value) || 0)))}
               />
             </div>
-            <div className="mapping-action-row">
-              <span className="mapping-arrow">→</span>
+            {/* Action row */}
+            <div className="cp-mapping-action">
+              <span className="cp-mapping-arrow">→</span>
               <select
-                className="mapping-select"
+                className="cp-mini-select cp-mini-select--action"
                 value={mapping.action}
                 onChange={(e) => handleUpdateMappingAction(mapping.id, e.target.value as MidiMapping['action'])}
               >
@@ -337,7 +366,7 @@ export function MidiCuePanel({ onCueMidiPortChange, onMidiInputPortChange, onSta
               {mapping.action === 'goto-song' && (
                 <input
                   type="number"
-                  className="mapping-num"
+                  className="cp-num"
                   min={1}
                   value={(mapping.actionParam ?? 0) + 1}
                   onChange={(e) => handleUpdateMappingParam(mapping.id, Math.max(0, (parseInt(e.target.value) || 1) - 1))}
@@ -345,23 +374,23 @@ export function MidiCuePanel({ onCueMidiPortChange, onMidiInputPortChange, onSta
                 />
               )}
               <button
-                className={`btn-sm mapping-learn${learningMappingId === mapping.id ? ' mapping-learn--active' : ''}`}
+                className={`cp-learn-btn${learningMappingId === mapping.id ? ' cp-learn-btn--active' : ''}`}
                 onClick={() => onStartLearn(mapping.id)}
               >
                 {learningMappingId === mapping.id ? t(lang, 'midiLearnWaiting') : t(lang, 'midiLearn')}
               </button>
               <button
-                className="cue-delete"
+                className="cp-cue-del"
                 onClick={() => handleDeleteMapping(mapping.id)}
                 title={t(lang, 'remove')}
-              >✕</button>
+              >
+                <svg width="8" height="8" viewBox="0 0 8 8" stroke="currentColor" strokeWidth="1.5">
+                  <line x1="1" y1="1" x2="7" y2="7"/><line x1="7" y1="1" x2="1" y2="7"/>
+                </svg>
+              </button>
             </div>
           </div>
         ))}
-
-        <button className="btn-sm cue-add-btn" style={{ marginTop: 6 }} onClick={handleAddMapping}>
-          + {t(lang, 'addMapping')}
-        </button>
       </div>
     </div>
   )

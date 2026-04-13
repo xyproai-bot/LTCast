@@ -42,6 +42,13 @@ class LTCProcessor extends AudioWorkletProcessor {
     // Interval bounds (covers 24fps–30fps at any common sample rate)
     this.intervalMin = Math.floor(sampleRate / (30 * 80 * 2) * 0.5)
     this.intervalMax = Math.ceil(sampleRate / (24 * 80 * 2) * 2.8)
+
+    // FPS hysteresis lock — prevents jitter between adjacent standards (e.g. 29.97 ↔ 30)
+    // A new FPS candidate must appear in FPS_LOCK_REQUIRED consecutive frames before
+    // the output FPS switches. Initial lock is faster (3 frames) to reduce first-frame delay.
+    this.lockedFps = null
+    this.fpsCandidateValue = null
+    this.fpsCandidateCount = 0
   }
 
   process(inputs) {
@@ -162,7 +169,27 @@ class LTCProcessor extends AudioWorkletProcessor {
     if (hoursUnits > 9 || hoursTens > 2) return
     if (seconds > 59 || minutes > 59 || hours > 23) return
 
-    const fps = this._detectFps()
+    const rawFps = this._detectFps()
+
+    // FPS hysteresis: require consecutive agreement before committing to a new FPS.
+    // This prevents 29.97↔30 jitter when avgHalfBit fluctuates near the boundary.
+    const FPS_LOCK_REQUIRED = 8   // frames needed to switch to a new FPS
+    const FPS_INITIAL_LOCK   = 3  // faster lock when no FPS confirmed yet
+
+    if (rawFps === this.fpsCandidateValue) {
+      this.fpsCandidateCount++
+      const threshold = this.lockedFps === null ? FPS_INITIAL_LOCK : FPS_LOCK_REQUIRED
+      if (this.fpsCandidateCount >= threshold) {
+        this.lockedFps = rawFps
+      }
+    } else {
+      // New candidate — reset counter, keep current lock until new one stabilises
+      this.fpsCandidateValue = rawFps
+      this.fpsCandidateCount = 1
+    }
+
+    // Use locked FPS for output; fall back to raw until first lock is established
+    const fps = this.lockedFps ?? rawFps
     if (frames >= fps) return
 
     this.port.postMessage({

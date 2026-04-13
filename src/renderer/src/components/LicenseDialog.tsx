@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
+import { CHECKOUT_URL_ANNUAL, CHECKOUT_URL_WEEKLY, CHECKOUT_URL_VOLUME } from '../constants'
 
 interface Props {
   onClose: () => void
@@ -116,15 +117,52 @@ export function LicenseDialog({ onClose }: Props): React.JSX.Element {
         {error && <div className="license-error">{error}</div>}
         {success && <div className="license-success">{success}</div>}
 
+        {/* Pricing cards */}
+        {licenseStatus !== 'valid' && (
+          <div className="license-pricing">
+            <a
+              className="license-plan license-plan--highlight"
+              href={CHECKOUT_URL_ANNUAL}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <div className="license-plan-name">ANNUAL</div>
+              <div className="license-plan-price">$49<span className="license-plan-per">/year</span></div>
+              <div className="license-plan-note">Best value for professionals</div>
+            </a>
+            <a
+              className="license-plan"
+              href={CHECKOUT_URL_WEEKLY}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <div className="license-plan-name">7-DAY PASS</div>
+              <div className="license-plan-price">$15</div>
+              <div className="license-plan-note">Perfect for single events</div>
+            </a>
+            <a
+              className="license-plan"
+              href={CHECKOUT_URL_VOLUME}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <div className="license-plan-name">VOLUME</div>
+              <div className="license-plan-price">10+</div>
+              <div className="license-plan-note">Rental houses &amp; teams — contact us</div>
+            </a>
+          </div>
+        )}
+
         <div className="license-footer">
           <a
-            href="https://ltcast.lemonsqueezy.com/checkout/buy/001f3f48-747b-4649-801f-c0063a8b7afd"
+            href={CHECKOUT_URL_ANNUAL}
             target="_blank"
             rel="noopener noreferrer"
             className="license-buy-link"
           >
             {t(lang, 'licenseBuyPro')}
           </a>
+          <div className="license-powered">Powered by LemonSqueezy</div>
         </div>
       </div>
     </div>
