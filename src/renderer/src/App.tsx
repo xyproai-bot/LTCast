@@ -476,26 +476,35 @@ export default function App(): React.JSX.Element {
     engine.current?.setForceFps(forceFps)
   }, [forceFps])
 
-  // FPS mismatch warning: toast when forced FPS differs from detected
+  // FPS mismatch warning: toast when forced FPS differs from detected.
+  // Subscribe to detectedFps changes via Zustand (not in dep array — changes every frame).
   useEffect(() => {
-    const s = useStore.getState()
-    const detected = s.detectedFps
-    if (forceFps === null || detected === null) {
-      fpsMismatchKey.current = null
-      return
+    const checkFpsMismatch = (): void => {
+      const s = useStore.getState()
+      const detected = s.detectedFps
+      const forced = s.forceFps
+      if (forced === null || detected === null) {
+        fpsMismatchKey.current = null
+        return
+      }
+      if (forced === detected) {
+        fpsMismatchKey.current = null
+        return
+      }
+      const key = `${detected}-${forced}`
+      if (fpsMismatchKey.current === key) return
+      fpsMismatchKey.current = key
+      toast.warning(t(s.lang, 'fpsMismatch', {
+        detected: detected % 1 !== 0 ? detected.toFixed(2) : String(detected),
+        forced: forced % 1 !== 0 ? forced.toFixed(2) : String(forced)
+      }))
     }
-    if (forceFps === detected) {
-      fpsMismatchKey.current = null
-      return
-    }
-    const key = `${detected}-${forceFps}`
-    if (fpsMismatchKey.current === key) return
-    fpsMismatchKey.current = key
-    const l = s.lang
-    toast.warning(t(l, 'fpsMismatch', {
-      detected: detected % 1 !== 0 ? detected.toFixed(2) : String(detected),
-      forced: forceFps % 1 !== 0 ? forceFps.toFixed(2) : String(forceFps)
-    }))
+    checkFpsMismatch()
+    // Also re-check when detectedFps changes (e.g. loading new file with different FPS)
+    const unsub = useStore.subscribe(
+      (s, prev) => { if (s.detectedFps !== prev.detectedFps) checkFpsMismatch() }
+    )
+    return unsub
   }, [forceFps])
 
   // LTC signal-lost prompt: offer one-click switch to Generator mode
