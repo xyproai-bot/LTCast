@@ -1,11 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+
+/* ── Scrollbar (thin, dark, auto-hide) ───────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
+
 /* ── Reset & base ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body, #root {
   width: 100%; height: 100%;
-  background: #1a1a1a;
+  background: #121212;
   color: #e0e0e0;
-  font-family: 'SF Mono', 'Consolas', 'Menlo', monospace;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   font-size: 13px;
   user-select: none;
   overflow: hidden;
@@ -16,7 +24,7 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #1a1a1a;
+  background: #121212;
   /* No background transition — causes GPU-layer flicker on Windows Electron */
 }
 
@@ -33,7 +41,7 @@ html, body, #root {
   align-items: center;
   gap: 12px;
   padding: 8px 16px;
-  background: #111;
+  background: #0a0a0a;
   border-bottom: 1px solid #2a2a2a;
   -webkit-app-region: drag;
   flex-shrink: 0;
@@ -117,7 +125,7 @@ html, body, #root {
   width: 200px;
   min-width: 140px;
   max-width: 450px;
-  background: #161616;
+  background: #1e1e1e;
   border-right: 1px solid #2a2a2a;
   padding: 8px;
   overflow: hidden;
@@ -160,7 +168,7 @@ html, body, #root {
 
 .right-panel {
   width: 280px;
-  background: #161616;
+  background: #1e1e1e;
   border-left: 1px solid #2a2a2a;
   padding: 12px;
   overflow-y: auto;
@@ -248,7 +256,7 @@ html, body, #root {
   margin-top: 6px;
   padding: 4px 6px;
   background: #222;
-  border-radius: 5px;
+  border-radius: 4px;
   border: 1px solid #2a2a2a;
 }
 
@@ -328,7 +336,7 @@ html, body, #root {
   display: flex;
   gap: 0;
   margin-bottom: 6px;
-  border-radius: 5px;
+  border-radius: 4px;
   overflow: hidden;
   border: 1px solid #2a2a2a;
 }
@@ -360,7 +368,7 @@ html, body, #root {
   padding: 10px 14px;
   background: #1a1a2e;
   border: 1px solid #2a2a4a;
-  border-radius: 6px;
+  border-radius: 4px;
   width: 100%;
   max-width: 400px;
 }
@@ -381,13 +389,13 @@ html, body, #root {
 }
 
 .tc-gen-input {
-  background: #111;
+  background: #0a0a0a;
   color: #00d4ff;
   border: 1px solid #333;
   border-radius: 4px;
   padding: 5px 10px;
   font-size: 18px;
-  font-family: 'SF Mono', 'Consolas', 'Menlo', monospace;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
   font-weight: 700;
   letter-spacing: 2px;
   text-align: center;
@@ -569,7 +577,7 @@ html, body, #root {
 
 .video-start-tc strong {
   color: #fff;
-  font-family: 'Courier New', monospace;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
 }
 
 .btn-nudge {
@@ -739,7 +747,7 @@ html, body, #root {
   background: #2a2a2a;
   color: #e0e0e0;
   border: 1px solid #3a3a3a;
-  border-radius: 6px;
+  border-radius: 4px;
   width: 44px;
   height: 44px;
   font-size: 16px;
@@ -954,7 +962,7 @@ html, body, #root {
   border-radius: 4px;
   padding: 3px 6px;
   font-size: 11px;
-  font-family: 'Consolas', 'SF Mono', monospace;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
   width: 140px;
   outline: none;
 }
@@ -984,7 +992,7 @@ html, body, #root {
   align-items: center;
   gap: 12px;
   padding: 4px 12px;
-  background: #111;
+  background: #0a0a0a;
   border-top: 1px solid #2a2a2a;
   flex-shrink: 0;
 }
@@ -1039,7 +1047,7 @@ html, body, #root {
   color: #555;
   font-size: 11px;
   border: 2px dashed #2a2a2a;
-  border-radius: 6px;
+  border-radius: 4px;
   text-align: center;
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
@@ -1158,7 +1166,7 @@ html, body, #root {
   align-items: center;
   gap: 4px;
   padding: 4px 6px 4px 22px;
-  background: #161616;
+  background: #1e1e1e;
   border: 1px solid #2a2a2a;
   border-top: none;
   border-radius: 0 0 4px 4px;
@@ -1191,7 +1199,7 @@ html, body, #root {
 }
 .setlist-notes-editor {
   padding: 4px 6px 4px 22px;
-  background: #161616;
+  background: #1e1e1e;
   border: 1px solid #2a2a2a;
   border-top: none;
   border-radius: 0 0 4px 4px;
@@ -1349,9 +1357,9 @@ html, body, #root {
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  border-radius: 6px;
+  border-radius: 4px;
   font-size: 12px;
-  font-family: 'Consolas', 'SF Mono', monospace;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
   color: #e0e0e0;
   background: #2a2a2a;
   border: 1px solid #3a3a3a;
@@ -1418,7 +1426,7 @@ html, body, #root {
 .error-boundary-msg {
   color: #888;
   font-size: 12px;
-  font-family: 'Consolas', monospace;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
   margin-bottom: 20px;
   word-break: break-all;
 }
@@ -1611,7 +1619,7 @@ html, body, #root {
   padding: 6px 12px;
   background: #1a2a1a;
   border: 1px solid #2a6a2a;
-  border-radius: 5px;
+  border-radius: 4px;
   font-size: 12px;
   color: #88ff88;
   letter-spacing: 0.5px;
@@ -2143,7 +2151,7 @@ html, body, #root {
 }
 .pro-gate-badge {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  background: #003a4a; border: 1px solid #00d4ff; border-radius: 6px;
+  background: #003a4a; border: 1px solid #00d4ff; border-radius: 4px;
   padding: 8px 16px; pointer-events: auto; cursor: pointer;
   color: #00d4ff; font-size: 12px; font-weight: 600;
   z-index: 5; white-space: nowrap;

@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>LTCast | Professional Timecode Hub</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "zinc-950": "#09090b",
+                        "zinc-900": "#121212",
+                        "zinc-800": "#1e1e1e",
+                        "zinc-700": "#2a2a2a",
+                        "cyan-400": "#00d4ff",
+                        "waveform-blue": "#4fc3f7",
+                        "waveform-orange": "#ff9800",
+                        "waveform-green": "#4caf50",
+                        "marker-intro": "#42a5f5",
+                        "marker-verse": "#66bb6a",
+                        "marker-chorus": "#ef5350",
+                        "marker-bridge": "#ab47bc"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "mono": ["JetBrains Mono"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            font-size: 18px;
+        }
+        body {
+            background-color: #09090b;
+            color: #e0e0e0;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        .waveform-mask {
+            mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+        }
+        .drag-handle {
+            cursor: col-resize;
+            background-color: #333;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+<!-- TopNavBar -->
+<header class="bg-zinc-900 text-cyan-400 font-['Inter'] text-[11px] uppercase tracking-wider border-b border-zinc-800 flex justify-between items-center h-10 px-3 w-full docked full-width top-0 flat no shadows relative z-[60]">
+<div class="flex items-center gap-4">
+<span class="font-black text-cyan-400 text-sm tracking-tighter mr-2">LTCast</span>
+<div class="flex items-center gap-1">
+<button class="flex items-center gap-1 px-1.5 py-0.5 hover:bg-zinc-800 rounded transition-colors text-zinc-400">
+<span class="material-symbols-outlined text-[14px]" data-icon="folder_open">folder_open</span>
+<span>Open File</span>
+</button>
+<button class="flex items-center gap-1 px-1.5 py-0.5 hover:bg-zinc-800 rounded transition-colors text-zinc-400">
+<span class="material-symbols-outlined text-[14px]" data-icon="movie">movie</span>
+<span>Import Video</span>
+</button>
+<button class="flex items-center gap-1 px-1.5 py-0.5 hover:bg-zinc-800 rounded transition-colors text-zinc-400">
+<span class="material-symbols-outlined text-[14px]" data-icon="download">download</span>
+<span>Export LTC WAV</span>
+</button>
+</div>
+<div class="h-4 w-[1px] bg-zinc-800 mx-1"></div>
+<nav class="flex gap-4">
+<span class="text-cyan-400 font-bold cursor-pointer active:opacity-70">My Show.ltcast *</span>
+</nav>
+</div>
+<div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
+<div class="bg-zinc-950 border border-zinc-700 rounded px-2 py-0.5 flex items-center gap-2 cursor-pointer hover:border-zinc-500">
+<span class="text-zinc-200 normal-case font-medium">花花演唱會 2026 *</span>
+<span class="material-symbols-outlined text-[12px] text-zinc-500" data-icon="keyboard_arrow_down">keyboard_arrow_down</span>
+<div class="w-[1px] h-3 bg-zinc-800 mx-1"></div>
+<span class="material-symbols-outlined text-[14px] text-zinc-500 hover:text-red-400" data-icon="delete">delete</span>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<button class="flex items-center gap-1 px-2 py-0.5 text-zinc-400 hover:text-cyan-400 transition-colors">
+<span class="material-symbols-outlined text-[16px]" data-icon="save">save</span>
+<span>Save</span>
+</button>
+<button class="bg-cyan-400 text-zinc-950 px-2 py-0.5 rounded-sm font-bold hover:bg-cyan-500 transition-colors cursor-pointer active:opacity-70">Trial</button>
+<div class="flex gap-2 text-zinc-500 ml-1">
+<span class="material-symbols-outlined cursor-pointer hover:bg-zinc-800 transition-colors" data-icon="remove">remove</span>
+<span class="material-symbols-outlined cursor-pointer hover:bg-zinc-800 transition-colors" data-icon="fullscreen_exit">fullscreen_exit</span>
+<span class="material-symbols-outlined cursor-pointer hover:bg-zinc-800 transition-colors" data-icon="close">close</span>
+</div>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden">
+<!-- Left SideNavBar (Setlist) -->
+<aside class="bg-zinc-900 border-r border-zinc-800 flex flex-col w-[200px] h-full overflow-y-auto font-['JetBrains_Mono'] text-[12px] docked left-0 flat no shadows relative">
+<div class="p-4 border-b border-zinc-800">
+<div class="flex justify-between items-start">
+<div>
+<h3 class="text-cyan-400 font-bold uppercase tracking-widest text-[10px]">SETLIST</h3>
+<p class="text-zinc-500 text-[10px]">6 Tracks Total</p>
+</div>
+<button class="bg-zinc-800 text-zinc-500 px-1.5 rounded text-[8px] border border-zinc-700 hover:text-zinc-200">CSV</button>
+</div>
+<button class="mt-3 w-full border border-zinc-700 py-1 hover:bg-zinc-800 transition-all duration-150 flex items-center justify-center gap-1 uppercase text-[10px]">
+<span class="material-symbols-outlined text-[14px]" data-icon="add">add</span> Add Track
+                </button>
+</div>
+<nav class="flex-1 py-2">
+<div class="text-zinc-400 px-3 py-2 flex items-center hover:bg-zinc-800 transition-all duration-150 cursor-pointer">
+<span class="material-symbols-outlined mr-2" data-icon="music_note">music_note</span> Song 1
+                </div>
+<div class="border-l-2 border-cyan-400 bg-zinc-800 text-cyan-400 px-3 py-2 flex items-center hover:bg-zinc-800 transition-all duration-150 cursor-pointer">
+<span class="material-symbols-outlined mr-2 text-cyan-400" data-icon="music_note" style="font-variation-settings: 'FILL' 1;">music_note</span> Song 2
+                </div>
+<div class="text-zinc-400 px-3 py-2 flex items-center hover:bg-zinc-800 transition-all duration-150 cursor-pointer">
+<span class="material-symbols-outlined mr-2" data-icon="music_note">music_note</span> Song 3
+                </div>
+<div class="text-zinc-500/60 px-3 py-2 flex items-center hover:bg-zinc-800 transition-all duration-150 cursor-pointer italic">
+<span class="material-symbols-outlined mr-2 text-amber-500/70" data-icon="warning">warning</span>
+<span class="flex-1 truncate">Song 4</span>
+<span class="text-[9px] text-cyan-500/70 underline ml-1 not-italic">Relink</span>
+</div>
+<div class="text-zinc-400 px-3 py-2 flex items-center hover:bg-zinc-800 transition-all duration-150 cursor-pointer">
+<span class="material-symbols-outlined mr-2" data-icon="music_note">music_note</span> Song 5
+                </div>
+<div class="text-zinc-400 px-3 py-2 flex items-center hover:bg-zinc-800 transition-all duration-150 cursor-pointer">
+<span class="material-symbols-outlined mr-2" data-icon="music_note">music_note</span> Song 6
+                </div>
+</nav>
+<div class="mt-auto border-t border-zinc-800 p-2">
+<div class="text-[10px] text-zinc-600 mb-2 font-mono text-center">Total: 33:17</div>
+<div class="bg-zinc-800/50 rounded p-2 border border-zinc-700/50 flex flex-col gap-1">
+<div class="flex justify-between items-center text-[10px] uppercase text-zinc-500">
+<span>Auto-Advance</span>
+<span class="material-symbols-outlined text-green-500 text-[14px]" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</div>
+<div class="text-cyan-400 font-mono text-center">00:15</div>
+</div>
+</div>
+<div class="absolute top-0 right-0 w-[3px] h-full drag-handle"></div>
+</aside>
+<!-- Center Main Area -->
+<main class="flex-1 bg-zinc-950 flex flex-col overflow-hidden relative">
+<!-- Overlay Hint (No file state / background) -->
+<div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-[0.03]">
+<span class="material-symbols-outlined text-9xl mb-4" data-icon="cloud_upload">cloud_upload</span>
+<p class="text-xl font-bold uppercase tracking-widest">🎵 Drop audio file here or click to open</p>
+<p class="text-xs mt-2">Supported: WAV, AIFF, MP3, FLAC, OGG</p>
+</div>
+<!-- ROW 1: Tabs & TC Display -->
+<section class="p-3 border-b border-zinc-900 space-y-4">
+<div class="flex justify-between items-start">
+<div class="flex gap-4 border-b border-zinc-800">
+<button class="pb-2 border-b-2 border-cyan-400 text-cyan-400 font-bold uppercase text-[10px] tracking-widest px-2">Reader</button>
+<button class="pb-2 border-b-2 border-transparent text-zinc-500 uppercase text-[10px] tracking-widest px-2 hover:text-zinc-300">Generator</button>
+</div>
+<div class="flex items-center gap-3">
+<div class="flex flex-col items-end">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
+<span class="text-green-500 font-bold text-[10px] uppercase">SIGNAL OK</span>
+</div>
+<span class="text-zinc-500 text-[9px] uppercase tracking-tighter">Confidence: 79.9%</span>
+</div>
+<div class="bg-zinc-800 px-2 py-1 border border-zinc-700 rounded text-cyan-400 flex items-center gap-2">
+<div class="flex flex-col leading-none">
+<span class="text-[9px] text-zinc-500 uppercase">Tempo</span>
+<span class="font-mono font-bold">128.0 BPM</span>
+</div>
+<button class="bg-cyan-400/10 border border-cyan-400/30 text-cyan-400 px-2 py-1 text-[10px] font-black rounded hover:bg-cyan-400/20 active:scale-95 transition-transform">TAP</button>
+</div>
+</div>
+</div>
+<div class="flex flex-col items-center justify-center py-2 relative">
+<div class="absolute -top-1 left-1/2 -translate-x-1/2 bg-yellow-500/20 border border-yellow-500/30 px-3 py-0.5 rounded-full flex items-center gap-2">
+<span class="material-symbols-outlined text-yellow-500 text-[14px]" data-icon="warning">warning</span>
+<span class="text-yellow-500 text-[10px] font-bold uppercase tracking-wide">LTC starts at 3:30</span>
+</div>
+<div class="flex flex-col items-center">
+<div class="flex items-baseline gap-4">
+<h1 class="font-mono text-6xl md:text-7xl font-bold text-white tracking-tighter drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">01:23:45:12</h1>
+<span class="bg-zinc-800 text-zinc-400 px-2 py-1 rounded text-[12px] font-mono border border-zinc-700">25 NDF</span>
+</div>
+<div class="text-green-500 text-[10px] font-mono mt-1">LTC detected on CH2 (79.9%)</div>
+</div>
+</div>
+<!-- Offset Control Row -->
+<div class="flex items-center justify-center gap-3 py-1 text-zinc-500">
+<span class="text-[10px] uppercase font-bold tracking-widest text-zinc-600">Offset</span>
+<button class="bg-zinc-900 border border-zinc-800 w-6 h-6 flex items-center justify-center hover:text-white rounded">-</button>
+<input class="w-48 h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-cyan-400" type="range"/>
+<div class="flex items-center bg-zinc-900 border border-zinc-800 rounded px-2 py-0.5 ml-1">
+<input class="bg-transparent text-cyan-400 font-mono text-[12px] w-8 text-right outline-none" type="text" value="+12"/>
+<span class="text-[9px] uppercase ml-1 text-zinc-600">frames</span>
+</div>
+<button class="bg-zinc-900 border border-zinc-800 w-6 h-6 flex items-center justify-center hover:text-white rounded">+</button>
+</div>
+</section>
+<!-- Auto-advance countdown banner -->
+<div class="mx-3 my-1">
+<div class="bg-green-500/10 border border-green-500/30 rounded px-3 py-1.5 flex items-center justify-between text-green-500">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] animate-pulse" data-icon="timer">timer</span>
+<span class="text-[11px] font-bold uppercase tracking-wide">Next: 逃離烏托邦 in 3s</span>
+</div>
+<button class="text-green-500 hover:text-white flex items-center">
+<span class="material-symbols-outlined text-[14px]" data-icon="close">close</span>
+</button>
+</div>
+</div>
+<!-- ROW 2: Music Waveform -->
+<section class="px-3 py-2 flex flex-col h-[150px]">
+<div class="flex justify-between items-center mb-1">
+<span class="text-[10px] uppercase text-zinc-500 font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="music_note">music_note</span> Audio Reference
+                    </span>
+<span class="text-[10px] text-zinc-500 font-mono">01:23 / 05:05</span>
+</div>
+<div class="flex-1 bg-zinc-900/50 rounded-lg relative overflow-hidden group">
+<!-- Marker Labels -->
+<div class="absolute inset-0 z-20 pointer-events-none">
+<div class="absolute left-[5%] top-2 border-l border-marker-intro h-full">
+<span class="bg-marker-intro text-white text-[8px] px-1 font-bold absolute top-0 left-0">INTRO</span>
+</div>
+<div class="absolute left-[15%] top-2 border-l border-marker-verse h-full">
+<span class="bg-marker-verse text-white text-[8px] px-1 font-bold absolute top-0 left-0">VERSE</span>
+</div>
+<div class="absolute left-[35%] top-2 border-l border-marker-chorus h-full">
+<span class="bg-marker-chorus text-white text-[8px] px-1 font-bold absolute top-0 left-0">CHORUS</span>
+</div>
+<div class="absolute left-[55%] top-2 border-l border-marker-bridge h-full">
+<span class="bg-marker-bridge text-white text-[8px] px-1 font-bold absolute top-0 left-0">BRIDGE</span>
+</div>
+<div class="absolute left-[85%] top-2 border-l border-zinc-500 h-full">
+<span class="bg-zinc-500 text-white text-[8px] px-1 font-bold absolute top-0 left-0">OUTRO</span>
+</div>
+</div>
+<!-- Waveform Visual -->
+<div class="absolute inset-0 flex items-center px-4 opacity-80 waveform-mask">
+<div class="w-full h-[60px] flex items-center gap-[1px]">
+<!-- Random waveform bars representation -->
+<script>
+                                for(let i=0; i<180; i++) {
+                                    const h = Math.random() * 100;
+                                    document.write(`<div class="flex-1 bg-waveform-blue" style="height: ${h}%"></div>`);
+                                }
+                            </script>
+</div>
+</div>
+<!-- A-B Loop Area -->
+<div class="absolute left-[30%] right-[50%] top-0 bottom-0 bg-cyan-400/20 border-x border-cyan-400/40 z-10 flex justify-between items-end p-1">
+<span class="bg-cyan-400 text-zinc-950 text-[9px] font-black px-1">A</span>
+<span class="bg-cyan-400 text-zinc-950 text-[9px] font-black px-1">B</span>
+</div>
+<!-- Playback Cursor -->
+<div class="absolute left-[35%] top-0 bottom-0 w-[2px] bg-cyan-400 z-30 shadow-[0_0_10px_#00d4ff]">
+<div class="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-cyan-400 absolute -top-1 -left-[5px]"></div>
+</div>
+</div>
+<!-- Minimap / Timeline -->
+<div class="mt-1 h-4 flex items-center border-t border-zinc-900 text-[9px] font-mono text-zinc-600 justify-between px-2">
+<span>0:00</span>
+<span>1:00</span>
+<span>2:00</span>
+<span>3:00</span>
+<span>4:00</span>
+<span>5:00</span>
+</div>
+</section>
+<!-- ROW 3: LTC Waveform -->
+<section class="px-3 py-1 border-t border-zinc-900 bg-black/20">
+<div class="flex items-center gap-3">
+<div class="flex items-center gap-1 w-20 shrink-0">
+<span class="text-[9px] font-black text-waveform-orange">LTC</span>
+<span class="material-symbols-outlined text-waveform-orange text-[12px]" data-icon="volume_up">volume_up</span>
+<span class="text-[9px] font-mono text-waveform-orange">-3.2 dB</span>
+</div>
+<div class="flex-1 h-8 bg-zinc-900 rounded overflow-hidden flex items-center">
+<div class="w-full h-[15px] flex items-center gap-[0.5px] opacity-40">
+<script>
+                                for(let i=0; i<250; i++) {
+                                    const h = 40 + Math.random() * 20;
+                                    document.write(`<div class="flex-1 bg-waveform-orange" style="height: ${h}%"></div>`);
+                                }
+                            </script>
+</div>
+</div>
+</div>
+</section>
+<!-- ROW 4: Video Waveform -->
+<section class="px-3 py-1 border-t border-zinc-900 bg-black/20">
+<div class="flex items-center gap-3">
+<span class="text-[9px] font-black text-waveform-green w-20">VID</span>
+<div class="flex-1 h-8 bg-zinc-900 rounded overflow-hidden flex items-center px-2 relative">
+<div class="flex items-center gap-3 z-10">
+<span class="text-[10px] text-zinc-300 font-medium">Video: interview.mp4</span>
+<span class="text-[9px] font-mono text-waveform-green bg-waveform-green/10 px-1 border border-waveform-green/20">TC: 01:00:00:00</span>
+</div>
+<div class="ml-auto flex gap-2 z-10">
+<button class="bg-zinc-800 hover:bg-zinc-700 text-zinc-400 px-1.5 py-0.5 rounded text-[9px] uppercase border border-zinc-700">Resync</button>
+<button class="text-zinc-500 hover:text-white"><span class="material-symbols-outlined text-[14px]" data-icon="close">close</span></button>
+</div>
+<div class="absolute inset-0 flex items-center px-4 opacity-20 pointer-events-none">
+<div class="w-full h-[12px] flex items-center gap-[1px]">
+<script>
+                                    for(let i=0; i<150; i++) {
+                                        const h = Math.random() * 80;
+                                        document.write(`<div class="flex-1 bg-waveform-green" style="height: ${h}%"></div>`);
+                                    }
+                                </script>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- ROW 5: Transport -->
+<section class="mt-auto p-4 bg-zinc-900 border-t border-zinc-800 flex flex-col gap-4">
+<div class="flex flex-col gap-1">
+<div class="relative h-1.5 bg-zinc-800 rounded-full w-full overflow-hidden">
+<div class="absolute top-0 left-0 h-full bg-cyan-400 w-[35%]"></div>
+<div class="absolute top-0 left-[35%] h-full w-2 bg-white -ml-1"></div>
+</div>
+</div>
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-2">
+<div class="flex flex-col leading-none">
+<span class="text-[9px] text-zinc-500 uppercase">Current</span>
+<span class="font-mono text-white text-lg font-bold">01:23</span>
+</div>
+<div class="h-6 w-[1px] bg-zinc-800 mx-2"></div>
+<div class="flex items-center gap-1">
+<button class="w-8 h-8 flex items-center justify-center text-cyan-400 hover:bg-zinc-800 rounded active:scale-90"><span class="material-symbols-outlined" data-icon="skip_previous">skip_previous</span></button>
+<button class="w-8 h-8 flex items-center justify-center text-cyan-400 hover:bg-zinc-800 rounded active:scale-90"><span class="material-symbols-outlined" data-icon="fast_rewind">fast_rewind</span></button>
+<button class="w-12 h-12 flex items-center justify-center bg-cyan-400 text-zinc-950 rounded-full shadow-[0_0_15px_rgba(0,212,255,0.4)] active:scale-90"><span class="material-symbols-outlined !text-3xl" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span></button>
+<button class="w-8 h-8 flex items-center justify-center text-cyan-400 hover:bg-zinc-800 rounded active:scale-90"><span class="material-symbols-outlined" data-icon="fast_forward">fast_forward</span></button>
+<button class="w-8 h-8 flex items-center justify-center text-cyan-400 hover:bg-zinc-800 rounded active:scale-90"><span class="material-symbols-outlined" data-icon="skip_next">skip_next</span></button>
+</div>
+<div class="h-6 w-[1px] bg-zinc-800 mx-2"></div>
+<div class="flex flex-col leading-none">
+<span class="text-[9px] text-zinc-500 uppercase">Remaining</span>
+<span class="font-mono text-zinc-400 text-lg font-medium">-03:42</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex bg-zinc-950 p-1 rounded border border-zinc-800 items-center">
+<div class="px-2 border-r border-zinc-800 flex flex-col items-center">
+<span class="text-[8px] text-zinc-500">START</span>
+<span class="text-[10px] font-mono text-white">[A 01:30</span>
+</div>
+<div class="px-2 border-r border-zinc-800 flex flex-col items-center">
+<span class="text-[8px] text-zinc-500">END</span>
+<span class="text-[10px] font-mono text-white">B] 02:30</span>
+</div>
+<button class="px-3 text-cyan-400 flex flex-col items-center hover:bg-zinc-800 transition-colors">
+<span class="material-symbols-outlined text-[14px]" data-icon="repeat">repeat</span>
+<span class="text-[8px] font-black uppercase">Loop</span>
+</button>
+</div>
+<button class="bg-zinc-800 border border-zinc-700 hover:border-cyan-400/50 hover:bg-zinc-700 text-zinc-300 px-4 py-2 rounded flex items-center gap-2 transition-all group">
+<span class="material-symbols-outlined text-cyan-400 group-hover:scale-110 transition-transform" data-icon="download">download</span>
+<span class="text-[11px] font-bold uppercase tracking-tight">Export LTC WAV</span>
+</button>
+</div>
+</div>
+</section>
+</main>
+<!-- Right SideNavBar (Inspector) -->
+<aside class="bg-zinc-900 border-l border-zinc-800 flex flex-col w-[250px] h-full docked right-0 flat no shadows">
+<div class="p-3">
+<div class="flex justify-between items-center mb-4">
+<h3 class="text-cyan-400 font-bold uppercase tracking-widest text-[10px]">INSPECTOR</h3>
+<span class="text-zinc-500 text-[10px]">Structure Active</span>
+</div>
+<div class="flex gap-4 border-b border-zinc-800 mb-4 font-['Inter'] text-[10px] uppercase">
+<button class="text-zinc-500 pb-1 hover:text-zinc-200 cursor-default">DEVICES</button>
+<button class="text-zinc-500 pb-1 hover:text-zinc-200 cursor-default">CUES</button>
+<button class="border-b-2 border-cyan-400 text-cyan-400 pb-1">STRUCTURE</button>
+</div>
+<div class="space-y-1">
+<div class="p-2 bg-zinc-800 border-l-2 border-marker-intro flex items-center justify-between group cursor-pointer">
+<div class="flex flex-col">
+<span class="text-[10px] font-bold text-zinc-200">INTRO</span>
+<span class="text-[9px] font-mono text-zinc-500">00:00:00:00</span>
+</div>
+<span class="material-symbols-outlined text-zinc-600 opacity-0 group-hover:opacity-100" data-icon="more_vert">more_vert</span>
+</div>
+<div class="p-2 bg-zinc-950/50 border-l-2 border-marker-verse flex items-center justify-between group cursor-pointer hover:bg-zinc-800">
+<div class="flex flex-col">
+<span class="text-[10px] font-bold text-zinc-200">VERSE 1</span>
+<span class="text-[9px] font-mono text-zinc-500">00:00:45:15</span>
+</div>
+<span class="material-symbols-outlined text-zinc-600 opacity-0 group-hover:opacity-100" data-icon="more_vert">more_vert</span>
+</div>
+<div class="p-2 bg-zinc-800/80 border-l-2 border-marker-chorus flex items-center justify-between group cursor-pointer">
+<div class="flex flex-col">
+<span class="text-[10px] font-bold text-cyan-400">CHORUS 1</span>
+<span class="text-[9px] font-mono text-zinc-500">00:01:30:00</span>
+</div>
+<span class="material-symbols-outlined text-cyan-400" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</div>
+<div class="p-2 bg-zinc-950/50 border-l-2 border-marker-bridge flex items-center justify-between group cursor-pointer hover:bg-zinc-800">
+<div class="flex flex-col">
+<span class="text-[10px] font-bold text-zinc-200">BRIDGE</span>
+<span class="text-[9px] font-mono text-zinc-500">00:02:45:00</span>
+</div>
+<span class="material-symbols-outlined text-zinc-600 opacity-0 group-hover:opacity-100" data-icon="more_vert">more_vert</span>
+</div>
+<div class="p-2 bg-zinc-950/50 border-l-2 border-zinc-500 flex items-center justify-between group cursor-pointer hover:bg-zinc-800">
+<div class="flex flex-col">
+<span class="text-[10px] font-bold text-zinc-200">OUTRO</span>
+<span class="text-[9px] font-mono text-zinc-500">00:04:15:00</span>
+</div>
+<span class="material-symbols-outlined text-zinc-600 opacity-0 group-hover:opacity-100" data-icon="more_vert">more_vert</span>
+</div>
+</div>
+<div class="mt-6">
+<div class="text-[10px] uppercase text-zinc-500 font-bold mb-2">Track Settings</div>
+<div class="space-y-3">
+<div class="flex items-center justify-between text-[10px]">
+<span class="text-zinc-400">Timecode Offset</span>
+<span class="text-cyan-400 font-mono">+00:00:00:00</span>
+</div>
+<div class="flex items-center justify-between text-[10px]">
+<span class="text-zinc-400">Frame Rate</span>
+<span class="text-zinc-300">25 FPS</span>
+</div>
+<div class="h-[1px] bg-zinc-800"></div>
+<div class="flex items-center justify-between text-[10px]">
+<span class="text-zinc-400">Auto-Stop at End</span>
+<div class="w-6 h-3 bg-cyan-400 rounded-full relative">
+<div class="absolute right-0.5 top-0.5 w-2 h-2 bg-zinc-900 rounded-full"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</div>
+<!-- Footer -->
+<footer class="bg-black text-green-500 font-['JetBrains_Mono'] text-[10px] docked full-width bottom-0 h-6 border-t border-zinc-900 fixed bottom-0 w-full z-[70] flex justify-between items-center px-2 flat no shadows">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_5px_#00d4ff]"></span>
+<span class="text-cyan-400 uppercase transition-opacity hover:text-white cursor-pointer">MIDI</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+<span class="text-green-500 uppercase transition-opacity hover:text-white cursor-pointer">MTC</span>
+</div>
+<div class="flex items-center gap-1.5 opacity-50">
+<span class="w-1.5 h-1.5 rounded-full bg-zinc-700"></span>
+<span class="text-zinc-600 uppercase transition-opacity hover:text-white cursor-pointer">Art-Net</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+<span class="text-green-500 uppercase transition-opacity hover:text-white cursor-pointer">OSC</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-zinc-600 uppercase transition-opacity hover:text-white cursor-pointer bg-zinc-900 px-1 border border-zinc-800 rounded">EN</button>
+<span class="text-zinc-600 uppercase transition-opacity hover:text-white cursor-pointer">Fullscreen</span>
+<span class="text-zinc-500 font-mono ml-2">LTCast v0.3.0</span>
+</div>
+</footer>
+</body></html>
