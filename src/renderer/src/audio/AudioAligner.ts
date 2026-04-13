@@ -72,8 +72,9 @@ export function alignAudio(
   }
 
   // Convert lag in peak-points back to seconds
-  // Normalize bestCorr from [-1, 1] to [0, 1] for confidence
-  const confidence = (bestCorr + 1) / 2
+  // Confidence: use raw correlation (0 = no match, 1 = perfect).
+  // Negative correlation means anti-correlated — treat as no match.
+  const confidence = Math.max(0, bestCorr)
   return { offset: (bestLag / mainPeaks.length) * mainDuration, confidence }
 }
 

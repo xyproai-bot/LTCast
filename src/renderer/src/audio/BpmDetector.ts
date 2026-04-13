@@ -160,7 +160,18 @@ function autocorrelateBpm(onsets: Float32Array, sampleRate: number): number | nu
   if (halfLag >= minLag && halfLag <= maxLag) {
     const halfCorr = corrs[halfLag]
     if (halfCorr >= bestCorr * 0.8) {
+      bestCorr = halfCorr
       bestLag = halfLag
+    }
+  }
+
+  // Sub-octave correction: check if double-lag (half BPM) is stronger.
+  // Prevents slow ballads (e.g. 60 BPM) from being detected as 120 BPM.
+  const doubleLag = bestLag * 2
+  if (doubleLag >= minLag && doubleLag <= maxLag) {
+    const doubleCorr = corrs[doubleLag]
+    if (doubleCorr >= bestCorr * 0.95) {
+      bestLag = doubleLag
     }
   }
 
