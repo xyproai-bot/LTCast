@@ -214,7 +214,7 @@ html, body, #root {
   background: #121212;
   border-right: 1px solid #1e1e1e;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
