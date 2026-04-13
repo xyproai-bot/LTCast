@@ -95,12 +95,16 @@ function scoreLtcLikelihood(data: Float32Array, sampleRate: number): number {
   const len = data.length
   if (len < 100) return 0
 
-  // 1. Zero crossing rate
+  // 1. Zero crossing rate (normalized to 48kHz reference)
   let crossings = 0
   for (let i = 1; i < len; i++) {
     if ((data[i] >= 0) !== (data[i - 1] >= 0)) crossings++
   }
-  const zcr = crossings / len // zero crossings per sample
+  // Normalize ZCR so the gaussian center works at any sample rate.
+  // At 48kHz: zcr ≈ 0.08–0.10 for LTC. At 96kHz the raw zcr halves,
+  // so we scale it back to the 48kHz reference.
+  const rawZcr = crossings / len
+  const zcr = rawZcr * (sampleRate / 48000)
 
   // For 24fps LTC @ 48kHz: ~80bits×24fps×2 = 3840 crossings/sec → zcr ≈ 0.08
   // For 30fps LTC @ 48kHz: ~80bits×30fps×2 = 4800 crossings/sec → zcr ≈ 0.10

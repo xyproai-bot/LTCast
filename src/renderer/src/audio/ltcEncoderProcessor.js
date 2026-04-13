@@ -91,6 +91,15 @@ class LTCEncoderProcessor extends AudioWorkletProcessor {
       this.sampleCounter++
     }
 
+    // Prevent sampleCounter overflow on ultra-long sessions (>5h).
+    // Subtract complete frames and shift startFrameNumber to compensate.
+    if (this.sampleCounter > 1e9) {
+      const framesToSub = Math.floor(this.sampleCounter / samplesPerFrame) - 1
+      this.sampleCounter -= Math.floor(framesToSub * samplesPerFrame)
+      this.startFrameNumber += framesToSub
+      this.lastEncodedFrame -= framesToSub
+    }
+
     return true
   }
 
