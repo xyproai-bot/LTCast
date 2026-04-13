@@ -65,7 +65,11 @@ export function StatusBar({ version, onToggleFullscreen }: Props): React.JSX.Ele
       >
         {lang === 'en' ? '中文' : lang === 'zh' ? '日本語' : 'EN'}
       </button>
-      <span className="status-version">v{version}</span>
+      <button
+        className="status-version"
+        onClick={() => window.api.checkForUpdates()}
+        title="Check for updates"
+      >v{version}</button>
     </div>
   )
 }
