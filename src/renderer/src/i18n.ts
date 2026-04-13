@@ -211,7 +211,12 @@ export const strings = {
     licenseRequired: 'Pro feature — activate license to use',
     upgradeToPro: 'Upgrade to Pro',
     trialDaysLeft: '{days} days left in trial',
-    trialExpired: 'Trial expired — upgrade to Pro'
+    trialExpired: 'Trial expired — upgrade to Pro',
+    fpsMismatch: 'FPS mismatch: detecting {detected} but forcing {forced}',
+    ltcSignalLostPrompt: 'LTC signal lost during playback',
+    switchToGenerator: 'Switch to Generator',
+    locked: 'LOCKED',
+    uiLocked: 'UI locked — press Ctrl+L or click to unlock'
   },
   zh: {
     appTitle: 'LTCast',
@@ -423,7 +428,12 @@ export const strings = {
     licenseRequired: 'Pro 功能 — 請啟用授權',
     upgradeToPro: '升級 Pro',
     trialDaysLeft: '試用剩餘 {days} 天',
-    trialExpired: '試用已到期 — 升級 Pro'
+    trialExpired: '試用已到期 — 升級 Pro',
+    fpsMismatch: '幀率不匹配：偵測到 {detected} 但強制 {forced}',
+    ltcSignalLostPrompt: '播放中 LTC 信號丟失',
+    switchToGenerator: '切換到 Generator',
+    locked: '已鎖定',
+    uiLocked: 'UI 已鎖定 — 按 Ctrl+L 或點擊解鎖'
   },
   ja: {
     appTitle: 'LTCast',
@@ -635,7 +645,12 @@ export const strings = {
     licenseRequired: 'Pro 機能 — ライセンスを有効化してください',
     upgradeToPro: 'Pro にアップグレード',
     trialDaysLeft: 'トライアル残り {days} 日',
-    trialExpired: 'トライアル終了 — Pro にアップグレード'
+    trialExpired: 'トライアル終了 — Pro にアップグレード',
+    fpsMismatch: 'FPS 不一致：検出 {detected} だが強制 {forced}',
+    ltcSignalLostPrompt: '再生中に LTC 信号が失われました',
+    switchToGenerator: 'ジェネレーターに切替',
+    locked: 'ロック',
+    uiLocked: 'UI ロック中 — Ctrl+L またはクリックで解除'
   }
 }
 

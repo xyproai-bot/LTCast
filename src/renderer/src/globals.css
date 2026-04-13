@@ -1734,6 +1734,67 @@ html, body, #root {
 
 .toast-text {
   line-height: 1.3;
+  flex: 1;
+}
+
+.toast-action {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: 8px;
+}
+.toast-action:hover { background: rgba(255, 255, 255, 0.25); }
+
+.toast-dismiss {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 2px;
+  margin-left: 4px;
+  line-height: 1;
+}
+.toast-dismiss:hover { color: #fff; }
+
+/* ── UI Lock Mode ──────────────────────────────────────── */
+.status-pill--lock {
+  color: #ffa726 !important;
+  font-weight: 700;
+  animation: lock-pulse 2s ease-in-out infinite;
+}
+@keyframes lock-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* When locked: disable all interactive elements in sidebars and settings.
+   Transport play/pause/stop/seek and fullscreen are exempt via .can-unlock. */
+.ui-locked .setlist-panel button:not(.status-pill--lock),
+.ui-locked .setlist-panel input,
+.ui-locked .setlist-panel select,
+.ui-locked .device-panel button,
+.ui-locked .device-panel input,
+.ui-locked .device-panel select,
+.ui-locked .cp-section button,
+.ui-locked .cp-section input,
+.ui-locked .cp-section select,
+.ui-locked .transport-offset button,
+.ui-locked .transport-offset input,
+.ui-locked .transport-loop button,
+.ui-locked .tc-fps-buttons button,
+.ui-locked .tc-gen-row button,
+.ui-locked .tc-gen-row input,
+.ui-locked .tc-gen-row select {
+  opacity: 0.35;
+  pointer-events: none;
+  cursor: not-allowed;
 }
 
 /* ── Error Boundary ──────────────────────────────────────── */

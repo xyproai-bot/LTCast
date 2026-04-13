@@ -115,6 +115,8 @@ export interface PresetData {
   midiMappings?: MidiMapping[]
   // Sprint 4: Waveform Markers
   markers?: Record<string, WaveformMarker[]>
+  // UI Lock (show mode)
+  showLocked?: boolean
   version?: number
 }
 
@@ -140,7 +142,7 @@ function ensureSetlistIds(data: PresetData): PresetData {
   return data
 }
 
-const CURRENT_PRESET_VERSION = 5
+const CURRENT_PRESET_VERSION = 6
 
 /** Warn once if a preset was created by a newer version of the app. */
 function warnIfNewerVersion(data: PresetData): void {
@@ -182,6 +184,10 @@ function migratePreset(data: PresetData): PresetData {
       data.lang = 'en'
     }
   }
+  // version 5 → 6: add UI lock mode
+  if (version < 6) {
+    data.showLocked = data.showLocked ?? false
+  }
   data.version = CURRENT_PRESET_VERSION
   return data
 }
@@ -193,7 +199,7 @@ function buildPresetData(s: Pick<AppState,
   'ltcChannel' | 'setlist' | 'generatorStartTC' | 'generatorFps' | 'tcGeneratorMode' |
   'artnetEnabled' | 'artnetTargetIp' | 'mtcMode' | 'autoAdvance' | 'autoAdvanceGap' |
   'selectedCueMidiPort' | 'midiInputPort' | 'midiMappings' |
-  'oscEnabled' | 'oscTargetIp' | 'oscTargetPort' | 'markers'>): PresetData {
+  'oscEnabled' | 'oscTargetIp' | 'oscTargetPort' | 'markers' | 'showLocked'>): PresetData {
   return {
     version: CURRENT_PRESET_VERSION,
     lang: s.lang, rightTab: s.rightTab, offsetFrames: s.offsetFrames,
@@ -210,7 +216,8 @@ function buildPresetData(s: Pick<AppState,
     selectedCueMidiPort: s.selectedCueMidiPort,
     midiInputPort: s.midiInputPort, midiMappings: s.midiMappings,
     oscEnabled: s.oscEnabled, oscTargetIp: s.oscTargetIp, oscTargetPort: s.oscTargetPort,
-    markers: s.markers
+    markers: s.markers,
+    showLocked: s.showLocked
   }
 }
 
@@ -307,6 +314,7 @@ export interface AppState {
   // UI
   rightTab: 'devices' | 'setlist' | 'cues' | 'structure'
   lang: 'en' | 'zh' | 'ja'
+  showLocked: boolean   // UI lock mode — prevents accidental changes during live shows
 
   // License
   licenseKey: string | null
@@ -373,6 +381,7 @@ export interface AppState {
   setSetlistItemMidiCues: (index: number, cues: MidiCuePoint[]) => void
   setRightTab: (tab: 'devices' | 'setlist' | 'cues' | 'structure') => void
   setLang: (lang: 'en' | 'zh' | 'ja') => void
+  setShowLocked: (locked: boolean) => void
   setAutoAdvance: (enabled: boolean) => void
   // Waveform Markers (Sprint 4)
   addMarker: (filePath: string, marker: WaveformMarker) => void
@@ -476,6 +485,7 @@ export const useStore = create<AppState>()(persist((set) => ({
 
   markers: {},
   markerUndoStack: [],
+  showLocked: false,
 
   licenseKey: null,
   licenseStatus: 'none',
@@ -686,6 +696,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   }),
   setRightTab: (rightTab) => set({ rightTab }),
   setLang: (lang) => set({ lang, presetDirty: true }),
+  setShowLocked: (showLocked) => set({ showLocked, presetDirty: true }),
   setAutoAdvance: (autoAdvance) => set({ autoAdvance, presetDirty: true }),
   setAutoAdvanceGap: (autoAdvanceGap) => set({ autoAdvanceGap: Math.max(0, Math.min(30, autoAdvanceGap)), presetDirty: true }),
   setSelectedCueMidiPort: (selectedCueMidiPort) => set({ selectedCueMidiPort, presetDirty: true }),
@@ -1048,6 +1059,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     oscTargetIp: state.oscTargetIp,
     oscTargetPort: state.oscTargetPort,
     markers: state.markers,
+    showLocked: state.showLocked,
     presetPath: state.presetPath,
     presetName: state.presetName,
     // Crash recovery: persist last played file so we can restore on relaunch

@@ -49,6 +49,11 @@ export default function App(): React.JSX.Element {
   const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [autoAdvanceCountdown, setAutoAdvanceCountdown] = useState<{ name: string; remaining: number } | null>(null)
   const autoAdvanceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // FPS mismatch warning: track last shown mismatch to avoid spam
+  const fpsMismatchKey = useRef<string | null>(null)
+  // LTC signal-lost prompt: track whether toast has been shown
+  const signalLostToastShown = useRef(false)
+  const signalLostToastId = useRef<number | null>(null)
   // MIDI cue: track last triggered cue IDs per playback session
   const triggeredCueIds = useRef<Set<string>>(new Set())
   // MIDI input: learning state
@@ -81,7 +86,7 @@ export default function App(): React.JSX.Element {
     artnetEnabled, artnetTargetIp,
     oscEnabled, oscTargetIp, oscTargetPort,
     setSelectedMidiPort,
-    rightTab, setMidiInputs,
+    rightTab, setMidiInputs, showLocked, setShowLocked,
     selectedCueMidiPort, setSelectedCueMidiPort,
     midiInputPort, setMidiInputPort,
     midiMappings, updateMidiMapping,
@@ -471,6 +476,65 @@ export default function App(): React.JSX.Element {
     engine.current?.setForceFps(forceFps)
   }, [forceFps])
 
+  // FPS mismatch warning: toast when forced FPS differs from detected
+  useEffect(() => {
+    const s = useStore.getState()
+    const detected = s.detectedFps
+    if (forceFps === null || detected === null) {
+      fpsMismatchKey.current = null
+      return
+    }
+    if (forceFps === detected) {
+      fpsMismatchKey.current = null
+      return
+    }
+    const key = `${detected}-${forceFps}`
+    if (fpsMismatchKey.current === key) return
+    fpsMismatchKey.current = key
+    const l = s.lang
+    toast.warning(t(l, 'fpsMismatch', {
+      detected: detected % 1 !== 0 ? detected.toFixed(2) : String(detected),
+      forced: forceFps % 1 !== 0 ? forceFps.toFixed(2) : String(forceFps)
+    }))
+  }, [forceFps])
+
+  // LTC signal-lost prompt: offer one-click switch to Generator mode
+  useEffect(() => {
+    const s = useStore.getState()
+    if (!ltcSignalOk && s.playState === 'playing' && !s.tcGeneratorMode) {
+      if (!signalLostToastShown.current) {
+        signalLostToastShown.current = true
+        signalLostToastId.current = toast.action(
+          t(s.lang, 'ltcSignalLostPrompt'),
+          t(s.lang, 'switchToGenerator'),
+          () => {
+            const cur = useStore.getState()
+            // Relay from last known timecode position (don't jump to 0)
+            const lastTc = cur.timecode
+            if (lastTc) {
+              const startTc = [lastTc.hours, lastTc.minutes, lastTc.seconds, lastTc.frames]
+                .map(n => String(n).padStart(2, '0')).join(':')
+              cur.setGeneratorStartTC(startTc)
+              cur.setGeneratorFps(lastTc.fps)
+              engine.current?.setGeneratorStartTC(startTc, lastTc.fps)
+            }
+            cur.setTcGeneratorMode(true)
+            engine.current?.setGeneratorMode(true)
+          },
+          'warning'
+        )
+      }
+    }
+    // Signal restored: reset and dismiss toast
+    if (ltcSignalOk) {
+      signalLostToastShown.current = false
+      if (signalLostToastId.current !== null) {
+        toast.dismiss(signalLostToastId.current)
+        signalLostToastId.current = null
+      }
+    }
+  }, [ltcSignalOk])
+
   // Sync manual LTC channel override to engine
   // When switching back to 'auto', restore the auto-detected channel index
   useEffect(() => {
@@ -519,6 +583,19 @@ export default function App(): React.JSX.Element {
       // Don't intercept shortcuts when typing in input fields
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      // Ctrl+L: toggle UI lock
+      if (e.code === 'KeyL' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        const s = useStore.getState()
+        s.setShowLocked(!s.showLocked)
+        return
+      }
+
+      // When locked, only allow Space (play/pause), Escape (stop), F11 (fullscreen)
+      if (useStore.getState().showLocked) {
+        if (e.code !== 'Space' && e.code !== 'Escape' && e.code !== 'F11') return
+      }
 
       // Space: play/pause
       if (e.code === 'Space') {
@@ -1021,7 +1098,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <div
-      className={`app${dragging ? ' app--drag' : ''}`}
+      className={`app${dragging ? ' app--drag' : ''}${showLocked ? ' ui-locked' : ''}`}
       onDragEnter={(e) => { e.preventDefault(); dragCounter.current++; setDragging(true) }}
       onDragOver={(e) => { e.preventDefault() }}
       onDragLeave={() => { dragCounter.current--; if (dragCounter.current <= 0) { dragCounter.current = 0; setDragging(false) } }}
