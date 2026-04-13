@@ -7,7 +7,7 @@ compatibility_date = "2024-01-01"
 # Then paste the ID below:
 [[kv_namespaces]]
 binding = "TRIAL_KV"
-id = "YOUR_KV_NAMESPACE_ID_HERE"
+id = "be812dfc5a294d95ba6c61bde2014843"
 
 # Required secrets (set via wrangler secret put):
 #   ADMIN_KEY                    — admin trial reset (testing only)
