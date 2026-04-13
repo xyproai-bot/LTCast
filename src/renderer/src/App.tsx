@@ -118,17 +118,20 @@ export default function App(): React.JSX.Element {
   // Validate license + check trial on startup
   useEffect(() => {
     const s = useStore.getState()
-    // License check
+    // License check — only on startup, NEVER during playback (live show safety)
     if (s.licenseKey) {
       window.api.licenseValidate(s.licenseKey).then((result) => {
         if (result.valid) {
           s.setLicenseStatus('valid')
           s.setLicenseValidatedAt(Date.now())
         } else if (s.licenseValidatedAt) {
+          // 30-day offline grace — don't expire during a show run
           const daysSince = (Date.now() - s.licenseValidatedAt) / (1000 * 60 * 60 * 24)
-          if (daysSince > 7) s.setLicenseStatus('expired')
+          if (daysSince > 30) s.setLicenseStatus('expired')
         }
-      }).catch(() => {})
+      }).catch(() => {
+        // Network failure — silently keep current status (offline-friendly)
+      })
     }
     // Trial check (always, even if licensed — to show days left in UI)
     window.api.trialCheck().then((result) => {
