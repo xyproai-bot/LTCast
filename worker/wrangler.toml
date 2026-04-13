@@ -9,5 +9,10 @@ compatibility_date = "2024-01-01"
 binding = "TRIAL_KV"
 id = "YOUR_KV_NAMESPACE_ID_HERE"
 
-# Set admin key for trial reset (testing only):
+# Required secrets (set via wrangler secret put):
+#   ADMIN_KEY                    — admin trial reset (testing only)
+#   LEMONSQUEEZY_WEBHOOK_SECRET  — LemonSqueezy webhook signature verification
+#
+# Setup:
 #   wrangler secret put ADMIN_KEY
+#   wrangler secret put LEMONSQUEEZY_WEBHOOK_SECRET

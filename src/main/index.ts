@@ -213,10 +213,36 @@ async function lemonSqueezyRequest(
 }
 
 // ════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
+// License Status Check — our Worker catches refunds/cancellations
+// ════════════════════════════════════════════════════════════
+
+const WORKER_API = 'https://ltcast-trial.xypro-ai.workers.dev'
+
+/**
+ * Check license status against our Cloudflare Worker.
+ * The Worker receives LemonSqueezy webhooks and tracks refunds/cancellations.
+ * Returns 'active', 'expired', 'refunded', 'revoked', or 'unknown' (no record).
+ */
+async function checkLicenseStatus(licenseKey: string): Promise<{ status: string }> {
+  try {
+    const { net } = require('electron')
+    const response = await net.fetch(`${WORKER_API}/license/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ licenseKey })
+    })
+    return await response.json()
+  } catch {
+    return { status: 'unknown' }
+  }
+}
+
+// ════════════════════════════════════════════════════════════
 // Trial System — server-side fingerprint tracking
 // ════════════════════════════════════════════════════════════
 
-const TRIAL_API = 'https://ltcast-trial.xypro-ai.workers.dev'
+const TRIAL_API = WORKER_API
 
 /**
  * Generate stable machine fingerprint using hardware UUID.
@@ -1215,6 +1241,7 @@ app.whenReady().then(() => {
   ipcMain.handle('license-activate', async (_event, key: string) => lemonSqueezyRequest('activate', key))
   ipcMain.handle('license-deactivate', async (_event, key: string) => lemonSqueezyRequest('deactivate', key))
   ipcMain.handle('license-validate', async (_event, key: string) => lemonSqueezyRequest('validate', key))
+  ipcMain.handle('license-status', async (_event, key: string) => checkLicenseStatus(key))
   ipcMain.handle('trial-check', async () => checkTrial())
   ipcMain.handle('get-machine-fingerprint', () => getMachineFingerprint())
 

@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('api', {
   licenseActivate: (key: string) => ipcRenderer.invoke('license-activate', key),
   licenseDeactivate: (key: string) => ipcRenderer.invoke('license-deactivate', key),
   licenseValidate: (key: string) => ipcRenderer.invoke('license-validate', key),
+  licenseStatus: (key: string) => ipcRenderer.invoke('license-status', key),
 
   // Trial
   trialCheck: () => ipcRenderer.invoke('trial-check'),
