@@ -458,6 +458,7 @@ export class AudioEngine {
       // Create a fresh context targeting the saved device
       await this._closeLtcCtx()
       this.ltcCtx = new AudioContext()
+      this._attachLtcStateMonitor()
 
       // @ts-expect-error - setSinkId newer API
       await this.ltcCtx.setSinkId(this.ltcOutputDeviceId)
@@ -505,6 +506,7 @@ export class AudioEngine {
 
     // Create new context — old nodes are invalid, must clear them
     this.ltcCtx = new AudioContext()
+    this._attachLtcStateMonitor()
     this.ltcWorkletReady = false
     this.ltcWorkletNode = null
     this.ltcGainNode = null
@@ -558,6 +560,27 @@ export class AudioEngine {
       }
     }
     return false
+  }
+
+  /**
+   * Attach onstatechange listener to ltcCtx.
+   * Auto-resumes if the USB audio device gets suspended (e.g. USB disconnect/reconnect).
+   * Notifies UI via onLtcError so the user can see the device went away.
+   */
+  private _attachLtcStateMonitor(): void {
+    if (!this.ltcCtx) return
+    this.ltcCtx.onstatechange = () => {
+      if (!this.ltcCtx) return
+      if (this.ltcCtx.state === 'suspended' && this.playing) {
+        // Attempt automatic recovery first
+        this.ltcCtx.resume().catch(() => {
+          // Resume failed — device is likely gone; notify UI
+          this.callbacks.onLtcError?.('device-suspended')
+        })
+      } else if (this.ltcCtx.state === 'closed') {
+        this.callbacks.onLtcError?.('device-suspended')
+      }
+    }
   }
 
   /**
