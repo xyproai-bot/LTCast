@@ -237,15 +237,81 @@ html, body, #root {
   background: rgba(0, 212, 255, 0.15);
 }
 
-.setlist-sidebar-title {
+/* Setlist panel header (always visible: title + action buttons) */
+.setlist-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 12px;
+  height: 32px;
+  border-bottom: 1px solid #1a1a1a;
+  flex-shrink: 0;
+}
+
+.setlist-panel-title {
   font-size: 10px;
   font-weight: 700;
   color: #00d4ff;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  padding: 16px 16px 4px;
   font-family: 'Inter', system-ui, sans-serif;
 }
+
+.setlist-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.setlist-hdr-btn {
+  background: transparent;
+  color: #444;
+  border: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 3px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+  padding: 0;
+  line-height: 1;
+}
+.setlist-hdr-btn:hover { color: #e0e0e0; background: #1e1e1e; }
+.setlist-hdr-btn:disabled { opacity: 0.3; cursor: default; }
+.setlist-hdr-btn--add { color: #00d4ff; font-size: 16px; }
+.setlist-hdr-btn--add:hover { background: rgba(0, 212, 255, 0.1); color: #00d4ff; }
+
+/* Sort dropdown (opens downward from header) */
+.setlist-sort-menu--down {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 120px;
+  background: #121212;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  overflow: hidden;
+  z-index: 20;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+}
+.setlist-sort-menu--down button {
+  display: block;
+  width: 100%;
+  background: none;
+  color: #ccc;
+  border: none;
+  padding: 7px 12px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+.setlist-sort-menu--down button:hover { background: #1e1e1e; color: #fff; }
 
 .center-panel {
   flex: 1;
@@ -1226,8 +1292,8 @@ html, body, #root {
 .status-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 8px;
+  gap: 2px;
+  padding: 0 6px;
   height: 24px;
   background: #000000;
   border-top: 1px solid #1e1e1e;
@@ -1236,30 +1302,44 @@ html, body, #root {
   font-size: 10px;
 }
 
-.status-item {
+/* Protocol status pills */
+.status-pill {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  color: #3a3a3a;
+  font-family: inherit;
   font-size: 10px;
-  color: #888;
-  cursor: pointer;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  transition: color 0.15s;
+  padding: 0 8px;
+  height: 100%;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  border-right: 1px solid #111;
 }
-.status-item:hover { color: #e0e0e0; }
+.status-pill:hover { color: #888; background: rgba(255,255,255,0.03); }
+.status-pill--active { color: #888; }
+.status-pill--active:hover { color: #e0e0e0; }
 
-.dot {
-  width: 6px;
-  height: 6px;
+.status-dot {
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
+  background: #2a2a2a;
   flex-shrink: 0;
 }
-.dot-ok  { background: #00c853; box-shadow: 0 0 5px #00c853; }
-.dot-off { background: #333; }
+.status-dot--ok {
+  background: #00c853;
+  box-shadow: 0 0 5px rgba(0, 200, 83, 0.7);
+}
 
 .btn-sm {
   background: #121212;
-  color: #666;
+  color: #555;
   border: 1px solid #1e1e1e;
   border-radius: 2px;
   padding: 1px 6px;
@@ -1267,13 +1347,15 @@ html, body, #root {
   font-family: inherit;
   cursor: pointer;
   text-transform: uppercase;
+  margin-left: 4px;
 }
 .btn-sm:hover { background: #1e1e1e; color: #e0e0e0; }
 
 .status-version {
   font-size: 10px;
-  color: #555;
+  color: #333;
   font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+  margin-left: 4px;
 }
 
 /* ── Setlist panel ────────────────────────────────────────── */
@@ -1543,13 +1625,11 @@ html, body, #root {
 }
 .btn-setlist-action:hover { border-color: #2a2a2a; color: #e0e0e0; }
 
-/* Sort dropdown */
+/* Sort dropdown wrapper */
 .setlist-sort-wrapper {
   position: relative;
-  flex: 1;
   display: flex;
 }
-.setlist-sort-wrapper > .btn-setlist-action { width: 100%; }
 .setlist-sort-menu {
   position: absolute;
   bottom: 100%;

@@ -393,6 +393,40 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
       onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
       onDrop={handleFileDrop}
     >
+      {/* Always-visible header: title + actions */}
+      <div className="setlist-panel-header">
+        <span className="setlist-panel-title">{t(lang, 'setlist')}</span>
+        <div className="setlist-header-actions">
+          <button className="setlist-hdr-btn setlist-hdr-btn--add" onClick={onImportFiles} title={t(lang, 'addFiles')}>+</button>
+          <div className="setlist-sort-wrapper" ref={sortRef}>
+            <button
+              className="setlist-hdr-btn"
+              onClick={() => setShowSortMenu(!showSortMenu)}
+              title={t(lang, 'sortAZ')}
+            >⇅</button>
+            {showSortMenu && (
+              <div className="setlist-sort-menu setlist-sort-menu--down">
+                <button onClick={() => handleSort('az')}>{t(lang, 'sortAZ')}</button>
+                <button onClick={() => handleSort('za')}>{t(lang, 'sortZA')}</button>
+                <button onClick={() => handleSort('ext')}>{t(lang, 'sortExt')}</button>
+                <button onClick={() => handleSort('reverse')}>{t(lang, 'sortReverse')}</button>
+              </div>
+            )}
+          </div>
+          <button
+            className="setlist-hdr-btn"
+            onClick={handleExportCsv}
+            title={t(lang, 'exportCsv')}
+            disabled={setlist.length === 0}
+          >↑</button>
+          <button
+            className="setlist-hdr-btn"
+            onClick={handleImportCsv}
+            title={t(lang, 'importCsv')}
+          >↓</button>
+        </div>
+      </div>
+
       {setlist.length === 0 ? (
         <div className="setlist-empty" onClick={onImportFiles}>
           <div className="setlist-empty-icon">
@@ -546,43 +580,6 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                 </div>
               )
             })}
-          </div>
-
-          {/* Top action bar: add + sort + export/import CSV */}
-          <div className="setlist-actions">
-            <button className="btn-setlist-action" onClick={onImportFiles} title={t(lang, 'addFiles')}>+</button>
-            <div className="setlist-sort-wrapper" ref={sortRef}>
-              <button
-                className="btn-setlist-action"
-                onClick={() => setShowSortMenu(!showSortMenu)}
-                title={t(lang, 'sortAZ')}
-              >
-                {t(lang, 'sort')}
-              </button>
-              {showSortMenu && (
-                <div className="setlist-sort-menu">
-                  <button onClick={() => handleSort('az')}>{t(lang, 'sortAZ')}</button>
-                  <button onClick={() => handleSort('za')}>{t(lang, 'sortZA')}</button>
-                  <button onClick={() => handleSort('ext')}>{t(lang, 'sortExt')}</button>
-                  <button onClick={() => handleSort('reverse')}>{t(lang, 'sortReverse')}</button>
-                </div>
-              )}
-            </div>
-            <button
-              className="btn-setlist-action"
-              onClick={handleExportCsv}
-              title={t(lang, 'exportCsv')}
-              disabled={setlist.length === 0}
-            >
-              CSV↑
-            </button>
-            <button
-              className="btn-setlist-action"
-              onClick={handleImportCsv}
-              title={t(lang, 'importCsv')}
-            >
-              CSV↓
-            </button>
           </div>
 
           {/* Auto-advance controls */}

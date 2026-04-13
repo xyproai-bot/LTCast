@@ -1107,7 +1107,6 @@ export default function App(): React.JSX.Element {
       <div className="main-content">
         {/* Left: Setlist sidebar */}
         <div className="setlist-sidebar" style={{ width: sidebarWidth }}>
-          <div className="setlist-sidebar-title">{t(lang, 'setlist')}</div>
           <SetlistPanel
             onLoadFile={(path, offsetFrames) => openFile(path, offsetFrames)}
             onImportFiles={async () => {
