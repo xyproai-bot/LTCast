@@ -120,15 +120,20 @@ export default function App(): React.JSX.Element {
     const s = useStore.getState()
     // License check — only on startup, NEVER during playback (live show safety)
     if (s.licenseKey) {
-      // 1. Validate with LemonSqueezy (existing flow)
-      window.api.licenseValidate(s.licenseKey).then((result) => {
+      // Sequential: LemonSqueezy first, then Worker check (Worker has final say).
+      // This prevents race condition where LS 'valid' overwrites Worker 'refunded'.
+      window.api.licenseValidate(s.licenseKey).then((result: { valid: boolean; error?: string }) => {
         if (result.valid) {
           s.setLicenseStatus('valid')
           s.setLicenseValidatedAt(Date.now())
         } else {
-          // Server explicitly returned invalid — expire immediately.
-          // Grace period only applies to network failures (catch block).
-          s.setLicenseStatus('expired')
+          // Server explicitly returned invalid — set status based on error type
+          const err = (result.error ?? '').toLowerCase()
+          if (err.includes('disabled') || err.includes('invalid')) {
+            s.setLicenseStatus('invalid')
+          } else {
+            s.setLicenseStatus('expired')
+          }
         }
       }).catch(() => {
         // Network failure — use 30-day offline grace period
@@ -136,21 +141,42 @@ export default function App(): React.JSX.Element {
           const daysSince = (Date.now() - s.licenseValidatedAt) / (1000 * 60 * 60 * 24)
           if (daysSince > 30) s.setLicenseStatus('expired')
         }
+      }).finally(() => {
+        // Worker check runs AFTER LS — catches refunds/cancellations.
+        // Worker result overrides LS because webhooks are authoritative.
+        const key = useStore.getState().licenseKey
+        if (!key) return
+        window.api.licenseStatus(key).then((result: { status: string }) => {
+          if (result.status === 'refunded' || result.status === 'revoked') {
+            const cur = useStore.getState()
+            cur.setLicenseStatus('expired')
+            cur.setLicenseKey(null)
+            cur.setLicenseValidatedAt(null)
+          }
+        }).catch(() => {})
       })
-
-      // 2. Also check our Worker for refunds/cancellations (webhook-driven)
-      window.api.licenseStatus(s.licenseKey).then((result: { status: string }) => {
-        if (result.status === 'refunded' || result.status === 'revoked') {
-          s.setLicenseStatus('expired')
-          s.setLicenseKey(null)
-          s.setLicenseValidatedAt(null)
-        }
-      }).catch(() => {})
     }
     // Trial check (always, even if licensed — to show days left in UI)
     window.api.trialCheck().then((result) => {
       useStore.getState().setTrialDaysLeft(result.daysLeft)
     }).catch(() => {})
+
+    // Periodic silent license re-check every 4 hours (only when NOT playing)
+    const licenseCheckInterval = setInterval(() => {
+      const cur = useStore.getState()
+      if (!cur.licenseKey || cur.playState === 'playing') return
+      window.api.licenseValidate(cur.licenseKey).then((result: { valid: boolean; error?: string }) => {
+        if (result.valid) {
+          // Refresh the 30-day offline timer (important for always-on installations)
+          cur.setLicenseStatus('valid')
+          cur.setLicenseValidatedAt(Date.now())
+        } else {
+          const err = (result.error ?? '').toLowerCase()
+          cur.setLicenseStatus(err.includes('disabled') || err.includes('invalid') ? 'invalid' : 'expired')
+        }
+      }).catch(() => {})
+    }, 4 * 60 * 60 * 1000)
+    return () => clearInterval(licenseCheckInterval)
   }, [])
 
   // Init engine + MIDI once
