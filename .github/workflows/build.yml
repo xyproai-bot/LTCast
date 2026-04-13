@@ -70,12 +70,15 @@ jobs:
           fi
           # Build JS
           npm run build
-          # Pack x64 and arm64 separately (clean between to avoid icon hardlink conflict)
+          # Pack x64 and arm64 separately
+          # Rename x64 output to avoid icon hardlink conflict during arm64 build
           npx electron-builder --mac --dir --x64
-          rm -rf dist/mac
+          mv dist/mac dist/mac-x64
           npx electron-builder --mac --dir --arm64
-          # Merge into Universal binary
+          mv dist/mac-x64 dist/mac
+          # Merge into Universal binary (needs dist/mac/ + dist/mac-arm64/)
           node scripts/create-universal.js
+          rm -rf dist/mac dist/mac-arm64
           # Patch plist and ad-hoc sign
           bash scripts/patch-mac-plist.sh dist/mac-universal/LTCast.app
           bash scripts/sign-mac.sh dist/mac-universal/LTCast.app
