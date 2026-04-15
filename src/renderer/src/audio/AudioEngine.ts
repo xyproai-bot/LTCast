@@ -411,6 +411,8 @@ export class AudioEngine {
     this.startOffset = this.getCurrentTime()
     this._stopPlayback()
     cancelAnimationFrame(this.rafId)
+    // Suspend music context so ctx.currentTime freezes (but context stays alive for reuse)
+    if (this.ctx && this.ctx.state === 'running') this.ctx.suspend()
   }
 
   async seek(time: number): Promise<boolean> {
