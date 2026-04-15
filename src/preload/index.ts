@@ -77,6 +77,19 @@ contextBridge.exposeInMainWorld('api', {
   oscSendSong: (name: string, index: number, targetIp: string, port: number) =>
     ipcRenderer.send('osc-send-song', name, index, targetIp, port),
 
+  // Remote Display / Stream Deck (WebSocket)
+  remoteStart: () => ipcRenderer.invoke('remote-start'),
+  remoteStop: () => ipcRenderer.invoke('remote-stop'),
+  remoteBroadcastTc: (tcString: string, fps: number, signalOk: boolean) =>
+    ipcRenderer.send('remote-broadcast-tc', tcString, fps, signalOk),
+  remoteBroadcastState: (status: string, currentSong: string, fps: number, signalOk: boolean) =>
+    ipcRenderer.send('remote-broadcast-state', status, currentSong, fps, signalOk),
+  onRemoteAction: (callback: (action: string, index?: number) => void) => {
+    const handler = (_event: unknown, action: string, index?: number): void => callback(action, index)
+    ipcRenderer.on('remote-action', handler)
+    return () => { ipcRenderer.removeListener('remote-action', handler) }
+  },
+
   // OSC Input (remote control)
   oscInputStart: (port: number) => ipcRenderer.invoke('osc-input-start', port),
   oscInputStop: () => ipcRenderer.invoke('osc-input-stop'),

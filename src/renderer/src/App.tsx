@@ -240,6 +240,50 @@ export default function App(): React.JSX.Element {
     return cleanup
   }, [])
 
+  // Remote Display / Stream Deck: listen for WebSocket commands
+  useEffect(() => {
+    const cleanup = window.api.onRemoteAction((action: string, index?: number) => {
+      const s = useStore.getState()
+      if (action === 'play' || action === 'play-pause') {
+        if (s.playState === 'playing') {
+          engine.current?.pause(); s.setPlayState('paused')
+        } else if (s.duration > 0) {
+          s.setPlayState('playing')
+          engine.current?.play().catch(() => s.setPlayState('paused'))
+        }
+      } else if (action === 'pause') {
+        engine.current?.pause(); s.setPlayState('paused')
+      } else if (action === 'stop') {
+        engine.current?.pause(); engine.current?.seek(0)
+        s.setPlayState('stopped'); s.setTimecode(null)
+      } else if (action === 'next') {
+        if (s.setlist.length > 0 && s.activeSetlistIndex !== null) {
+          const ni = Math.min(s.activeSetlistIndex + 1, s.setlist.length - 1)
+          if (ni !== s.activeSetlistIndex) s.setActiveSetlistIndex(ni)
+        }
+      } else if (action === 'prev') {
+        if (s.setlist.length > 0 && s.activeSetlistIndex !== null && s.activeSetlistIndex > 0) {
+          s.setActiveSetlistIndex(s.activeSetlistIndex - 1)
+        }
+      } else if (action === 'goto' && typeof index === 'number') {
+        if (index >= 0 && index < s.setlist.length) s.setActiveSetlistIndex(index)
+      }
+    })
+    return cleanup
+  }, [])
+
+  // Remote Display: broadcast state changes to WebSocket clients
+  useEffect(() => {
+    const unsub = useStore.subscribe((s, prev) => {
+      // Broadcast transport state changes
+      if (s.playState !== prev.playState || s.ltcSignalOk !== prev.ltcSignalOk || s.activeSetlistIndex !== prev.activeSetlistIndex) {
+        const song = s.activeSetlistIndex !== null ? s.setlist[s.activeSetlistIndex]?.name ?? '' : s.fileName ?? ''
+        window.api.remoteBroadcastState(s.playState, song, s.timecode?.fps ?? 0, s.ltcSignalOk)
+      }
+    })
+    return unsub
+  }, [])
+
   // Init engine + MIDI once
   useEffect(() => {
     engine.current = new AudioEngine({
@@ -841,6 +885,11 @@ export default function App(): React.JSX.Element {
     mtc.current?.sendTimecode(tc, audioTime)
     artnet.current?.sendTimecode(tc)
     osc.current?.sendTimecode(tc)
+    // Broadcast to Remote Display / Stream Deck clients
+    const sep = tc.dropFrame ? ';' : ':'
+    const tcStr = [tc.hours, tc.minutes, tc.seconds, tc.frames]
+      .map(n => String(n).padStart(2, '0')).join(sep)
+    window.api.remoteBroadcastTc(tcStr, tc.fps, true)
 
     // MIDI Cue triggering — compare absolute timecode
     const s = useStore.getState()

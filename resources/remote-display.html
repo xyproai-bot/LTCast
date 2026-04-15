@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>LTCast Remote Display</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+  }
+  .tc {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+    font-size: min(18vw, 30vh);
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.05em;
+    transition: color 0.3s;
+  }
+  .tc.signal-lost { color: #ef5350; animation: pulse 1s ease-in-out infinite; }
+  .tc.paused { color: #ffa726; }
+  .tc.stopped { color: #555; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .info {
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: #111;
+    font-size: 14px;
+    border-top: 1px solid #222;
+  }
+  .song { flex: 1; font-weight: 600; font-size: 16px; color: #00d4ff; }
+  .fps { color: #888; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #555; }
+  .status-dot.ok { background: #66bb6a; }
+  .status-dot.lost { background: #ef5350; animation: pulse 1s ease-in-out infinite; }
+
+  .controls {
+    padding: 10px 20px;
+    display: flex;
+    gap: 10px;
+    background: #0a0a0a;
+    justify-content: center;
+  }
+  .controls button {
+    background: #222;
+    border: 1px solid #444;
+    color: #e0e0e0;
+    padding: 10px 24px;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    min-width: 60px;
+  }
+  .controls button:hover { background: #333; }
+  .controls button:active { background: #00d4ff; color: #000; }
+  .disconnected {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.9);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; color: #ef5350;
+  }
+</style>
+</head>
+<body>
+  <div class="tc" id="tc">--:--:--:--</div>
+  <div class="info">
+    <span class="status-dot" id="dot"></span>
+    <span class="song" id="song">No song loaded</span>
+    <span class="fps" id="fps"></span>
+  </div>
+  <div class="controls">
+    <button onclick="send('prev')">Prev</button>
+    <button onclick="send('stop')">Stop</button>
+    <button onclick="send('play-pause')" id="playBtn">Play</button>
+    <button onclick="send('next')">Next</button>
+  </div>
+  <div class="disconnected" id="disconnected" style="display:none">Connecting...</div>
+
+<script>
+let ws = null
+let reconnectTimer = null
+
+function connect() {
+  const host = location.hostname || 'localhost'
+  const port = location.port || '3100'
+  ws = new WebSocket(`ws://${host}:${port}`)
+
+  ws.onopen = () => {
+    document.getElementById('disconnected').style.display = 'none'
+  }
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data)
+      if (msg.type === 'tc') {
+        const el = document.getElementById('tc')
+        el.textContent = msg.value
+        el.className = 'tc' + (msg.signalOk === false ? ' signal-lost' : '')
+      } else if (msg.type === 'state') {
+        const el = document.getElementById('tc')
+        if (msg.status === 'paused') el.className = 'tc paused'
+        else if (msg.status === 'stopped') el.className = 'tc stopped'
+        document.getElementById('song').textContent = msg.currentSong || 'No song loaded'
+        document.getElementById('fps').textContent = msg.fps ? msg.fps + ' fps' : ''
+        document.getElementById('dot').className = 'status-dot' + (msg.signalOk ? ' ok' : msg.status === 'playing' ? ' lost' : '')
+        document.getElementById('playBtn').textContent = msg.status === 'playing' ? 'Pause' : 'Play'
+      }
+    } catch {}
+  }
+
+  ws.onclose = () => {
+    document.getElementById('disconnected').style.display = 'flex'
+    reconnectTimer = setTimeout(connect, 2000)
+  }
+
+  ws.onerror = () => ws.close()
+}
+
+function send(action) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action }))
+  }
+}
+
+connect()
+</script>
+</body>
+</html>

@@ -405,6 +405,84 @@ function closeOscSocket(): void {
 }
 
 // ════════════════════════════════════════════════════════════
+// Remote Display / Stream Deck — WebSocket + HTTP server
+// ════════════════════════════════════════════════════════════
+
+import { WebSocketServer, WebSocket as WsWebSocket } from 'ws'
+import http from 'http'
+
+const WS_PORT = 3100
+let wsServer: http.Server | null = null
+let wss: InstanceType<typeof WebSocketServer> | null = null
+
+function startRemoteServer(win: BrowserWindow): void {
+  if (wsServer) return
+
+  // HTTP server serves the remote display HTML page
+  wsServer = http.createServer((req, res) => {
+    if (req.url === '/' || req.url === '/index.html') {
+      const htmlPath = join(app.isPackaged
+        ? join(process.resourcesPath, 'resources', 'remote-display.html')
+        : join(__dirname, '../../resources/remote-display.html'))
+      try {
+        const html = readFileSync(htmlPath, 'utf-8')
+        res.writeHead(200, { 'Content-Type': 'text/html' })
+        res.end(html)
+      } catch {
+        res.writeHead(404)
+        res.end('Remote display page not found')
+      }
+    } else {
+      res.writeHead(404)
+      res.end('Not found')
+    }
+  })
+
+  wss = new WebSocketServer({ server: wsServer })
+
+  wss.on('connection', (ws) => {
+    console.log('[Remote] Client connected')
+
+    ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data.toString())
+        if (msg.action) {
+          // Forward Stream Deck / remote commands to renderer
+          win.webContents.send('remote-action', msg.action, msg.index)
+        }
+      } catch { /* ignore malformed */ }
+    })
+
+    ws.on('error', () => {})
+  })
+
+  wsServer.listen(WS_PORT, () => {
+    console.log(`[Remote] Server listening on http://0.0.0.0:${WS_PORT}`)
+  })
+
+  wsServer.on('error', (err) => {
+    console.error('[Remote] Server error:', err)
+    stopRemoteServer()
+  })
+}
+
+function stopRemoteServer(): void {
+  if (wss) { try { wss.close() } catch { /**/ } wss = null }
+  if (wsServer) { try { wsServer.close() } catch { /**/ } wsServer = null }
+}
+
+/** Broadcast a message to all connected WebSocket clients */
+function wsBroadcast(data: object): void {
+  if (!wss) return
+  const json = JSON.stringify(data)
+  wss.clients.forEach((client) => {
+    if (client.readyState === WsWebSocket.OPEN) {
+      client.send(json)
+    }
+  })
+}
+
+// ════════════════════════════════════════════════════════════
 // OSC Input — UDP listener for remote control from lighting consoles
 // ════════════════════════════════════════════════════════════
 
@@ -1342,6 +1420,23 @@ app.whenReady().then(() => {
     return true
   })
 
+  // Remote Display / Stream Deck (WebSocket)
+  ipcMain.handle('remote-start', () => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win) startRemoteServer(win)
+    return WS_PORT
+  })
+  ipcMain.handle('remote-stop', () => {
+    stopRemoteServer()
+    return true
+  })
+  ipcMain.on('remote-broadcast-tc', (_event, tcString: string, fps: number, signalOk: boolean) => {
+    wsBroadcast({ type: 'tc', value: tcString, fps, signalOk })
+  })
+  ipcMain.on('remote-broadcast-state', (_event, status: string, currentSong: string, fps: number, signalOk: boolean) => {
+    wsBroadcast({ type: 'state', status, currentSong, fps, signalOk })
+  })
+
   ipcMain.on('osc-send-tc', (_event, hours: number, minutes: number, seconds: number, frames: number, fps: number, targetIp: string, port: number) => {
     if (!oscSocket) return
     const ip = (targetIp && isValidIp(targetIp)) ? targetIp : '127.0.0.1'
@@ -1481,5 +1576,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   closeArtnetSocket()
+  stopRemoteServer()
+  stopOscInput()
   if (process.platform !== 'darwin') app.quit()
 })
