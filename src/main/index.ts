@@ -381,6 +381,7 @@ function oscMessage(address: string, types: string, ...args: (number | string)[]
   for (let i = 0; i < args.length; i++) {
     const t = types[i]
     if (t === 'i') parts.push(oscInt32(args[i] as number))
+    else if (t === 'f') { const buf = Buffer.alloc(4); buf.writeFloatBE(args[i] as number, 0); parts.push(buf) }
     else if (t === 's') parts.push(oscString(args[i] as string))
   }
   return Buffer.concat(parts)
@@ -1251,13 +1252,29 @@ app.whenReady().then(() => {
   ipcMain.handle('license-deactivate', async (_event, key: string) => lemonSqueezyRequest('deactivate', key))
   ipcMain.handle('license-validate', async (_event, key: string) => lemonSqueezyRequest('validate', key))
   ipcMain.handle('license-status', async (_event, key: string) => checkLicenseStatus(key))
+  ipcMain.handle('print-to-pdf', async (_event, html: string, defaultName: string) => {
+    const { dialog } = require('electron')
+    const { writeFileSync } = require('fs')
+    const result = await dialog.showSaveDialog({
+      defaultPath: defaultName,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    })
+    if (result.canceled || !result.filePath) return null
+    const hiddenWin = new BrowserWindow({ show: false, width: 800, height: 600, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } })
+    await hiddenWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+    const pdfBuffer = await hiddenWin.webContents.printToPDF({ printBackground: true, landscape: false })
+    hiddenWin.close()
+    writeFileSync(result.filePath, pdfBuffer)
+    return result.filePath
+  })
+
   ipcMain.handle('clipboard-write', (_event, text: string) => {
     const { clipboard } = require('electron')
     clipboard.writeText(text)
   })
   ipcMain.handle('open-external', async (_event, url: string) => {
     if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('mailto:'))) {
-      shell.openExternal(url)
+      await shell.openExternal(url)
     }
   })
   ipcMain.handle('trial-check', async () => checkTrial())

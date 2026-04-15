@@ -3,7 +3,7 @@ import { useStore, SortMode } from '../store'
 import { framesToTc, tcToString } from '../audio/timecodeConvert'
 import { t } from '../i18n'
 import { toast } from './Toast'
-import { exportCueSheetPdf } from '../utils/exportCueSheet'
+import { buildCueSheetHtml } from '../utils/exportCueSheet'
 import { Tooltip } from './Tooltip'
 
 interface Props {
@@ -300,14 +300,14 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     if (setlist.length === 0) return
     const s = useStore.getState()
     const fps = s.forceFps ?? s.detectedFps ?? 25
-    const pdfBytes = exportCueSheetPdf({
+    const html = buildCueSheetHtml({
       presetName: s.presetName || 'Untitled',
       setlist,
       markers: s.markers,
       fps
     })
     const defaultName = `${s.presetName || 'cuesheet'}.pdf`
-    const savedPath = await window.api.saveWavDialog(pdfBytes.buffer as ArrayBuffer, defaultName)
+    const savedPath = await window.api.printToPdf(html, defaultName)
     if (savedPath) toast.success('PDF exported')
   }, [setlist])
 

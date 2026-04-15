@@ -140,6 +140,7 @@ export class MtcOutput {
    */
   startClock(bpm: number): void {
     if (!this.selectedOutput || bpm <= 0) return
+    if (this._clockRunning) this.stopClock()
     this._clockBpm = bpm
     this._clockRunning = true
     // Send MIDI Start (0xFA)

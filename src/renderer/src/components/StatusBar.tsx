@@ -92,11 +92,7 @@ export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator }: 
 
         <button
           className={`btn-sm${ultraDark ? ' btn-sm--active' : ''}`}
-          onClick={() => {
-            const next = !ultraDark
-            setUltraDark(next)
-            document.body.classList.toggle('ultra-dark', next)
-          }}
+          onClick={() => setUltraDark(!ultraDark)}
           title="Ultra-dark mode"
         >
           {ultraDark ? 'DARK' : 'dark'}

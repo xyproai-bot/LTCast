@@ -462,7 +462,8 @@ html, body, #root {
   font-size: 48px;
   font-weight: 700;
   text-align: center;
-  width: 380px;
+  max-width: 380px;
+  width: 100%;
   padding: 4px 8px;
   outline: none;
 }

@@ -111,6 +111,9 @@ contextBridge.exposeInMainWorld('api', {
   // Open URL in default browser / email client
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
 
+  // PDF export (Chromium printToPDF — supports CJK)
+  printToPdf: (html: string, defaultName: string) => ipcRenderer.invoke('print-to-pdf', html, defaultName),
+
   // Clipboard
   copyToClipboard: (text: string) => ipcRenderer.invoke('clipboard-write', text),
 

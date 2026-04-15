@@ -1,4 +1,3 @@
-import { jsPDF } from 'jspdf'
 import { SetlistItem, WaveformMarker, MARKER_TYPE_COLORS } from '../store'
 
 interface CueSheetOptions {
@@ -6,6 +5,10 @@ interface CueSheetOptions {
   setlist: SetlistItem[]
   markers: Record<string, WaveformMarker[]>
   fps: number
+}
+
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 function formatTime(sec: number): string {
@@ -16,131 +19,62 @@ function formatTime(sec: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-export function exportCueSheetPdf(options: CueSheetOptions): Uint8Array {
+/**
+ * Generate HTML cue sheet and use Electron's printToPDF for CJK-safe PDF output.
+ * Returns the HTML string; caller passes it to main process via IPC.
+ */
+export function buildCueSheetHtml(options: CueSheetOptions): string {
   const { presetName, setlist, markers, fps } = options
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-  const pageW = doc.internal.pageSize.getWidth()
-  const margin = 15
-  let y = 20
+  const date = new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString()
 
-  const checkPage = (needed: number): void => {
-    if (y + needed > 275) {
-      doc.addPage()
-      y = 20
-    }
-  }
+  let body = ''
 
-  // Title
-  doc.setFontSize(18)
-  doc.setFont('helvetica', 'bold')
-  doc.text(`LTCast Cue Sheet — ${presetName || 'Untitled'}`, margin, y)
-  y += 8
-
-  // Date
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(120)
-  doc.text(new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString(), margin, y)
-  doc.text(`${fps} fps`, pageW - margin, y, { align: 'right' })
-  y += 8
-
-  doc.setTextColor(0)
-
-  if (setlist.length === 0) {
-    doc.setFontSize(11)
-    doc.text('No songs in setlist.', margin, y)
-    return doc.output('arraybuffer') as unknown as Uint8Array
-  }
-
-  // Setlist table
   for (let i = 0; i < setlist.length; i++) {
     const song = setlist[i]
-    const songName = song.name
-    const songMarkers = markers[song.path] ?? []
-    const songCues = song.midiCues ?? []
-    const sortedMarkers = [...songMarkers].sort((a, b) => a.time - b.time)
+    const songMarkers = [...(markers[song.path] ?? [])].sort((a, b) => a.time - b.time)
+    const songCues = (song.midiCues ?? []).filter(c => c.enabled)
 
-    // Song header
-    checkPage(16)
-    doc.setFillColor(30, 30, 30)
-    doc.rect(margin, y - 4, pageW - margin * 2, 8, 'F')
-    doc.setFontSize(12)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(255)
-    doc.text(`${i + 1}. ${songName}`, margin + 2, y + 1)
-    if (song.notes) {
-      doc.setFontSize(8)
-      doc.setFont('helvetica', 'italic')
-      doc.text(song.notes, pageW - margin - 2, y + 1, { align: 'right' })
-    }
-    doc.setTextColor(0)
-    y += 10
+    body += `<div class="song-header">${i + 1}. ${esc(song.name)}`
+    if (song.notes) body += `<span class="notes">${esc(song.notes)}</span>`
+    body += `</div>`
 
-    // Markers
-    if (sortedMarkers.length > 0) {
-      checkPage(8)
-      doc.setFontSize(9)
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(80)
-      doc.text('MARKERS', margin + 2, y)
-      y += 5
-
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(8)
-      for (const m of sortedMarkers) {
-        checkPage(5)
-        doc.setTextColor(0)
-        doc.text(formatTime(m.time), margin + 4, y)
-        const typeLabel = m.type ? m.type.toUpperCase() : 'CUSTOM'
+    if (songMarkers.length > 0) {
+      body += `<div class="section-label">MARKERS</div><table>`
+      for (const m of songMarkers) {
         const color = MARKER_TYPE_COLORS[m.type ?? 'custom']
-        // Parse hex color
-        const r = parseInt(color.slice(1, 3), 16)
-        const g = parseInt(color.slice(3, 5), 16)
-        const b = parseInt(color.slice(5, 7), 16)
-        doc.setTextColor(r, g, b)
-        doc.text(typeLabel, margin + 28, y)
-        doc.setTextColor(60)
-        doc.text(m.label || '', margin + 52, y)
-        y += 4
+        const typeLabel = (m.type ?? 'custom').toUpperCase()
+        body += `<tr><td class="time">${formatTime(m.time)}</td><td style="color:${color}">${typeLabel}</td><td>${esc(m.label || '')}</td></tr>`
       }
-      y += 2
+      body += `</table>`
     }
 
-    // MIDI Cues
     if (songCues.length > 0) {
-      checkPage(8)
-      doc.setFontSize(9)
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(80)
-      doc.text('MIDI CUES', margin + 2, y)
-      y += 5
-
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(8)
+      body += `<div class="section-label">MIDI CUES</div><table>`
       for (const cue of songCues) {
-        if (!cue.enabled) continue
-        checkPage(5)
-        doc.setTextColor(0)
-        doc.text(cue.triggerTimecode, margin + 4, y)
-        doc.setTextColor(0, 150, 200)
         const msgType = cue.messageType === 'program-change' ? 'PC'
-          : cue.messageType === 'note-on' ? 'NOTE'
-          : 'CC'
-        doc.text(`${msgType} ch${cue.channel} #${cue.data1}${cue.data2 !== undefined ? ` v${cue.data2}` : ''}`, margin + 35, y)
-        doc.setTextColor(100)
-        doc.text(cue.label || '', margin + 75, y)
-        y += 4
+          : cue.messageType === 'note-on' ? 'NOTE' : 'CC'
+        body += `<tr><td class="time">${cue.triggerTimecode}</td><td class="midi">${msgType} ch${cue.channel} #${cue.data1}${cue.data2 !== undefined ? ` v${cue.data2}` : ''}</td><td>${esc(cue.label || '')}</td></tr>`
       }
-      y += 2
+      body += `</table>`
     }
-
-    y += 4
   }
 
-  // Footer
-  doc.setFontSize(7)
-  doc.setTextColor(150)
-  doc.text('Generated by LTCast', margin, 290)
-
-  return new Uint8Array(doc.output('arraybuffer'))
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    body { font-family: -apple-system, 'Segoe UI', 'Microsoft JhengHei', 'PingFang TC', sans-serif; font-size: 11px; color: #222; margin: 20px 24px; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    .meta { color: #888; font-size: 9px; margin-bottom: 16px; display: flex; justify-content: space-between; }
+    .song-header { background: #1e1e1e; color: #fff; font-size: 13px; font-weight: 700; padding: 4px 8px; margin: 12px 0 4px; border-radius: 3px; display: flex; justify-content: space-between; }
+    .song-header .notes { font-weight: 400; font-style: italic; font-size: 10px; color: #aaa; }
+    .section-label { font-size: 9px; font-weight: 700; color: #888; margin: 6px 0 2px 4px; text-transform: uppercase; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+    td { padding: 2px 6px; font-size: 10px; border-bottom: 1px solid #eee; }
+    .time { width: 60px; font-family: monospace; color: #333; }
+    .midi { color: #0096c8; }
+    .footer { margin-top: 24px; font-size: 8px; color: #aaa; }
+  </style></head><body>
+    <h1>LTCast Cue Sheet — ${esc(presetName || 'Untitled')}</h1>
+    <div class="meta"><span>${date}</span><span>${fps} fps</span></div>
+    ${body}
+    <div class="footer">Generated by LTCast</div>
+  </body></html>`
 }

@@ -100,11 +100,14 @@ export default function App(): React.JSX.Element {
     document.title = presetName ? `LTCast - ${presetName}` : 'LTCast'
   }, [presetName])
 
-  // Restore ultra-dark mode on mount
+  // Sync ultra-dark body class with store state
   useEffect(() => {
-    if (useStore.getState().ultraDark) {
-      document.body.classList.add('ultra-dark')
-    }
+    const unsub = useStore.subscribe(
+      (s, prev) => { if (s.ultraDark !== prev.ultraDark) document.body.classList.toggle('ultra-dark', s.ultraDark) }
+    )
+    // Apply on mount
+    document.body.classList.toggle('ultra-dark', useStore.getState().ultraDark)
+    return unsub
   }, [])
 
   // Handle .ltcast file opened via double-click / OS association

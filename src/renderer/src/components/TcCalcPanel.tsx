@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { tcToFrames, framesToTc, tcToString } from '../audio/timecodeConvert'
+import { tcToFrames, framesToTc } from '../audio/timecodeConvert'
 import { t } from '../i18n'
 import { useStore } from '../store'
 
@@ -7,16 +7,17 @@ const FPS_OPTIONS = [24, 25, 29.97, 30]
 
 function pad2(n: number): string { return String(Math.floor(n)).padStart(2, '0') }
 
-function formatTcResult(tc: { hours: number; minutes: number; seconds: number; frames: number }): string {
-  return `${pad2(tc.hours)}:${pad2(tc.minutes)}:${pad2(tc.seconds)}:${pad2(tc.frames)}`
+function formatTcResult(tc: { h: number; m: number; s: number; f: number }): string {
+  return `${pad2(tc.h)}:${pad2(tc.m)}:${pad2(tc.s)}:${pad2(tc.f)}`
 }
 
-function parseTc(input: string): string | null {
+function parseTc(input: string, fps: number): string | null {
+  const maxFrame = Math.ceil(fps)
   const cleaned = input.trim()
   const parts = cleaned.split(/[:;]/).map(Number)
   if (parts.length === 4 && parts.every(p => !isNaN(p))) {
     const [h, m, s, f] = parts
-    if (h >= 0 && h <= 23 && m >= 0 && m <= 59 && s >= 0 && s <= 59 && f >= 0 && f < 30) {
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59 && s >= 0 && s <= 59 && f >= 0 && f < maxFrame) {
       return `${pad2(h)}:${pad2(m)}:${pad2(s)}:${pad2(f)}`
     }
   }
@@ -25,7 +26,7 @@ function parseTc(input: string): string | null {
     const m = parseInt(cleaned.slice(2, 4))
     const s = parseInt(cleaned.slice(4, 6))
     const f = parseInt(cleaned.slice(6, 8))
-    if (h <= 23 && m <= 59 && s <= 59 && f < 30) {
+    if (h <= 23 && m <= 59 && s <= 59 && f < maxFrame) {
       return `${pad2(h)}:${pad2(m)}:${pad2(s)}:${pad2(f)}`
     }
   }
@@ -40,8 +41,8 @@ export function TcCalcPanel(): React.JSX.Element {
   const [frameInput, setFrameInput] = useState('')
 
   // TC → Frames
-  const parsedA = parseTc(tcA)
-  const parsedB = parseTc(tcB)
+  const parsedA = parseTc(tcA, fps)
+  const parsedB = parseTc(tcB, fps)
   const framesA = parsedA ? tcToFrames(parsedA, fps) : null
   const framesB = parsedB ? tcToFrames(parsedB, fps) : null
 

@@ -818,6 +818,8 @@ export const useStore = create<AppState>()(persist((set) => ({
     const s = useStore.getState()
     // Licensed user — 30-day offline grace period (live events often have no internet)
     if (s.licenseStatus === 'valid') {
+      // Promo licenses: check hard expiry date first
+      if (s.licenseExpiresAt && new Date(s.licenseExpiresAt) < new Date()) return false
       // Must have a validation timestamp — reject if missing (corrupt/tampered state)
       if (!s.licenseValidatedAt) return false
       const daysSince = (Date.now() - s.licenseValidatedAt) / (1000 * 60 * 60 * 24)
