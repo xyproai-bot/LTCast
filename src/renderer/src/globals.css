@@ -125,12 +125,16 @@ html, body, #root {
 .title-bar-pro {
   background: rgba(0, 212, 255, 0.12);
   color: #00d4ff;
+  border: none;
   border-radius: 2px;
   padding: 3px 8px;
   font-size: 10px;
   font-weight: 700;
+  font-family: inherit;
   letter-spacing: 0.08em;
+  cursor: pointer;
 }
+.title-bar-pro:hover { background: rgba(0, 212, 255, 0.2); }
 
 /* Window controls (Windows only) */
 .title-bar-wc {
@@ -470,12 +474,13 @@ html, body, #root {
   animation: tc-flash 0.8s ease-in-out infinite;
 }
 .tc-signal-lost-banner {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: #ff4444;
   letter-spacing: 2px;
   animation: tc-flash 0.8s ease-in-out infinite;
   margin-top: 2px;
+  white-space: nowrap;
 }
 @keyframes tc-flash {
   0%, 100% { opacity: 1; }
@@ -487,6 +492,11 @@ html, body, #root {
   color: #ffaa00;
   letter-spacing: 1px;
   margin-top: 2px;
+  white-space: nowrap;
+}
+.tc-banner--hidden {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .tc-colon {
@@ -686,12 +696,32 @@ html, body, #root {
 /* ── File info / drop zone ────────────────────────────────── */
 .file-info {
   text-align: center;
-  color: #888;
-  font-size: 11px;
-  padding: 2px 16px;
+  color: #e0e0e0;
+  font-size: 18px;
+  font-weight: 600;
+  padding: 6px 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.file-info--loading {
+  color: #00d4ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.file-loading-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(0,212,255,0.3);
+  border-top-color: #00d4ff;
+  border-radius: 50%;
+  animation: ltc-spin 0.7s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
 }
 
 .drop-zone {
@@ -874,7 +904,7 @@ html, body, #root {
   /* Center panel */
   .center-panel        { gap: 0; }
   .center-top-bar      { height: 28px; padding: 0 8px; }
-  .file-info           { font-size: 10px; padding: 1px 8px; }
+  .file-info           { font-size: 14px; padding: 3px 8px; }
 
   /* Timecode display */
   .tc-display          { padding: 4px 8px 2px; }
@@ -1324,6 +1354,10 @@ html, body, #root {
 .status-pill:hover { color: #888; background: rgba(255,255,255,0.03); }
 .status-pill--active { color: #888; }
 .status-pill--active:hover { color: #e0e0e0; }
+.status-pill--warn { color: #ff9800; animation: status-warn-pulse 1.5s ease-in-out infinite; }
+.status-pill--warn:hover { color: #ffb74d; background: rgba(255, 152, 0, 0.08); }
+.status-dot--warn { background: #ff9800; box-shadow: 0 0 5px rgba(255, 152, 0, 0.7); }
+@keyframes status-warn-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 .status-dot {
   width: 5px;
@@ -2834,6 +2868,38 @@ html, body, #root {
 .license-plan-per { font-size: 13px; font-weight: 400; color: #888; }
 .license-plan-note { font-size: 10px; color: #555; }
 
+.license-expiry {
+  font-size: 12px;
+  color: #ffaa00;
+  text-align: center;
+  margin-top: 4px;
+}
+
+/* Promo code section */
+.promo-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #222;
+}
+.promo-title { font-size: 12px; color: #888; margin-bottom: 8px; }
+.promo-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.promo-input {
+  flex: 0 0 110px;
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-size: 12px;
+  padding: 6px 8px;
+  font-family: inherit;
+}
+.promo-input:focus { border-color: #00d4ff; outline: none; }
+.promo-email { flex: 1 1 auto; }
+
 .license-footer { margin-top: 4px; text-align: center; }
 .license-buy-link { color: #00d4ff; text-decoration: none; font-size: 13px; font-weight: 600; }
 .license-buy-link:hover { text-decoration: underline; }
@@ -2860,4 +2926,59 @@ html, body, #root {
 }
 .trial-buy-link { color: #00d4ff; text-decoration: none; font-size: 11px; }
 .trial-buy-link:hover { text-decoration: underline; }
+
+/* ── Keyboard Shortcuts Overlay ──────────────────────────── */
+.shortcuts-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.shortcuts-dialog {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px 28px;
+  min-width: 320px;
+  max-width: 420px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+.shortcuts-dialog h3 {
+  margin: 0 0 14px 0;
+  font-size: 14px;
+  color: #e0e0e0;
+  font-weight: 600;
+}
+.shortcuts-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.shortcuts-table tr { border-bottom: 1px solid #222; }
+.shortcuts-table tr:last-child { border-bottom: none; }
+.shortcuts-table td { padding: 6px 0; }
+.shortcuts-key {
+  width: 100px;
+  text-align: right;
+  padding-right: 16px !important;
+}
+.shortcuts-key kbd {
+  display: inline-block;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+  font-size: 11px;
+  color: #ccc;
+  min-width: 24px;
+  text-align: center;
+}
+.shortcuts-desc {
+  color: #999;
+  font-size: 12px;
+}
 

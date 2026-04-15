@@ -1,0 +1,30 @@
+{
+  "name": "companion-module-ltcast",
+  "version": "1.0.0",
+  "description": "Bitfocus Companion module for LTCast — control playback & display timecode",
+  "main": "main.js",
+  "type": "commonjs",
+  "keywords": [
+    "companion-module",
+    "ltcast",
+    "timecode",
+    "ltc",
+    "mtc"
+  ],
+  "author": "XYPro AI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xyproai-bot/ltcast"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@companion-module/base": "~1.11.0",
+    "ws": "^8.18.0"
+  },
+  "scripts": {
+    "lint": "echo OK"
+  }
+}

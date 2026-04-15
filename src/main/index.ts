@@ -1243,8 +1243,31 @@ app.whenReady().then(() => {
   ipcMain.handle('license-deactivate', async (_event, key: string) => lemonSqueezyRequest('deactivate', key))
   ipcMain.handle('license-validate', async (_event, key: string) => lemonSqueezyRequest('validate', key))
   ipcMain.handle('license-status', async (_event, key: string) => checkLicenseStatus(key))
+  ipcMain.handle('clipboard-write', (_event, text: string) => {
+    const { clipboard } = require('electron')
+    clipboard.writeText(text)
+  })
+  ipcMain.handle('open-external', async (_event, url: string) => {
+    if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('mailto:'))) {
+      shell.openExternal(url)
+    }
+  })
   ipcMain.handle('trial-check', async () => checkTrial())
   ipcMain.handle('get-machine-fingerprint', () => getMachineFingerprint())
+  ipcMain.handle('promo-redeem', async (_event, code: string, email: string) => {
+    try {
+      const fingerprint = getMachineFingerprint()
+      const { net } = require('electron')
+      const resp = await net.fetch(`${WORKER_API}/promo/redeem`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, email, fingerprint })
+      })
+      return await resp.json()
+    } catch {
+      return { error: 'Network error' }
+    }
+  })
 
   ipcMain.handle('show-input-dialog', async (_event, title: string, label: string, defaultValue: string) => {
     const focusedWin = BrowserWindow.getFocusedWindow()

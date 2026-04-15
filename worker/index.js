@@ -5,6 +5,7 @@
  *   POST /trial/check     { fingerprint }           → { trialStart, daysLeft, expired }
  *   POST /trial/reset     { fingerprint, adminKey }  → { ok } (admin only)
  *   POST /license/check   { licenseKey }             → { status, plan, updatedAt }
+ *   POST /promo/redeem    { code, email, fingerprint } → { ok, licenseKey, expiresAt }
  *   POST /webhook/lemonsqueezy  (LemonSqueezy webhook payload)
  *
  * KV bindings:
@@ -48,6 +49,7 @@ export default {
       if (url.pathname === '/trial/check') return handleTrialCheck(request, env)
       if (url.pathname === '/trial/reset') return handleTrialReset(request, env)
       if (url.pathname === '/license/check') return handleLicenseCheck(request, env)
+      if (url.pathname === '/promo/redeem') return handlePromoRedeem(request, env)
       if (url.pathname === '/webhook/lemonsqueezy') return handleWebhook(request, env)
     }
 
@@ -123,9 +125,15 @@ async function handleLicenseCheck(request, env) {
     }
 
     const data = JSON.parse(stored)
+    // Auto-expire promo licenses past their expiresAt date
+    let status = data.status
+    if (data.expiresAt && data.status === 'active' && new Date(data.expiresAt) < new Date()) {
+      status = 'expired'
+    }
     return json({
-      status: data.status,       // 'active', 'expired', 'refunded', 'revoked'
-      plan: data.plan,           // 'annual', '7day', etc.
+      status,
+      plan: data.plan,           // 'annual', '7day', 'promo', etc.
+      expiresAt: data.expiresAt || null,
       updatedAt: data.updatedAt
     })
   } catch {
@@ -211,6 +219,105 @@ async function handleWebhook(request, env) {
   }))
 
   return json({ ok: true, event: eventName, status })
+}
+
+// ════════════════════════════════════════════════════════════
+// Promo Code redemption
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Redeem a promo code.
+ *
+ * KV layout:
+ *   promo:{CODE}                → { maxUses, usedCount, expiresAt, days }
+ *   promo-used:{CODE}:{fpHash}  → { email, redeemedAt, licenseKey }
+ *
+ * The generated license key is also stored under license:{hash}
+ * so the normal /license/check endpoint works for promo licenses.
+ */
+async function handlePromoRedeem(request, env) {
+  try {
+    const { code, email, fingerprint } = await request.json()
+
+    // Validate inputs
+    if (!code || typeof code !== 'string') {
+      return json({ error: 'Missing promo code' }, 400)
+    }
+    if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return json({ error: 'Invalid email address' }, 400)
+    }
+    if (!fingerprint || typeof fingerprint !== 'string' || fingerprint.length < 8) {
+      return json({ error: 'Invalid fingerprint' }, 400)
+    }
+
+    const codeUpper = code.trim().toUpperCase()
+
+    // 1. Look up promo config
+    const promoRaw = await env.TRIAL_KV.get(`promo:${codeUpper}`)
+    if (!promoRaw) {
+      return json({ error: 'Invalid promo code' }, 404)
+    }
+    const promo = JSON.parse(promoRaw)
+
+    // 2. Check expiry
+    if (promo.expiresAt && new Date(promo.expiresAt) < new Date()) {
+      return json({ error: 'Promo code has expired' }, 410)
+    }
+
+    // 3. Check capacity
+    if (promo.usedCount >= promo.maxUses) {
+      return json({ error: 'Promo code fully redeemed' }, 410)
+    }
+
+    // 4. Check duplicate — same machine
+    const fpHash = await sha256(fingerprint)
+    const usedKey = `promo-used:${codeUpper}:${fpHash}`
+    const existing = await env.TRIAL_KV.get(usedKey)
+    if (existing) {
+      // Already redeemed on this machine — return existing license
+      const prev = JSON.parse(existing)
+      return json({ ok: true, licenseKey: prev.licenseKey, expiresAt: prev.expiresAt, alreadyRedeemed: true })
+    }
+
+    // 5. Generate license key: PROMO-XXXXXXXX-XXXX
+    const licenseKey = `PROMO-${randomHex(8)}-${randomHex(4)}`
+    const days = promo.days || 180
+    const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+
+    // 6. Store license in KV (works with /license/check)
+    const licenseHash = await sha256(licenseKey)
+    await env.TRIAL_KV.put(`license:${licenseHash}`, JSON.stringify({
+      status: 'active',
+      plan: 'promo',
+      eventName: 'promo_redeem',
+      promoCode: codeUpper,
+      email: email.toLowerCase(),
+      expiresAt,
+      updatedAt: Date.now()
+    }))
+
+    // 7. Mark as used for this machine
+    await env.TRIAL_KV.put(usedKey, JSON.stringify({
+      email: email.toLowerCase(),
+      licenseKey,
+      expiresAt,
+      redeemedAt: Date.now()
+    }))
+
+    // 8. Increment usage counter
+    promo.usedCount = (promo.usedCount || 0) + 1
+    await env.TRIAL_KV.put(`promo:${codeUpper}`, JSON.stringify(promo))
+
+    return json({ ok: true, licenseKey, expiresAt })
+  } catch {
+    return json({ error: 'Bad request' }, 400)
+  }
+}
+
+function randomHex(bytes) {
+  const arr = new Uint8Array(bytes)
+  crypto.getRandomValues(arr)
+  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 // ════════════════════════════════════════════════════════════

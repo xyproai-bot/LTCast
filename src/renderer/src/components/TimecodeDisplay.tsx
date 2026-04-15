@@ -76,10 +76,14 @@ export function TimecodeDisplay({ fullscreen }: Props): React.JSX.Element {
         <div className="tc-countdown tc-countdown--empty">--:--</div>
       )}
 
-      {signalLost && <div className="tc-signal-lost-banner">{t(lang, 'ltcSignalLost')}</div>}
-      {!fullscreen && ltcStartTime > 0 && !tcGeneratorMode && (
-        <div className="tc-preroll-banner">
-          {t(lang, 'ltcPreroll').replace('{time}', formatCountdown(ltcStartTime))}
+      <div className={`tc-signal-lost-banner${signalLost ? '' : ' tc-banner--hidden'}`}>
+        {t(lang, 'ltcSignalLost')}
+      </div>
+      {!fullscreen && !tcGeneratorMode && (
+        <div className={`tc-preroll-banner${ltcStartTime > 0 ? '' : ' tc-banner--hidden'}`}>
+          {ltcStartTime > 0
+            ? t(lang, 'ltcPreroll').replace('{time}', formatCountdown(ltcStartTime))
+            : '\u00A0'}
         </div>
       )}
 

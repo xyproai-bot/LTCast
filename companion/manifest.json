@@ -1,0 +1,18 @@
+{
+  "id": "ltcast",
+  "name": "LTCast",
+  "shortname": "LTCast",
+  "description": "Control LTCast timecode player — play/pause/stop, setlist navigation, and live timecode display",
+  "version": "1.0.0",
+  "license": "MIT",
+  "repository": "git+https://github.com/xyproai-bot/ltcast.git",
+  "bugs": "https://github.com/xyproai-bot/ltcast/issues",
+  "runtime": {
+    "api": "nodejs-cjs",
+    "apiVersion": "^1.11.0",
+    "entrypoint": "main.js"
+  },
+  "manufacturer": "XYPro AI",
+  "products": ["LTCast"],
+  "keywords": ["timecode", "ltc", "mtc", "art-net", "live", "playback"]
+}

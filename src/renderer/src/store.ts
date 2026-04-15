@@ -115,6 +115,10 @@ export interface PresetData {
   midiMappings?: MidiMapping[]
   // Sprint 4: Waveform Markers
   markers?: Record<string, WaveformMarker[]>
+  // MIDI Clock
+  midiClockEnabled?: boolean
+  midiClockSource?: 'detected' | 'tapped' | 'manual'
+  midiClockManualBpm?: number
   // UI Lock (show mode)
   showLocked?: boolean
   version?: number
@@ -142,7 +146,7 @@ function ensureSetlistIds(data: PresetData): PresetData {
   return data
 }
 
-const CURRENT_PRESET_VERSION = 6
+const CURRENT_PRESET_VERSION = 7
 
 /** Warn once if a preset was created by a newer version of the app. */
 function warnIfNewerVersion(data: PresetData): void {
@@ -188,6 +192,12 @@ function migratePreset(data: PresetData): PresetData {
   if (version < 6) {
     data.showLocked = data.showLocked ?? false
   }
+  // version 6 → 7: add MIDI Clock output
+  if (version < 7) {
+    data.midiClockEnabled = data.midiClockEnabled ?? false
+    data.midiClockSource = data.midiClockSource ?? 'detected'
+    data.midiClockManualBpm = data.midiClockManualBpm ?? 120
+  }
   data.version = CURRENT_PRESET_VERSION
   return data
 }
@@ -199,7 +209,8 @@ function buildPresetData(s: Pick<AppState,
   'ltcChannel' | 'setlist' | 'generatorStartTC' | 'generatorFps' | 'tcGeneratorMode' |
   'artnetEnabled' | 'artnetTargetIp' | 'mtcMode' | 'autoAdvance' | 'autoAdvanceGap' |
   'selectedCueMidiPort' | 'midiInputPort' | 'midiMappings' |
-  'oscEnabled' | 'oscTargetIp' | 'oscTargetPort' | 'markers' | 'showLocked'>): PresetData {
+  'oscEnabled' | 'oscTargetIp' | 'oscTargetPort' | 'markers' | 'showLocked' |
+  'midiClockEnabled' | 'midiClockSource' | 'midiClockManualBpm'>): PresetData {
   return {
     version: CURRENT_PRESET_VERSION,
     lang: s.lang, rightTab: s.rightTab, offsetFrames: s.offsetFrames,
@@ -217,7 +228,10 @@ function buildPresetData(s: Pick<AppState,
     midiInputPort: s.midiInputPort, midiMappings: s.midiMappings,
     oscEnabled: s.oscEnabled, oscTargetIp: s.oscTargetIp, oscTargetPort: s.oscTargetPort,
     markers: s.markers,
-    showLocked: s.showLocked
+    showLocked: s.showLocked,
+    midiClockEnabled: s.midiClockEnabled,
+    midiClockSource: s.midiClockSource,
+    midiClockManualBpm: s.midiClockManualBpm
   }
 }
 
@@ -275,6 +289,11 @@ export interface AppState {
   oscTargetIp: string             // unicast IP, default '127.0.0.1'
   oscTargetPort: number           // default 8000
 
+  // MIDI Clock Output
+  midiClockEnabled: boolean
+  midiClockSource: 'detected' | 'tapped' | 'manual'
+  midiClockManualBpm: number      // 20–300, used when source = 'manual'
+
   // BPM
   tappedBpm: number | null
   detectedBpm: number | null
@@ -288,6 +307,10 @@ export interface AppState {
   videoOffsetSeconds: number
   videoStartTimecode: string | null
   videoLoading: boolean
+
+  // Audio file loading
+  audioLoading: boolean
+  loadingFileName: string | null
 
   // Timecode lookup (offline LTC decode)
   timecodeLookup: TimecodeLookupEntry[]
@@ -320,6 +343,7 @@ export interface AppState {
   licenseKey: string | null
   licenseStatus: 'none' | 'valid' | 'expired' | 'invalid'
   licenseValidatedAt: number | null  // timestamp of last successful validation
+  licenseExpiresAt: string | null   // ISO date string for promo licenses
   trialDaysLeft: number | null       // null = not checked yet, 0 = expired
 
   // Project
@@ -362,10 +386,14 @@ export interface AppState {
   setOscEnabled: (enabled: boolean) => void
   setOscTargetIp: (ip: string) => void
   setOscTargetPort: (port: number) => void
+  setMidiClockEnabled: (enabled: boolean) => void
+  setMidiClockSource: (source: 'detected' | 'tapped' | 'manual') => void
+  setMidiClockManualBpm: (bpm: number) => void
   setVideoFile: (name: string | null, waveform: Float32Array | null, duration: number) => void
   setVideoOffsetSeconds: (offset: number) => void
   setVideoStartTimecode: (tc: string | null) => void
   setVideoLoading: (loading: boolean) => void
+  setAudioLoading: (loading: boolean, fileName?: string | null) => void
   setTimecodeLookup: (lookup: TimecodeLookupEntry[]) => void
   clearVideo: () => void
   addToSetlist: (items: Array<Omit<SetlistItem, 'id'> & { id?: string }>) => void
@@ -392,6 +420,7 @@ export interface AppState {
   setLicenseKey: (key: string | null) => void
   setLicenseStatus: (status: 'none' | 'valid' | 'expired' | 'invalid') => void
   setLicenseValidatedAt: (ts: number | null) => void
+  setLicenseExpiresAt: (expiresAt: string | null) => void
   isPro: () => boolean
   setAutoAdvanceGap: (gap: number) => void
   setSelectedCueMidiPort: (port: string | null) => void
@@ -460,6 +489,10 @@ export const useStore = create<AppState>()(persist((set) => ({
   oscTargetIp: '127.0.0.1',
   oscTargetPort: 8000,
 
+  midiClockEnabled: false,
+  midiClockSource: 'detected',
+  midiClockManualBpm: 120,
+
   tappedBpm: null,
   detectedBpm: null,
 
@@ -469,6 +502,9 @@ export const useStore = create<AppState>()(persist((set) => ({
   videoOffsetSeconds: 0,
   videoStartTimecode: null,
   videoLoading: false,
+
+  audioLoading: false,
+  loadingFileName: null,
 
   timecodeLookup: [],
 
@@ -490,6 +526,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   licenseKey: null,
   licenseStatus: 'none',
   licenseValidatedAt: null,
+  licenseExpiresAt: null,
   trialDaysLeft: null,
 
   rightTab: 'devices',
@@ -559,6 +596,9 @@ export const useStore = create<AppState>()(persist((set) => ({
   setOscEnabled: (oscEnabled) => set({ oscEnabled, presetDirty: true }),
   setOscTargetIp: (oscTargetIp) => set({ oscTargetIp, presetDirty: true }),
   setOscTargetPort: (oscTargetPort) => set({ oscTargetPort, presetDirty: true }),
+  setMidiClockEnabled: (midiClockEnabled) => set({ midiClockEnabled, presetDirty: true }),
+  setMidiClockSource: (midiClockSource) => set({ midiClockSource, presetDirty: true }),
+  setMidiClockManualBpm: (midiClockManualBpm) => set({ midiClockManualBpm: Math.max(20, Math.min(300, midiClockManualBpm)), presetDirty: true }),
   setTappedBpm: (tappedBpm) => set({ tappedBpm }),
   setDetectedBpm: (detectedBpm) => set({ detectedBpm }),
   setVideoFile: (videoFileName, videoWaveform, videoDuration) =>
@@ -566,6 +606,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   setVideoOffsetSeconds: (videoOffsetSeconds) => set({ videoOffsetSeconds }),
   setVideoStartTimecode: (videoStartTimecode) => set({ videoStartTimecode }),
   setVideoLoading: (videoLoading) => set({ videoLoading }),
+  setAudioLoading: (loading, fileName) => set({ audioLoading: loading, loadingFileName: loading ? (fileName ?? null) : null }),
   setTimecodeLookup: (timecodeLookup) => set({ timecodeLookup }),
   clearVideo: () => set({
     videoFileName: null, videoWaveform: null, videoDuration: 0,
@@ -751,6 +792,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   setLicenseKey: (licenseKey) => set({ licenseKey }),
   setLicenseStatus: (licenseStatus) => set({ licenseStatus }),
   setLicenseValidatedAt: (licenseValidatedAt) => set({ licenseValidatedAt }),
+  setLicenseExpiresAt: (licenseExpiresAt) => set({ licenseExpiresAt }),
   isPro: () => {
     const s = useStore.getState()
     // Licensed user — 30-day offline grace period (live events often have no internet)
@@ -975,6 +1017,7 @@ export const useStore = create<AppState>()(persist((set) => ({
       autoAdvance: false, autoAdvanceGap: 2,
       selectedCueMidiPort: null, midiInputPort: null, midiMappings: [],
       oscEnabled: false, oscTargetIp: '127.0.0.1', oscTargetPort: 8000,
+      midiClockEnabled: false, midiClockSource: 'detected', midiClockManualBpm: 120,
       markers: {}
     })
   },
@@ -1060,6 +1103,9 @@ export const useStore = create<AppState>()(persist((set) => ({
     oscEnabled: state.oscEnabled,
     oscTargetIp: state.oscTargetIp,
     oscTargetPort: state.oscTargetPort,
+    midiClockEnabled: state.midiClockEnabled,
+    midiClockSource: state.midiClockSource,
+    midiClockManualBpm: state.midiClockManualBpm,
     markers: state.markers,
     showLocked: state.showLocked,
     presetPath: state.presetPath,
@@ -1072,6 +1118,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     licenseKey: state.licenseKey,
     licenseStatus: state.licenseStatus,
     licenseValidatedAt: state.licenseValidatedAt,
+    licenseExpiresAt: state.licenseExpiresAt,
   }),
   merge: (persisted, current) => {
     if (!persisted || typeof persisted !== 'object') return current
