@@ -27,7 +27,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
 
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [missingPaths, setMissingPaths] = useState<Set<string>>(new Set())
-  const [durations, setDurations] = useState<Record<string, number>>({})
+  const [durations, setDurations] = useState<Record<string, number | null>>({})
   const [editingOffsetIdx, setEditingOffsetIdx] = useState<number | null>(null)
   const [editingOffsetStr, setEditingOffsetStr] = useState('')
   const [editingNotesIdx, setEditingNotesIdx] = useState<number | null>(null)
@@ -84,16 +84,21 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     return () => { cancelled = true }
   }, [setlist])
 
-  // Fetch durations for setlist items
+  // Fetch durations only for paths not yet cached (avoids re-probing on every edit)
+  const pathsKey = setlist.map(i => i.path).join('|')
   useEffect(() => {
     if (setlist.length === 0) { setDurations({}); return }
     let cancelled = false
     const paths = setlist.map(item => item.path)
-    window.api.getAudioDurations(paths).then(result => {
-      if (!cancelled) setDurations(result)
+    const missing = paths.filter(p => !(p in durations))
+    if (missing.length === 0) return
+    window.api.getAudioDurations(missing).then(result => {
+      if (cancelled) return
+      setDurations(prev => ({ ...prev, ...result }))
     }).catch(() => {})
     return () => { cancelled = true }
-  }, [setlist])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathsKey])
 
   // Re-check file existence when window regains focus
   useEffect(() => {
@@ -517,7 +522,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                       {item.name}
                     </span>
                     {durations[item.path] != null && (
-                      <span className="setlist-duration">{formatDurShort(durations[item.path])}</span>
+                      <span className="setlist-duration">{formatDurShort(durations[item.path] as number)}</span>
                     )}
                     {hasOffset && (
                       <span className="setlist-offset-badge" title={t(lang, 'songOffset')}>

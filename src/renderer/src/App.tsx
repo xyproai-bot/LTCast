@@ -486,6 +486,7 @@ export default function App(): React.JSX.Element {
     return () => {
       clearInterval(autoSaveInterval)
       if (midiActivityTimer.current) { clearTimeout(midiActivityTimer.current); midiActivityTimer.current = null }
+      if (cueFlashTimer.current) { clearTimeout(cueFlashTimer.current); cueFlashTimer.current = null }
       if (autoAdvanceTimer.current) { clearTimeout(autoAdvanceTimer.current); autoAdvanceTimer.current = null }
       if (autoAdvanceIntervalRef.current) { clearInterval(autoAdvanceIntervalRef.current); autoAdvanceIntervalRef.current = null }
       window.removeEventListener('beforeunload', handleBeforeUnload)
@@ -1173,19 +1174,27 @@ export default function App(): React.JSX.Element {
 
   const handlePanic = (): void => {
     showLog.log('transport', 'PANIC — all outputs stopped')
+    const s = useStore.getState()
+    // Clear standby so next Space press does not fire a stale song
+    s.setStandbySetlistIndex(null)
     // Stop playback
     handleStop()
-    // Send MIDI All Notes Off on all 16 channels
-    if (mtc.current?.isConnected()) {
+    // Send MIDI All Notes Off + All Sound Off on ALL 16 channels,
+    // broadcasting to both MTC and cue ports (whichever is connected)
+    if (mtc.current) {
       for (let ch = 0; ch < 16; ch++) {
-        mtc.current.sendControlChange(ch + 1, 123, 0) // CC 123 = All Notes Off
-        mtc.current.sendControlChange(ch + 1, 120, 0) // CC 120 = All Sound Off
+        mtc.current.sendControlChangeBroadcast(ch + 1, 123, 0) // All Notes Off
+        mtc.current.sendControlChangeBroadcast(ch + 1, 120, 0) // All Sound Off
       }
     }
     // Stop MIDI Clock if running
     if (mtc.current?.isClockRunning()) mtc.current.stopClock()
-    // Send zero timecode via Art-Net and OSC
-    const zeroTc = { hours: 0, minutes: 0, seconds: 0, frames: 0, fps: 25, dropFrame: false }
+    // Build zero TC using the current show's fps/dropFrame (not hardcoded 25)
+    const curFps = s.timecode?.fps ?? s.forceFps ?? s.detectedFps ?? s.generatorFps ?? 25
+    const curDf = s.timecode?.dropFrame ?? false
+    const zeroTc = { hours: 0, minutes: 0, seconds: 0, frames: 0, fps: curFps, dropFrame: curDf }
+    // Send zero to all protocols
+    mtc.current?.sendFullFrame(zeroTc)
     artnet.current?.sendTimecode(zeroTc)
     osc.current?.sendTimecode(zeroTc)
   }

@@ -642,12 +642,14 @@ export const useStore = create<AppState>()(persist((set) => ({
     if (index < 0 || index >= s.setlist.length) return s
     const setlist = [...s.setlist]
     setlist.splice(index, 1)
-    const activeSetlistIndex = s.activeSetlistIndex === index
-      ? null
-      : s.activeSetlistIndex !== null && s.activeSetlistIndex > index
-        ? s.activeSetlistIndex - 1
-        : s.activeSetlistIndex
-    return { setlist, activeSetlistIndex, presetDirty: true }
+    const shift = (i: number | null): number | null =>
+      i === null ? null : i === index ? null : i > index ? i - 1 : i
+    return {
+      setlist,
+      activeSetlistIndex: shift(s.activeSetlistIndex),
+      standbySetlistIndex: shift(s.standbySetlistIndex),
+      presetDirty: true
+    }
   }),
   setActiveSetlistIndex: (activeSetlistIndex) => set({ activeSetlistIndex }),
   setStandbySetlistIndex: (standbySetlistIndex) => set({ standbySetlistIndex }),
@@ -655,16 +657,22 @@ export const useStore = create<AppState>()(persist((set) => ({
     if (from < 0 || from >= s.setlist.length || to < 0 || to >= s.setlist.length) return s
     if (from === to) return s
     const activeItem = s.activeSetlistIndex !== null ? s.setlist[s.activeSetlistIndex] : null
+    const standbyItem = s.standbySetlistIndex !== null ? s.setlist[s.standbySetlistIndex] : null
     const setlist = [...s.setlist]
     const [item] = setlist.splice(from, 1)
     setlist.splice(to, 0, item)
-    // Track active item by ID — immune to index arithmetic errors
-    let activeSetlistIndex: number | null = null
-    if (activeItem) {
-      activeSetlistIndex = setlist.findIndex(i => i.id === activeItem.id)
-      if (activeSetlistIndex === -1) activeSetlistIndex = null
+    // Track active + standby items by ID — immune to index arithmetic errors
+    const findId = (target: SetlistItem | null): number | null => {
+      if (!target) return null
+      const i = setlist.findIndex(it => it.id === target.id)
+      return i === -1 ? null : i
     }
-    return { setlist, activeSetlistIndex, presetDirty: true }
+    return {
+      setlist,
+      activeSetlistIndex: findId(activeItem),
+      standbySetlistIndex: findId(standbyItem),
+      presetDirty: true
+    }
   }),
   clearSetlist: () => {
     const s = useStore.getState()
@@ -680,6 +688,7 @@ export const useStore = create<AppState>()(persist((set) => ({
         previousSetlist: { setlist: current.setlist, activeIndex: current.activeSetlistIndex },
         setlist: [],
         activeSetlistIndex: null,
+        standbySetlistIndex: null,
         presetDirty: true
       })
     }).catch(() => {})

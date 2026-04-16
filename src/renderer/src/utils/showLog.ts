@@ -20,7 +20,7 @@ export const showLog = {
   },
 
   getEntries(): ShowLogEntry[] {
-    return entries
+    return entries.slice()
   },
 
   clear(): void {

@@ -131,6 +131,17 @@ export class MtcOutput {
     } catch { /* port may have gone away */ }
   }
 
+  /**
+   * Send MIDI CC on BOTH the MTC port and cue port (if connected).
+   * Used for PANIC — ensures All Notes Off reaches every downstream device
+   * regardless of which port the user routed to.
+   */
+  sendControlChangeBroadcast(channel: number, cc: number, value: number): void {
+    const data = [0xB0 | ((channel - 1) & 0x0F), cc & 0x7F, value & 0x7F]
+    try { this.selectedOutput?.send(data) } catch { /* port gone */ }
+    try { this.cueOutput?.send(data) } catch { /* port gone */ }
+  }
+
   // ── MIDI Clock Output (24 PPQ) ─────────────────────────────
 
   /**
