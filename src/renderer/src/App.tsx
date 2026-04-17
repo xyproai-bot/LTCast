@@ -659,6 +659,8 @@ export default function App(): React.JSX.Element {
         s.midiClockSource !== prev.midiClockSource ||
         s.midiClockManualBpm !== prev.midiClockManualBpm ||
         s.tappedBpm !== prev.tappedBpm ||
+        s.detectedBpm !== prev.detectedBpm ||  // missed: auto-detected BPM first appearing
+        s.midiConnected !== prev.midiConnected ||  // missed: port selected mid-playback
         s.playState !== prev.playState
 
       if (!relevant) return
@@ -710,14 +712,25 @@ export default function App(): React.JSX.Element {
         cancelAutoAdvance()
         const state = useStore.getState()
 
-        // Standby/GO: if a song is on standby, load and play it
+        // Standby/GO: if a song is on standby, load AND start playback.
+        // openFile() only loads — we must explicitly play() once loading is done,
+        // otherwise GO appears to do nothing (song loaded but silent).
         if (state.standbySetlistIndex !== null && state.playState !== 'playing') {
           const idx = state.standbySetlistIndex
           const item = state.setlist[idx]
           if (item) {
             state.setStandbySetlistIndex(null)
             state.setActiveSetlistIndex(idx)
-            openFile(item.path, item.offsetFrames)
+            openFile(item.path, item.offsetFrames).then(() => {
+              const s = useStore.getState()
+              if (s.duration > 0) {
+                s.setPlayState('playing')
+                engine.current?.play().then(() => {
+                  const tc = useStore.getState().timecode
+                  if (tc) mtc.current?.sendFullFrame(tc)
+                }).catch(() => s.setPlayState('paused'))
+              }
+            })
           }
           return
         }

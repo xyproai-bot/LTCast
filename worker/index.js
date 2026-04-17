@@ -166,7 +166,9 @@ async function handleWebhook(request, env) {
   const payload = JSON.parse(rawBody)
   const eventName = payload.meta?.event_name
 
-  // Replay protection: dedup by event ID + store for 7 days
+  // Replay protection: dedup by event ID (check only — the marker is written
+  // AFTER successful processing below, so if we crash mid-handler LemonSqueezy
+  // can retry and the event isn't lost for 7 days)
   const eventId = payload.meta?.webhook_id || payload.data?.id
   if (eventId) {
     const dedupKey = `webhook-seen:${eventId}`
@@ -174,8 +176,6 @@ async function handleWebhook(request, env) {
     if (seen) {
       return json({ ok: true, event: eventName, note: 'duplicate event, ignored' })
     }
-    // Mark as seen with 7-day TTL (LemonSqueezy retries failed webhooks for ~3 days)
-    await env.TRIAL_KV.put(dedupKey, '1', { expirationTtl: 7 * 24 * 3600 })
   }
 
   // Extract license key from the payload
@@ -229,6 +229,12 @@ async function handleWebhook(request, env) {
     eventName,
     updatedAt: Date.now()
   }))
+
+  // Mark as seen only AFTER successful processing — if we failed above,
+  // LemonSqueezy will retry within 3 days and we'll process it then.
+  if (eventId) {
+    await env.TRIAL_KV.put(`webhook-seen:${eventId}`, '1', { expirationTtl: 7 * 24 * 3600 })
+  }
 
   return json({ ok: true, event: eventName, status })
 }

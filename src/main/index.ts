@@ -1541,11 +1541,18 @@ app.whenReady().then(() => {
     // (current caller sanitizes, but future callers may not), no JS/remote/file
     const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'none'; object-src 'none'; base-uri 'none'">`
     const safeHtml = html.includes('<head>') ? html.replace('<head>', `<head>${csp}`) : csp + html
-    await hiddenWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(safeHtml)}`)
-    const pdfBuffer = await hiddenWin.webContents.printToPDF({ printBackground: true, landscape: false })
-    hiddenWin.close()
-    writeFileSync(result.filePath, pdfBuffer)
-    return result.filePath
+    // try/finally so the hidden window is always torn down — otherwise a
+    // failed loadURL / printToPDF leaks a renderer process per attempt.
+    // destroy() is used instead of close() because JS is disabled in this
+    // window so there's no unload handler to rely on.
+    try {
+      await hiddenWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(safeHtml)}`)
+      const pdfBuffer = await hiddenWin.webContents.printToPDF({ printBackground: true, landscape: false })
+      writeFileSync(result.filePath, pdfBuffer)
+      return result.filePath
+    } finally {
+      try { hiddenWin.destroy() } catch { /* ignore */ }
+    }
   })
 
   ipcMain.handle('clipboard-write', (_event, text: string) => {

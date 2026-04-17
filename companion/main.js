@@ -214,7 +214,7 @@ class LTCastInstance extends InstanceBase {
       play: {
         name: 'Play',
         options: [],
-        callback: () => this.sendAction('play-pause')
+        callback: () => this.sendAction('play')
       },
       pause: {
         name: 'Pause',

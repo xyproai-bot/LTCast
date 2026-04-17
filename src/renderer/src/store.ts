@@ -194,11 +194,12 @@ function migratePreset(data: PresetData): PresetData {
   if (version < 6) {
     data.showLocked = data.showLocked ?? false
   }
-  // version 6 → 7: add MIDI Clock output
+  // version 6 → 7: add MIDI Clock output + OSC template
   if (version < 7) {
     data.midiClockEnabled = data.midiClockEnabled ?? false
     data.midiClockSource = data.midiClockSource ?? 'detected'
     data.midiClockManualBpm = data.midiClockManualBpm ?? 120
+    data.oscTemplate = data.oscTemplate ?? 'generic'
   }
   data.version = CURRENT_PRESET_VERSION
   return data

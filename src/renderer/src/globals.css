@@ -3041,7 +3041,7 @@ html, body, #root {
 .ultra-dark #root {
   background: #000 !important;
 }
-.ultra-dark .sidebar,
+.ultra-dark .setlist-sidebar,
 .ultra-dark .right-panel,
 .ultra-dark .center-top-bar,
 .ultra-dark .status-bar {
@@ -3061,9 +3061,9 @@ html, body, #root {
 .ultra-dark .btn-sm { background: #0a0a0a; border-color: #1a1a1a; color: #888; }
 .ultra-dark .btn-sm--active { color: #00d4ff; border-color: #00d4ff; }
 .ultra-dark .setlist-item { border-color: #111; }
-.ultra-dark .setlist-item--active { background: #0a0a0a; }
+.ultra-dark .setlist-item.active { background: #0a0a0a; }
 .ultra-dark .transport-main { background: #000; }
-.ultra-dark .scrub-bar-bg { background: #111; }
+.ultra-dark .scrub-bar { background: #111; }
 .ultra-dark .drop-zone { border-color: #222; }
 
 /* ── Keyboard Shortcuts Overlay ──────────────────────────── */
