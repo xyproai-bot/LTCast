@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('api', {
   licenseDeactivate: (key: string) => ipcRenderer.invoke('license-deactivate', key),
   licenseValidate: (key: string) => ipcRenderer.invoke('license-validate', key),
   licenseStatus: (key: string) => ipcRenderer.invoke('license-status', key),
+  // Authoritative Pro check (main process with safeStorage-encrypted state)
+  isPro: () => ipcRenderer.invoke('is-pro') as Promise<{ isPro: boolean; reason: string }>,
 
   // Trial
   trialCheck: () => ipcRenderer.invoke('trial-check'),

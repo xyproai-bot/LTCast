@@ -204,12 +204,102 @@ async function lemonSqueezyRequest(
     })
     const data = await response.json()
     if (data.valid || data.activated) {
+      // Persist validated state via safeStorage on success
+      if (action !== 'deactivate') {
+        saveProState({ licenseKey, validatedAt: Date.now(), status: data.license_key?.status ?? 'active' })
+      } else {
+        clearProState()
+      }
       return { valid: true, status: data.license_key?.status }
     }
     return { valid: false, error: data.error || data.message || 'Invalid license key' }
   } catch (e) {
     return { valid: false, error: `Network error: ${(e as Error).message}` }
   }
+}
+
+// ════════════════════════════════════════════════════════════
+// Pro state persistence via safeStorage (OS keychain encryption)
+// ════════════════════════════════════════════════════════════
+// Renderer's localStorage is trivially tampered via DevTools —
+// storing Pro state there means users unlock Pro in <60 seconds.
+// safeStorage uses OS keychain (Keychain on macOS, DPAPI on Windows)
+// so the blob on disk is encrypted and only decryptable by this app
+// on this machine. Renderer can READ the blob but can't decrypt it.
+
+interface ProState {
+  licenseKey: string
+  validatedAt: number  // ms
+  status: string       // 'active' | 'expired' | 'refunded' | 'revoked'
+  expiresAt?: string   // ISO date, for promo licenses
+}
+
+function getProStatePath(): string {
+  return join(app.getPath('userData'), '.pro-state')
+}
+
+function saveProState(state: ProState): void {
+  try {
+    const { safeStorage } = require('electron')
+    if (!safeStorage.isEncryptionAvailable()) {
+      // Fallback: write plaintext (still better than renderer-modifiable store)
+      writeFileSync(getProStatePath(), JSON.stringify(state), 'utf-8')
+      return
+    }
+    const encrypted = safeStorage.encryptString(JSON.stringify(state))
+    writeFileSync(getProStatePath(), encrypted)
+  } catch { /* non-fatal */ }
+}
+
+function readProState(): ProState | null {
+  try {
+    const p = getProStatePath()
+    if (!existsSync(p)) return null
+    const { safeStorage } = require('electron')
+    const raw = readFileSync(p)
+    if (safeStorage.isEncryptionAvailable()) {
+      try { return JSON.parse(safeStorage.decryptString(raw)) } catch { return null }
+    }
+    // Fallback plaintext
+    try { return JSON.parse(raw.toString('utf-8')) } catch { return null }
+  } catch { return null }
+}
+
+function clearProState(): void {
+  try {
+    const p = getProStatePath()
+    if (existsSync(p)) require('fs').unlinkSync(p)
+  } catch { /* non-fatal */ }
+}
+
+/**
+ * Returns true if the app is currently in Pro state.
+ * Main process is authoritative — renderer cannot forge this because
+ * the state is encrypted via OS keychain.
+ * Clock rollback check is built-in (expire immediately on tamper).
+ */
+function computeIsPro(): { isPro: boolean; reason: string } {
+  // Rollback check first
+  const hw = updateHighWater()
+  if (hw.rolledBack) return { isPro: false, reason: 'clock-tampered' }
+
+  const state = readProState()
+  if (!state) return { isPro: false, reason: 'no-license' }
+  if (state.status !== 'active') return { isPro: false, reason: `status-${state.status}` }
+
+  // Promo hard expiry
+  if (state.expiresAt) {
+    if (new Date(state.expiresAt).getTime() < Date.now()) {
+      return { isPro: false, reason: 'expired' }
+    }
+  }
+
+  // 30-day offline grace period since last successful server validation
+  const daysSince = (Date.now() - state.validatedAt) / (1000 * 60 * 60 * 24)
+  if (daysSince < -1) return { isPro: false, reason: 'clock-tampered' }  // validated in future
+  if (daysSince > 30) return { isPro: false, reason: 'offline-grace-exceeded' }
+
+  return { isPro: true, reason: 'ok' }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -224,10 +314,11 @@ const WORKER_API = 'https://ltcast-trial.xypro-ai.workers.dev'
  * The Worker receives LemonSqueezy webhooks and tracks refunds/cancellations.
  * Returns 'active', 'expired', 'refunded', 'revoked', or 'unknown' (no record).
  */
-async function checkLicenseStatus(licenseKey: string): Promise<{ status: string; tampered?: boolean }> {
+async function checkLicenseStatus(licenseKey: string): Promise<{ status: string; tampered?: boolean; expiresAt?: string | null }> {
   // Clock rollback check: if detected, force expire regardless of server response
   const hw = updateHighWater()
   if (hw.rolledBack) {
+    clearProState()
     return { status: 'expired', tampered: true }
   }
   try {
@@ -237,7 +328,19 @@ async function checkLicenseStatus(licenseKey: string): Promise<{ status: string;
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ licenseKey })
     })
-    return await response.json()
+    const data = await response.json()
+    // Worker is authoritative — update encrypted pro state based on result
+    if (data.status === 'active') {
+      saveProState({
+        licenseKey, validatedAt: Date.now(),
+        status: 'active',
+        expiresAt: data.expiresAt || undefined
+      })
+    } else if (data.status === 'refunded' || data.status === 'revoked' || data.status === 'expired') {
+      clearProState()
+    }
+    // 'unknown' = Worker doesn't have the key yet — leave existing state alone
+    return data
   } catch {
     return { status: 'unknown' }
   }
@@ -1400,6 +1503,8 @@ app.whenReady().then(() => {
   ipcMain.handle('license-deactivate', async (_event, key: string) => lemonSqueezyRequest('deactivate', key))
   ipcMain.handle('license-validate', async (_event, key: string) => lemonSqueezyRequest('validate', key))
   ipcMain.handle('license-status', async (_event, key: string) => checkLicenseStatus(key))
+  // Authoritative Pro check — encrypted safeStorage, tamper-resistant
+  ipcMain.handle('is-pro', () => computeIsPro())
   ipcMain.handle('print-to-pdf', async (_event, html: string, defaultName: string) => {
     const { dialog } = require('electron')
     const { writeFileSync } = require('fs')
