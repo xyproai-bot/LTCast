@@ -7,11 +7,14 @@ export interface MtcPort {
 
 export type MtcMode = 'quarter-frame' | 'full-frame'
 
-function fpsToRateCode(fps: number): number {
-  if (Math.abs(fps - 24) < 0.1) return 0
-  if (Math.abs(fps - 25) < 0.1) return 1
-  if (Math.abs(fps - 29.97) < 0.1) return 2
-  return 3
+// Exported for unit tests. 0.01 tolerance — NOT 0.1, because |30 - 29.97| = 0.03
+// would then wrongly match the 29.97 branch and make 30 ND display as 30 DF
+// on the receiver. Matches AudioEngine's dropFrame detection threshold.
+export function fpsToRateCode(fps: number): number {
+  if (Math.abs(fps - 24) < 0.01) return 0
+  if (Math.abs(fps - 25) < 0.01) return 1
+  if (Math.abs(fps - 29.97) < 0.01) return 2  // drop-frame
+  return 3  // 30 non-drop
 }
 
 export type MidiClockSource = 'detected' | 'tapped' | 'manual'
