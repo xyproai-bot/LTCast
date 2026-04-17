@@ -1,0 +1,13 @@
+# Shortlinks for launch campaigns
+# Store root (ltcast.lemonsqueezy.com) returns "store not activated" on
+# the LemonSqueezy free plan — link directly to variant checkout URLs.
+/buy             https://ltcast.lemonsqueezy.com/checkout/buy/5e0a0420-39bc-406c-83e2-dc7d36464369?enabled=1518368   302
+/buy/annual      https://ltcast.lemonsqueezy.com/checkout/buy/5e0a0420-39bc-406c-83e2-dc7d36464369?enabled=1518368   302
+/buy/7day        https://ltcast.lemonsqueezy.com/checkout/buy/de692eee-b2d4-4afe-af50-0ca44326fc73?enabled=1518383   302
+/download        https://github.com/xyproai-bot/LTCast/releases/latest   302
+/github          https://github.com/xyproai-bot/LTCast        302
+/issues          https://github.com/xyproai-bot/LTCast/issues 302
+/companion       https://github.com/xyproai-bot/LTCast/tree/master/companion 302
+
+# Landing page SPA fallback
+/*    /index.html   200
