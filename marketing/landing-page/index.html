@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LTCast — Professional Timecode Player for Live Shows</title>
+    <meta
+      name="description"
+      content="Sync your show with precision timecode. LTCast reads and generates LTC, triggers MIDI cues, and sends MTC, MIDI Clock, Art-Net, and OSC — all from one app. Windows & macOS."
+    />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="LTCast — Professional Timecode Player" />
+    <meta
+      property="og:description"
+      content="One app. Every timecode protocol. LTC + MTC + MIDI Clock + Art-Net + OSC, simultaneously, on Windows and macOS."
+    />
+    <meta property="og:image" content="/assets/og-image.png" />
+    <meta property="og:url" content="https://ltcast.app" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="LTCast — Professional Timecode Player" />
+    <meta
+      name="twitter:description"
+      content="LTC + MTC + MIDI Clock + Art-Net + OSC from one app. Windows & macOS."
+    />
+    <meta name="twitter:image" content="/assets/og-image.png" />
+
+    <link rel="icon" type="image/png" href="/assets/icon.png" />
+    <link rel="canonical" href="https://ltcast.app" />
+
+    <!-- Tailwind via CDN (replace with compiled build for production) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: [
+                'ui-sans-serif',
+                'system-ui',
+                '-apple-system',
+                'Segoe UI',
+                'Inter',
+                'sans-serif',
+              ],
+              mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+            },
+            colors: {
+              ink: {
+                950: '#05060a',
+                900: '#0a0c14',
+                800: '#101322',
+                700: '#1a1e33',
+              },
+              accent: {
+                400: '#5fd4ff',
+                500: '#2cb6ff',
+                600: '#0a8fe0',
+              },
+              ok: '#32d583',
+              warn: '#ffb948',
+            },
+          },
+        },
+      };
+    </script>
+
+    <style>
+      /* Minimal custom CSS — keep inline so the page works as a single deploy unit */
+      body {
+        background:
+          radial-gradient(1200px 600px at 50% -200px, rgba(44, 182, 255, 0.18), transparent 60%),
+          linear-gradient(180deg, #05060a 0%, #0a0c14 100%);
+        color: #e6e8ef;
+      }
+      .gradient-text {
+        background: linear-gradient(90deg, #5fd4ff 0%, #c7a6ff 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .hero-grid {
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+        background-size: 44px 44px;
+        mask-image: radial-gradient(ellipse at top, black 40%, transparent 75%);
+      }
+      .glow {
+        box-shadow: 0 0 0 1px rgba(95, 212, 255, 0.18), 0 40px 80px -20px rgba(10, 143, 224, 0.35);
+      }
+      details > summary {
+        list-style: none;
+        cursor: pointer;
+      }
+      details > summary::-webkit-details-marker {
+        display: none;
+      }
+      details[open] .chevron {
+        transform: rotate(180deg);
+      }
+      .chevron {
+        transition: transform 0.18s ease;
+      }
+    </style>
+  </head>
+
+  <body class="font-sans antialiased">
+    <!-- Header -->
+    <header class="sticky top-0 z-40 backdrop-blur bg-ink-950/70 border-b border-white/5">
+      <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+        <a href="/" class="flex items-center gap-2">
+          <img src="/assets/icon.png" alt="LTCast" class="w-7 h-7 rounded" />
+          <span class="font-semibold tracking-tight">LTCast</span>
+        </a>
+        <nav class="hidden md:flex items-center gap-7 text-sm text-white/70">
+          <a href="#features" class="hover:text-white">Features</a>
+          <a href="#why" class="hover:text-white">Why LTCast</a>
+          <a href="#pricing" class="hover:text-white">Pricing</a>
+          <a href="#faq" class="hover:text-white">FAQ</a>
+          <a
+            href="https://github.com/xyproai-bot/LTCast"
+            class="hover:text-white"
+            rel="noopener"
+            >GitHub</a
+          >
+        </nav>
+        <a
+          href="#download"
+          class="inline-flex items-center gap-1.5 rounded-md bg-white text-ink-950 px-3.5 py-1.5 text-sm font-semibold hover:bg-accent-400 transition"
+          >Download</a
+        >
+      </div>
+    </header>
+
+    <!-- Hero -->
+    <section class="relative overflow-hidden">
+      <div class="hero-grid absolute inset-0"></div>
+      <div class="relative max-w-6xl mx-auto px-6 pt-20 pb-16 md:pt-28 md:pb-24 text-center">
+        <div
+          class="inline-flex items-center gap-2 rounded-full bg-white/5 border border-white/10 px-3 py-1 text-xs text-white/70 mb-6"
+        >
+          <span class="w-1.5 h-1.5 rounded-full bg-ok"></span>
+          v0.5.0 — Companion, MIDI Clock, Custom OSC templates
+        </div>
+        <h1
+          class="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.05] max-w-4xl mx-auto"
+        >
+          Professional timecode player for
+          <span class="gradient-text">live shows, theatre, and broadcast.</span>
+        </h1>
+        <p class="mt-6 text-lg text-white/70 max-w-2xl mx-auto">
+          Sync your show with precision timecode. LTCast reads and generates LTC, triggers MIDI
+          cues, and sends MTC, MIDI Clock, Art-Net, and OSC — all from one app.
+        </p>
+
+        <div class="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3" id="download">
+          <a
+            href="https://github.com/xyproai-bot/LTCast/releases/latest"
+            class="inline-flex items-center gap-2 rounded-lg bg-white text-ink-950 font-semibold px-5 py-3 hover:bg-accent-400 transition"
+            rel="noopener"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              class="w-5 h-5 fill-current"
+            >
+              <path
+                d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                fill="none"
+              />
+            </svg>
+            Download for Windows
+          </a>
+          <a
+            href="https://github.com/xyproai-bot/LTCast/releases/latest"
+            class="inline-flex items-center gap-2 rounded-lg bg-white/10 border border-white/15 text-white font-semibold px-5 py-3 hover:bg-white/15 transition"
+            rel="noopener"
+          >
+            Download for macOS (Universal)
+          </a>
+        </div>
+        <p class="mt-4 text-sm text-white/50">
+          14-day free trial of all Pro features — no credit card required.
+        </p>
+
+        <!-- Hero screenshot -->
+        <div class="mt-14 relative max-w-5xl mx-auto">
+          <div class="rounded-xl overflow-hidden glow border border-white/10">
+            <img
+              src="/assets/screenshot.png"
+              alt="LTCast in action — dual waveform, setlist, timecode display"
+              class="w-full block"
+              loading="eager"
+            />
+          </div>
+        </div>
+
+        <!-- Logos strip (optional social proof — leave placeholders) -->
+        <div
+          class="mt-14 text-xs uppercase tracking-widest text-white/40 flex flex-wrap items-center justify-center gap-x-8 gap-y-3"
+        >
+          <span>Built on SMPTE 12M</span>
+          <span>·</span>
+          <span>Art-Net 4 compliant</span>
+          <span>·</span>
+          <span>OSC 1.0 / 1.1</span>
+          <span>·</span>
+          <span>MIDI Clock + MTC</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Feature grid -->
+    <section id="features" class="py-20 border-t border-white/5 bg-ink-900/40">
+      <div class="max-w-6xl mx-auto px-6">
+        <div class="max-w-2xl">
+          <h2 class="text-3xl md:text-4xl font-bold tracking-tight">
+            One file. <span class="gradient-text">Every device.</span> Zero hardware.
+          </h2>
+          <p class="mt-4 text-white/70">
+            LTCast is the only tool that simultaneously outputs LTC, MTC, MIDI Clock, Art-Net, and
+            OSC — no dongles, no rack, no chain of brittle apps.
+          </p>
+        </div>
+
+        <div class="mt-12 grid gap-4 md:grid-cols-3">
+          <!-- LTC -->
+          <div class="rounded-xl border border-white/10 bg-white/5 p-6 hover:bg-white/[0.07] transition">
+            <div class="w-10 h-10 rounded-lg bg-accent-500/15 text-accent-400 flex items-center justify-center mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-5 h-5 fill-current">
+                <path d="M3 12h2l2-6 2 12 2-9 2 8 2-5 2 4 2-3 2 2" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h3 class="font-semibold text-lg">LTC reader & generator</h3>
+            <p class="mt-2 text-sm text-white/60">
+              Auto-detects LTC channel and frame rate from any audio file. Drop-frame 29.97 plus
+              non-drop 24 / 25 / 30 fps. Generate LTC for tracks that don't have it.
+            </p>
+          </div>
+
+          <!-- MTC -->
+          <div class="rounded-xl border border-white/10 bg-white/5 p-6 hover:bg-white/[0.07] transition">
+            <div class="w-10 h-10 rounded-lg bg-accent-500/15 text-accent-400 flex items-center justify-center mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-5 h-5 fill-current">
+                <path d="M12 3a9 9 0 100 18 9 9 0 000-18zm-3 6l4-2 4 2-4 2-4-2zm-1 4l1 5m8-5l-1 5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3 class="font-semibold text-lg">MTC output</h3>
+            <p class="mt-2 text-sm text-white/60">
+              Quarter-frame and full-frame MIDI Timecode. Chained-timestamp scheduling over Web MIDI
+              removes JS jitter — locks DAWs and QLab cleanly.
+            </p>
+          </div>
+
+          <!-- MIDI Clock -->
+          <div class="rounded-xl border border-white/10 bg-white/5 p-6 hover:bg-white/[0.07] transition">
+            <div class="w-10 h-10 rounded-lg bg-accent-500/15 text-accent-400 flex items-center justify-center mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-5 h-5 fill-current">
+                <path d="M12 6v6l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3 class="font-semibold text-lg">MIDI Clock</h3>
+            <p class="mt-2 text-sm text-white/60">
+              Send 0xF8 clock at any BPM. Drive drum machines, Ableton, Traktor, and hardware synths
+              from your show's master tempo.
+            </p>
+          </div>
+
+          <!-- Art-Net -->
+          <div class="rounded-xl border border-white/10 bg-white/5 p-6 hover:bg-white/[0.07] transition">
+            <div class="w-10 h-10 rounded-lg bg-accent-500/15 text-accent-400 flex items-center justify-center mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-5 h-5 fill-current">
+                <path d="M12 3v4m0 10v4M3 12h4m10 0h4M5.6 5.6l2.8 2.8m7.2 7.2l2.8 2.8M5.6 18.4l2.8-2.8m7.2-7.2l2.8-2.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3 class="font-semibold text-lg">Art-Net output</h3>
+            <p class="mt-2 text-sm text-white/60">
+              UDP OpTimeCode packets for grandMA, ChamSys, Avolites and any Art-Net 4 console.
+              Configurable broadcast or unicast.
+            </p>
+          </div>
+
+          <!-- OSC -->
+          <div class="rounded-xl border border-white/10 bg-white/5 p-6 hover:bg-white/[0.07] transition">
+            <div class="w-10 h-10 rounded-lg bg-accent-500/15 text-accent-400 flex items-center justify-center mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-5 h-5 fill-current">
+                <path d="M4 12a8 8 0 0116 0M4 12h16M8 12a4 4 0 108 0" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3 class="font-semibold text-lg">OSC output</h3>
+            <p class="mt-2 text-sm text-white/60">
+              Per-cue templates for Resolume, Disguise (d3), and WATCHOUT. Send arbitrary OSC
+              messages at any timecode.
+            </p>
+          </div>
+
+          <!-- Companion / show tools -->
+          <div class="rounded-xl border border-white/10 bg-gradient-to-br from-accent-500/10 to-transparent p-6 hover:bg-accent-500/15 transition">
+            <div class="w-10 h-10 rounded-lg bg-accent-500/20 text-accent-400 flex items-center justify-center mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-5 h-5 fill-current">
+                <path d="M4 6h16v12H4z M4 10h16 M8 6v12 M16 6v12" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3 class="font-semibold text-lg">Show tools, built in</h3>
+            <p class="mt-2 text-sm text-white/60">
+              Pre-Show Check, Panic button, Show Log (CSV), Setlist auto-advance, Remote Display,
+              and a Bitfocus Companion module for Stream Deck control.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Why LTCast / comparison -->
+    <section id="why" class="py-20 border-t border-white/5">
+      <div class="max-w-6xl mx-auto px-6">
+        <div class="max-w-2xl">
+          <h2 class="text-3xl md:text-4xl font-bold tracking-tight">
+            Why LTCast
+          </h2>
+          <p class="mt-4 text-white/70">
+            Most shows end up chaining three or four apps: a DAW for LTC, a separate MIDI Clock
+            sender, a timecode-to-Art-Net bridge, and a cue list. LTCast replaces that stack.
+          </p>
+        </div>
+
+        <div class="mt-10 overflow-x-auto rounded-xl border border-white/10">
+          <table class="w-full text-sm">
+            <thead class="bg-white/5 text-white/80">
+              <tr>
+                <th class="text-left font-semibold px-5 py-3">Capability</th>
+                <th class="text-left font-semibold px-5 py-3">LTCast</th>
+                <th class="text-left font-semibold px-5 py-3">QLab (macOS only)</th>
+                <th class="text-left font-semibold px-5 py-3">Reaper / DAW + plugins</th>
+                <th class="text-left font-semibold px-5 py-3">Hardware (Rosendahl / Mutec)</th>
+              </tr>
+            </thead>
+            <tbody class="[&>tr]:border-t [&>tr]:border-white/5">
+              <tr>
+                <td class="px-5 py-3 text-white/80">Windows & macOS</td>
+                <td class="px-5 py-3 text-ok">Both</td>
+                <td class="px-5 py-3 text-warn">macOS only</td>
+                <td class="px-5 py-3 text-ok">Both</td>
+                <td class="px-5 py-3 text-white/60">N/A</td>
+              </tr>
+              <tr>
+                <td class="px-5 py-3 text-white/80">LTC reader + generator</td>
+                <td class="px-5 py-3 text-ok">Built-in</td>
+                <td class="px-5 py-3 text-warn">Limited</td>
+                <td class="px-5 py-3 text-warn">Plugins</td>
+                <td class="px-5 py-3 text-ok">Yes</td>
+              </tr>
+              <tr>
+                <td class="px-5 py-3 text-white/80">MTC + MIDI Clock + Art-Net + OSC simultaneously</td>
+                <td class="px-5 py-3 text-ok">Yes</td>
+                <td class="px-5 py-3 text-warn">Partial (needs workarounds)</td>
+                <td class="px-5 py-3 text-warn">Multiple plugins</td>
+                <td class="px-5 py-3 text-warn">LTC/MTC only</td>
+              </tr>
+              <tr>
+                <td class="px-5 py-3 text-white/80">Setlist with auto-advance + GO workflow</td>
+                <td class="px-5 py-3 text-ok">Yes</td>
+                <td class="px-5 py-3 text-ok">Yes</td>
+                <td class="px-5 py-3 text-warn">Manual</td>
+                <td class="px-5 py-3 text-white/60">—</td>
+              </tr>
+              <tr>
+                <td class="px-5 py-3 text-white/80">Stream Deck / Companion control</td>
+                <td class="px-5 py-3 text-ok">Official module</td>
+                <td class="px-5 py-3 text-ok">Yes</td>
+                <td class="px-5 py-3 text-warn">Community</td>
+                <td class="px-5 py-3 text-white/60">—</td>
+              </tr>
+              <tr>
+                <td class="px-5 py-3 text-white/80">Price</td>
+                <td class="px-5 py-3 text-white">$49 / year</td>
+                <td class="px-5 py-3 text-white/60">$99 – $999 (one-time)</td>
+                <td class="px-5 py-3 text-white/60">$225 + plugins</td>
+                <td class="px-5 py-3 text-white/60">$600 – $2500</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="mt-4 text-xs text-white/40">
+          Comparison reflects publicly listed features at time of writing. Product trademarks belong
+          to their respective owners.
+        </p>
+      </div>
+    </section>
+
+    <!-- Pricing -->
+    <section id="pricing" class="py-20 border-t border-white/5 bg-ink-900/40">
+      <div class="max-w-6xl mx-auto px-6">
+        <div class="text-center max-w-2xl mx-auto">
+          <h2 class="text-3xl md:text-4xl font-bold tracking-tight">Pricing</h2>
+          <p class="mt-4 text-white/70">
+            14-day free trial of all Pro features. No credit card. Cancel any time — your files stay
+            yours.
+          </p>
+        </div>
+
+        <div class="mt-12 grid gap-4 md:grid-cols-3">
+          <!-- 7-Day -->
+          <div class="rounded-xl border border-white/10 bg-white/5 p-6 flex flex-col">
+            <h3 class="font-semibold text-lg">7-Day Pass</h3>
+            <p class="text-sm text-white/60 mt-1">Single event or one-off gig.</p>
+            <div class="mt-6">
+              <span class="text-4xl font-bold tracking-tight">$15</span>
+              <span class="text-white/50 ml-1">/ 7 days</span>
+            </div>
+            <ul class="mt-6 space-y-2 text-sm text-white/75 flex-1">
+              <li>All Pro features</li>
+              <li>No subscription</li>
+              <li>Activate on show day</li>
+            </ul>
+            <a
+              href="https://ltcast.lemonsqueezy.com/"
+              class="mt-6 inline-flex justify-center rounded-lg bg-white/10 border border-white/15 px-4 py-2.5 font-semibold hover:bg-white/15"
+              rel="noopener"
+              >Buy 7-Day Pass</a
+            >
+          </div>
+
+          <!-- Annual -->
+          <div class="relative rounded-xl border border-accent-500/40 bg-gradient-to-b from-accent-500/15 to-transparent p-6 flex flex-col">
+            <span
+              class="absolute -top-3 left-6 bg-accent-500 text-ink-950 text-xs font-semibold rounded-full px-2.5 py-0.5"
+              >Most popular</span
+            >
+            <h3 class="font-semibold text-lg">Annual</h3>
+            <p class="text-sm text-white/60 mt-1">Working pros and regular shows.</p>
+            <div class="mt-6">
+              <span class="text-4xl font-bold tracking-tight">$49</span>
+              <span class="text-white/50 ml-1">/ year</span>
+            </div>
+            <ul class="mt-6 space-y-2 text-sm text-white/85 flex-1">
+              <li>All Pro features</li>
+              <li>30-day offline grace period</li>
+              <li>Priority email support</li>
+              <li>All v0.x updates included</li>
+            </ul>
+            <a
+              href="https://ltcast.lemonsqueezy.com/"
+              class="mt-6 inline-flex justify-center rounded-lg bg-white text-ink-950 px-4 py-2.5 font-semibold hover:bg-accent-400"
+              rel="noopener"
+              >Buy Annual</a
+            >
+          </div>
+
+          <!-- Volume -->
+          <div class="rounded-xl border border-white/10 bg-white/5 p-6 flex flex-col">
+            <h3 class="font-semibold text-lg">Volume (10+)</h3>
+            <p class="text-sm text-white/60 mt-1">Rental houses, AV teams, education.</p>
+            <div class="mt-6">
+              <span class="text-4xl font-bold tracking-tight">Contact</span>
+            </div>
+            <ul class="mt-6 space-y-2 text-sm text-white/75 flex-1">
+              <li>Team licensing</li>
+              <li>Invoice billing</li>
+              <li>Dedicated contact</li>
+            </ul>
+            <a
+              href="mailto:xypro.ai@gmail.com?subject=LTCast%20Volume%20Licensing"
+              class="mt-6 inline-flex justify-center rounded-lg bg-white/10 border border-white/15 px-4 py-2.5 font-semibold hover:bg-white/15"
+              >Email sales</a
+            >
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section id="faq" class="py-20 border-t border-white/5">
+      <div class="max-w-3xl mx-auto px-6">
+        <h2 class="text-3xl md:text-4xl font-bold tracking-tight text-center">FAQ</h2>
+        <div class="mt-10 space-y-3">
+          <details class="group rounded-lg border border-white/10 bg-white/5 p-5">
+            <summary class="flex items-center justify-between">
+              <span class="font-semibold">How is LTCast different from QLab?</span>
+              <svg class="chevron w-4 h-4 text-white/60" viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 7.5L10 12l4.5-4.5"/></svg>
+            </summary>
+            <p class="mt-3 text-white/70 text-sm leading-relaxed">
+              QLab is a fantastic show-control app, but it's macOS only and focused on cueing. LTCast
+              runs on Windows and macOS, is built specifically around timecode generation, and sends
+              LTC, MTC, MIDI Clock, Art-Net, and OSC simultaneously out of the box. Many users run
+              both — LTCast as the timecode master, QLab for cue playback.
+            </p>
+          </details>
+
+          <details class="group rounded-lg border border-white/10 bg-white/5 p-5">
+            <summary class="flex items-center justify-between">
+              <span class="font-semibold">Does it work on Windows and Mac?</span>
+              <svg class="chevron w-4 h-4 text-white/60" viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 7.5L10 12l4.5-4.5"/></svg>
+            </summary>
+            <p class="mt-3 text-white/70 text-sm leading-relaxed">
+              Yes. Windows 10 or later (NSIS installer) and macOS 12 or later (universal DMG, Intel
+              + Apple Silicon). The same project file works on both.
+            </p>
+          </details>
+
+          <details class="group rounded-lg border border-white/10 bg-white/5 p-5">
+            <summary class="flex items-center justify-between">
+              <span class="font-semibold">Is there a free trial?</span>
+              <svg class="chevron w-4 h-4 text-white/60" viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 7.5L10 12l4.5-4.5"/></svg>
+            </summary>
+            <p class="mt-3 text-white/70 text-sm leading-relaxed">
+              Yes — 14 days of all Pro features, no credit card. Free tier keeps LTC reading,
+              generation, dual waveform, A-B loop, tap BPM, and video import indefinitely.
+            </p>
+          </details>
+
+          <details class="group rounded-lg border border-white/10 bg-white/5 p-5">
+            <summary class="flex items-center justify-between">
+              <span class="font-semibold">Do I need extra hardware?</span>
+              <svg class="chevron w-4 h-4 text-white/60" viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 7.5L10 12l4.5-4.5"/></svg>
+            </summary>
+            <p class="mt-3 text-white/70 text-sm leading-relaxed">
+              For LTC output, you need a virtual audio cable (VB-CABLE on Windows, BlackHole on
+              macOS) — both free. For MTC / MIDI Clock, use a virtual MIDI port (loopMIDI on
+              Windows, built-in IAC Driver on macOS). Art-Net and OSC are just network.
+            </p>
+          </details>
+
+          <details class="group rounded-lg border border-white/10 bg-white/5 p-5">
+            <summary class="flex items-center justify-between">
+              <span class="font-semibold">What if my show is offline?</span>
+              <svg class="chevron w-4 h-4 text-white/60" viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 7.5L10 12l4.5-4.5"/></svg>
+            </summary>
+            <p class="mt-3 text-white/70 text-sm leading-relaxed">
+              LTCast runs completely offline after activation. A Pro license has a 30-day offline
+              grace period — perfect for venues without stable internet. It silently re-validates in
+              the background every few hours when a connection is available.
+            </p>
+          </details>
+
+          <details class="group rounded-lg border border-white/10 bg-white/5 p-5">
+            <summary class="flex items-center justify-between">
+              <span class="font-semibold">Do you have promo codes for students, rental houses, or community theatres?</span>
+              <svg class="chevron w-4 h-4 text-white/60" viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 7.5L10 12l4.5-4.5"/></svg>
+            </summary>
+            <p class="mt-3 text-white/70 text-sm leading-relaxed">
+              Yes. Email <a class="underline" href="mailto:xypro.ai@gmail.com">xypro.ai@gmail.com</a>
+              with a short description of what you do — students, community theatres, and non-profit
+              productions get a free or deeply discounted license.
+            </p>
+          </details>
+
+          <details class="group rounded-lg border border-white/10 bg-white/5 p-5">
+            <summary class="flex items-center justify-between">
+              <span class="font-semibold">Can I automate LTCast from Stream Deck / Companion?</span>
+              <svg class="chevron w-4 h-4 text-white/60" viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 7.5L10 12l4.5-4.5"/></svg>
+            </summary>
+            <p class="mt-3 text-white/70 text-sm leading-relaxed">
+              Yes. There's an official Bitfocus Companion module in the <code class="text-accent-400">companion/</code>
+              directory of the repo. It talks to LTCast over a local WebSocket. OSC Input (play,
+              pause, next, select song) is also supported.
+            </p>
+          </details>
+
+          <details class="group rounded-lg border border-white/10 bg-white/5 p-5">
+            <summary class="flex items-center justify-between">
+              <span class="font-semibold">Is LTCast open source?</span>
+              <svg class="chevron w-4 h-4 text-white/60" viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 7.5L10 12l4.5-4.5"/></svg>
+            </summary>
+            <p class="mt-3 text-white/70 text-sm leading-relaxed">
+              The source is public under Commons Clause + MIT. Free for personal and commercial
+              productions. Redistribution or resale of the software itself is not permitted.
+            </p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section class="py-20 border-t border-white/5 bg-gradient-to-b from-ink-900 to-ink-950">
+      <div class="max-w-3xl mx-auto px-6 text-center">
+        <h2 class="text-3xl md:text-4xl font-bold tracking-tight">Run your show from one app.</h2>
+        <p class="mt-4 text-white/70">
+          Download LTCast, load a track, and you're sending LTC, MTC, MIDI Clock, Art-Net, and OSC
+          in under two minutes.
+        </p>
+        <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <a
+            href="https://github.com/xyproai-bot/LTCast/releases/latest"
+            class="inline-flex items-center gap-2 rounded-lg bg-white text-ink-950 font-semibold px-5 py-3 hover:bg-accent-400 transition"
+            rel="noopener"
+            >Download free trial</a
+          >
+          <a
+            href="https://ltcast.lemonsqueezy.com/"
+            class="inline-flex items-center gap-2 rounded-lg bg-white/10 border border-white/15 px-5 py-3 font-semibold hover:bg-white/15 transition"
+            rel="noopener"
+            >Buy Pro — $49/year</a
+          >
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="py-10 border-t border-white/5 text-sm text-white/50">
+      <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-2">
+          <img src="/assets/icon.png" alt="LTCast" class="w-5 h-5 rounded" />
+          <span>&copy; <span id="year"></span> LTCast</span>
+        </div>
+        <div class="flex items-center gap-5">
+          <a href="https://github.com/xyproai-bot/LTCast" class="hover:text-white" rel="noopener">GitHub</a>
+          <a href="https://github.com/xyproai-bot/LTCast/issues" class="hover:text-white" rel="noopener">Issues</a>
+          <a href="mailto:xypro.ai@gmail.com" class="hover:text-white">xypro.ai@gmail.com</a>
+          <a href="/press" class="hover:text-white">Press kit</a>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      document.getElementById('year').textContent = new Date().getFullYear();
+    </script>
+  </body>
+</html>

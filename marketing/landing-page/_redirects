@@ -1,0 +1,9 @@
+# Shortlinks for launch campaigns
+/buy             https://ltcast.lemonsqueezy.com/            302
+/download        https://github.com/xyproai-bot/LTCast/releases/latest   302
+/github          https://github.com/xyproai-bot/LTCast        302
+/issues          https://github.com/xyproai-bot/LTCast/issues 302
+/companion       https://github.com/xyproai-bot/LTCast/tree/master/companion 302
+
+# Landing page SPA fallback
+/*    /index.html   200
