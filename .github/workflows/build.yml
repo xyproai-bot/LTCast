@@ -26,14 +26,18 @@ jobs:
         run: npx vitest run
 
       - name: Build and publish (Windows)
+        shell: bash
         run: |
-          if ("${{ github.ref }}" -like "refs/tags/*") {
-            npm run build && npx electron-builder --win --publish always
-          } else {
-            npm run build && npx electron-builder --win --publish never
-          }
+          rm -rf dist out release
+          npm run build
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            npx electron-builder --win --publish always
+          else
+            npx electron-builder --win --publish never
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          USE_HARD_LINKS: "false"
 
       - name: Upload Windows artifacts (non-tag runs)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -68,6 +72,9 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             PUBLISH_FLAG="always"
           fi
+          # Clean slate — v0.4.1 and first v0.5.0 attempt both hit
+          # EEXIST hardlink errors because of stale state on the dist path.
+          rm -rf dist out release
           # Build JS
           npm run build
           # Pack x64 and arm64 separately
@@ -86,6 +93,7 @@ jobs:
           npx electron-builder --mac --pd dist/mac-universal --publish "$PUBLISH_FLAG"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          USE_HARD_LINKS: "false"
 
       - name: Upload macOS artifacts (non-tag runs)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}

@@ -9,6 +9,10 @@ module.exports = {
   productName: 'LTCast',
   copyright: 'Copyright © 2024 LTCast',
   icon: 'resources/icon',
+  // Bypass electron-builder's own rebuild — v0.4.1 CI hit a hardlink EEXIST
+  // during the x64 packaging phase; disabling the rebuild and forcing
+  // USE_HARD_LINKS=false in CI avoids it.
+  nodeGypRebuild: false,
   directories: {
     buildResources: 'resources',
     output: 'dist'
@@ -37,8 +41,11 @@ module.exports = {
       { target: 'zip', arch: ['universal'] }
     ],
     icon: 'resources/icon.icns',
-    // Ad-hoc signed via afterPack hook — avoids "damaged" error on macOS 15
-    identity: null
+    // Ad-hoc signed via afterPack hook — avoids "damaged" error on macOS 15.
+    // No Apple Developer cert, so hardenedRuntime + Gatekeeper assess must be off.
+    identity: null,
+    hardenedRuntime: false,
+    gatekeeperAssess: false
   },
   dmg: {
     title: 'LTCast',
