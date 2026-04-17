@@ -2,6 +2,19 @@
 
 All notable changes to LTCast are documented here. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — 2026-04-17
+
+Patch release. Two user-reported bugs against 0.5.0.
+
+### Fixed
+
+- **MTC rate code wrong for 30 fps (non-drop).** `fpsToRateCode` used a `< 0.1` tolerance window, so `|30 − 29.97| = 0.03` matched the 29.97 drop-frame branch — downstream MIDI receivers displayed `30DF` instead of `30 ND`. Tightened to `< 0.01` (same threshold AudioEngine already uses for drop-frame detection). Affects both quarter-frame and full-frame SysEx paths; timecode values themselves were always correct, only the fps flag byte was wrong. (`d384084`)
+- **LemonSqueezy license Deactivate button failed with "The instance id field is required."** The deactivate request sent `instance_name` instead of the `instance_id` LemonSqueezy's API demands. `ProState` now persists the `instance.id` returned by the activate call, and deactivate sends it. v0.5.0-era users with no stored id get a graceful local-only deactivation so they aren't trapped in Pro state. (`08a7e2c`)
+
+### Tests
+
+- Added `mtcRateCode.test.ts` with 6 cases (24 / 25 / 29.97 / 30 + float-drift edges). Full suite: 271/271 passing.
+
 ## [0.5.0] — 2026-04-17
 
 Major feature release: MIDI Clock, Bitfocus Companion, Promo Code system, pre-show workflow, and 14+ UX improvements. 21 new features, 47 bug fixes across 10 rounds of strict code review, and a hardened Pro licensing pipeline.
