@@ -193,31 +193,61 @@ async function lemonSqueezyRequest(
 ): Promise<{ valid: boolean; error?: string; status?: string }> {
   try {
     const { net } = require('electron')
-    const body = JSON.stringify({
-      license_key: licenseKey,
-      instance_name: `${require('os').hostname()}-${require('os').platform()}`
-    })
+    const stored = readProState()
+
+    // LemonSqueezy API contract differs per action:
+    // - activate: license_key + instance_name  → response includes instance.id we persist
+    // - deactivate: license_key + instance_id  (instance_name is rejected with
+    //   "The instance id field is required." — this was the v0.5.0 bug)
+    // - validate: license_key, optional instance_id to scope to this install
+    let body: string
+    if (action === 'activate') {
+      body = JSON.stringify({
+        license_key: licenseKey,
+        instance_name: `${require('os').hostname()}-${require('os').platform()}`
+      })
+    } else if (action === 'deactivate') {
+      if (!stored?.instanceId) {
+        // v0.5.0 never persisted instance_id, so users who activated on that
+        // version can't call the server endpoint. Clear local state so they
+        // aren't stuck — the stale instance on LemonSqueezy can be managed
+        // from the customer portal if the activation slot is needed.
+        clearProState()
+        return { valid: true, status: 'deactivated-local' }
+      }
+      body = JSON.stringify({
+        license_key: licenseKey,
+        instance_id: stored.instanceId
+      })
+    } else {
+      body = JSON.stringify({
+        license_key: licenseKey,
+        ...(stored?.instanceId ? { instance_id: stored.instanceId } : {})
+      })
+    }
+
     const response = await net.fetch(`${LEMONSQUEEZY_API}/${action}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body
     })
     const data = await response.json()
-    if (data.valid || data.activated) {
-      // Persist validated state via safeStorage on success
-      if (action !== 'deactivate') {
-        saveProState({
-          licenseKey,
-          validatedAt: Date.now(),
-          status: data.license_key?.status ?? 'active',
-          fingerprint: getMachineFingerprint()
-        })
-      } else {
-        clearProState()
-      }
-      return { valid: true, status: data.license_key?.status }
+    const ok = data.valid || data.activated || data.deactivated
+    if (!ok) {
+      return { valid: false, error: data.error || data.message || 'Invalid license key' }
     }
-    return { valid: false, error: data.error || data.message || 'Invalid license key' }
+    if (action === 'deactivate') {
+      clearProState()
+      return { valid: true }
+    }
+    saveProState({
+      licenseKey,
+      validatedAt: Date.now(),
+      status: data.license_key?.status ?? 'active',
+      instanceId: data.instance?.id ?? stored?.instanceId,
+      fingerprint: getMachineFingerprint()
+    })
+    return { valid: true, status: data.license_key?.status }
   } catch (e) {
     return { valid: false, error: `Network error: ${(e as Error).message}` }
   }
@@ -238,6 +268,7 @@ interface ProState {
   status: string       // 'active' | 'expired' | 'refunded' | 'revoked'
   expiresAt?: string   // ISO date, for promo licenses
   fingerprint?: string // machine fingerprint at activation time — binds Pro to hardware
+  instanceId?: string  // LemonSqueezy activation instance id — required for deactivate
 }
 
 function getProStatePath(): string {
