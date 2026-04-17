@@ -206,7 +206,12 @@ async function lemonSqueezyRequest(
     if (data.valid || data.activated) {
       // Persist validated state via safeStorage on success
       if (action !== 'deactivate') {
-        saveProState({ licenseKey, validatedAt: Date.now(), status: data.license_key?.status ?? 'active' })
+        saveProState({
+          licenseKey,
+          validatedAt: Date.now(),
+          status: data.license_key?.status ?? 'active',
+          fingerprint: getMachineFingerprint()
+        })
       } else {
         clearProState()
       }
@@ -232,6 +237,7 @@ interface ProState {
   validatedAt: number  // ms
   status: string       // 'active' | 'expired' | 'refunded' | 'revoked'
   expiresAt?: string   // ISO date, for promo licenses
+  fingerprint?: string // machine fingerprint at activation time — binds Pro to hardware
 }
 
 function getProStatePath(): string {
@@ -294,6 +300,16 @@ function computeIsPro(): { isPro: boolean; reason: string } {
     }
   }
 
+  // Hardware fingerprint binding: if the license was activated on a different
+  // machine (user cloned .pro-state, swapped hardware, or transferred install),
+  // require re-activation. Legitimate hardware swaps just need one re-activate.
+  if (state.fingerprint) {
+    const current = getMachineFingerprint()
+    if (state.fingerprint !== current) {
+      return { isPro: false, reason: 'hardware-changed' }
+    }
+  }
+
   // 30-day offline grace period since last successful server validation
   const daysSince = (Date.now() - state.validatedAt) / (1000 * 60 * 60 * 24)
   if (daysSince < -1) return { isPro: false, reason: 'clock-tampered' }  // validated in future
@@ -334,7 +350,8 @@ async function checkLicenseStatus(licenseKey: string): Promise<{ status: string;
       saveProState({
         licenseKey, validatedAt: Date.now(),
         status: 'active',
-        expiresAt: data.expiresAt || undefined
+        expiresAt: data.expiresAt || undefined,
+        fingerprint: getMachineFingerprint()
       })
     } else if (data.status === 'refunded' || data.status === 'revoked' || data.status === 'expired') {
       clearProState()
