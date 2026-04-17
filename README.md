@@ -63,7 +63,7 @@ Sync your show with precision timecode. LTCast reads and generates LTC, triggers
 | **7-Day Pass** | $15 | Single events, one-off gigs |
 | **Volume (10+)** | Contact | Rental houses, teams |
 
-**[Buy LTCast Pro →](https://ltcast.lemonsqueezy.com/)** · Volume licensing: `xypro.ai@gmail.com`
+**[Buy Annual $49 →](https://ltcast.lemonsqueezy.com/checkout/buy/5e0a0420-39bc-406c-83e2-dc7d36464369?enabled=1518368)** · **[Buy 7-Day Pass $15 →](https://ltcast.lemonsqueezy.com/checkout/buy/de692eee-b2d4-4afe-af50-0ca44326fc73?enabled=1518383)** · Volume licensing: `xypro.ai@gmail.com`
 
 ## Supported Formats
 
