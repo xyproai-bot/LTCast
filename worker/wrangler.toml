@@ -9,6 +9,17 @@ compatibility_date = "2024-01-01"
 binding = "TRIAL_KV"
 id = "be812dfc5a294d95ba6c61bde2014843"
 
+# Durable Object — one instance per promo code.
+# Serializes redeem() calls so the capacity check and counter increment
+# are atomic; KV has no transactions and cannot fix the TOCTOU race.
+[[durable_objects.bindings]]
+name = "PROMO_DO"
+class_name = "PromoCounter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PromoCounter"]
+
 # Required secrets (set via wrangler secret put):
 #   ADMIN_KEY                    — admin trial reset (testing only)
 #   LEMONSQUEEZY_WEBHOOK_SECRET  — LemonSqueezy webhook signature verification

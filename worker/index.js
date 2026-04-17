@@ -246,12 +246,15 @@ async function handleWebhook(request, env) {
 /**
  * Redeem a promo code.
  *
- * KV layout:
+ * KV layout (config only — DO owns mutable counter + dedup):
  *   promo:{CODE}                → { maxUses, usedCount, expiresAt, days }
- *   promo-used:{CODE}:{fpHash}  → { email, redeemedAt, licenseKey }
+ *   promo-used:{CODE}:{fpHash}  → { email, redeemedAt, licenseKey }  (legacy, read-only fallback)
  *
- * The generated license key is also stored under license:{hash}
- * so the normal /license/check endpoint works for promo licenses.
+ * Generated license stored under license:{hash} for /license/check.
+ *
+ * Atomic check-and-increment lives in the PromoCounter Durable Object —
+ * KV has no transactions, so two concurrent redeems could both pass the
+ * capacity check and overshoot maxUses. DO per-code serializes calls.
  */
 async function handlePromoRedeem(request, env) {
   try {
@@ -270,63 +273,51 @@ async function handlePromoRedeem(request, env) {
 
     const codeUpper = code.trim().toUpperCase()
 
-    // 1. Look up promo config
+    // Look up promo config (read-only; DO owns mutable state)
     const promoRaw = await env.TRIAL_KV.get(`promo:${codeUpper}`)
     if (!promoRaw) {
       return json({ error: 'Invalid promo code' }, 404)
     }
     const promo = JSON.parse(promoRaw)
 
-    // 2. Check expiry
+    // Fast-fail on expiry before touching DO
     if (promo.expiresAt && new Date(promo.expiresAt) < new Date()) {
       return json({ error: 'Promo code has expired' }, 410)
     }
 
-    // 3. Check capacity
-    if (promo.usedCount >= promo.maxUses) {
-      return json({ error: 'Promo code fully redeemed' }, 410)
-    }
-
-    // 4. Check duplicate — same machine
     const fpHash = await sha256(fingerprint)
-    const usedKey = `promo-used:${codeUpper}:${fpHash}`
-    const existing = await env.TRIAL_KV.get(usedKey)
-    if (existing) {
-      // Already redeemed on this machine — return existing license
-      const prev = JSON.parse(existing)
+
+    // Backward compat: honor legacy per-machine KV dedup from pre-DO redemptions.
+    // Those records live outside DO storage; without this check, a user who
+    // redeemed before the migration could double-redeem.
+    const legacyDedup = await env.TRIAL_KV.get(`promo-used:${codeUpper}:${fpHash}`)
+    if (legacyDedup) {
+      const prev = JSON.parse(legacyDedup)
       return json({ ok: true, licenseKey: prev.licenseKey, expiresAt: prev.expiresAt, alreadyRedeemed: true })
     }
 
-    // 5. Generate license key: PROMO-XXXXXXXX-XXXX
-    const licenseKey = `PROMO-${randomHex(8)}-${randomHex(4)}`
-    const days = promo.days || 180
-    const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+    // Delegate atomic check-and-increment to the per-code Durable Object.
+    // idFromName(codeUpper) yields a stable ID → one DO instance per promo code.
+    const doId = env.PROMO_DO.idFromName(codeUpper)
+    const stub = env.PROMO_DO.get(doId)
 
-    // 6. Store license in KV (works with /license/check)
-    const licenseHash = await sha256(licenseKey)
-    await env.TRIAL_KV.put(`license:${licenseHash}`, JSON.stringify({
-      status: 'active',
-      plan: 'promo',
-      eventName: 'promo_redeem',
-      promoCode: codeUpper,
-      email: email.toLowerCase(),
-      expiresAt,
-      updatedAt: Date.now()
-    }))
+    const doResp = await stub.fetch('https://do/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: codeUpper,
+        email: email.toLowerCase(),
+        fpHash,
+        maxUses: promo.maxUses,
+        days: promo.days || 180,
+        // Seed DO from KV on first access so existing redemptions aren't lost
+        initialUsedCount: promo.usedCount || 0
+      })
+    })
 
-    // 7. Mark as used for this machine
-    await env.TRIAL_KV.put(usedKey, JSON.stringify({
-      email: email.toLowerCase(),
-      licenseKey,
-      expiresAt,
-      redeemedAt: Date.now()
-    }))
-
-    // 8. Increment usage counter
-    promo.usedCount = (promo.usedCount || 0) + 1
-    await env.TRIAL_KV.put(`promo:${codeUpper}`, JSON.stringify(promo))
-
-    return json({ ok: true, licenseKey, expiresAt })
+    // Pass through body + status; re-wrap with CORS headers for the browser client
+    const body = await doResp.text()
+    return new Response(body, { status: doResp.status, headers: CORS_HEADERS })
   } catch {
     return json({ error: 'Bad request' }, 400)
   }
@@ -409,4 +400,125 @@ async function sha256(str) {
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: CORS_HEADERS })
+}
+
+// ════════════════════════════════════════════════════════════
+// Durable Object: PromoCounter
+//
+// One instance per promo code (bound by idFromName(codeUpper)).
+// All fetch() calls for a given DO instance are serialized, so the
+// read → check → write sequence in redeem() is atomic relative to
+// concurrent requests — eliminating the TOCTOU race that plain KV
+// (no transactions) cannot fix.
+//
+// DO storage keys:
+//   usedCount       → number                    (authoritative counter)
+//   used:{fpHash}   → { email, licenseKey, expiresAt, redeemedAt }
+// ════════════════════════════════════════════════════════════
+
+export class PromoCounter {
+  constructor(state, env) {
+    this.state = state
+    this.env = env
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url)
+    if (request.method === 'POST' && url.pathname === '/redeem') {
+      try {
+        const body = await request.json()
+        return await this.redeem(body)
+      } catch {
+        return new Response(JSON.stringify({ error: 'Redemption failed' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+    }
+    return new Response(JSON.stringify({ error: 'Not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+
+  async redeem({ code, email, fpHash, maxUses, days, initialUsedCount }) {
+    const storage = this.state.storage
+
+    // Load or seed counter. Seed from KV's usedCount on first DO access so
+    // pre-migration redemptions are already counted against capacity.
+    let usedCount = await storage.get('usedCount')
+    if (usedCount === undefined) {
+      usedCount = initialUsedCount || 0
+    }
+
+    // Capacity check (authoritative — runs under DO serialization)
+    if (usedCount >= maxUses) {
+      return doJson({ error: 'Promo code fully redeemed' }, 410)
+    }
+
+    // Same-machine dedup
+    const existing = await storage.get(`used:${fpHash}`)
+    if (existing) {
+      // Replay: re-assert the license KV record (recovers from any partial write)
+      await this.#writeLicenseKV(code, existing.email, existing.licenseKey, existing.expiresAt)
+      return doJson({
+        ok: true,
+        licenseKey: existing.licenseKey,
+        expiresAt: existing.expiresAt,
+        alreadyRedeemed: true
+      })
+    }
+
+    // Generate license
+    const licenseKey = `PROMO-${randomHex(8)}-${randomHex(4)}`
+    const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+    const newUsedCount = usedCount + 1
+
+    // Commit DO state atomically — single put() with multiple keys is transactional
+    await storage.put({
+      usedCount: newUsedCount,
+      [`used:${fpHash}`]: {
+        email,
+        licenseKey,
+        expiresAt,
+        redeemedAt: Date.now()
+      }
+    })
+
+    // After DO commit, write license KV (consumed by /license/check)
+    await this.#writeLicenseKV(code, email, licenseKey, expiresAt)
+
+    // Mirror usedCount back to KV promo config (for admin visibility only;
+    // DO remains the source of truth). Non-fatal if this fails.
+    try {
+      const promoRaw = await this.env.TRIAL_KV.get(`promo:${code}`)
+      if (promoRaw) {
+        const cfg = JSON.parse(promoRaw)
+        cfg.usedCount = newUsedCount
+        await this.env.TRIAL_KV.put(`promo:${code}`, JSON.stringify(cfg))
+      }
+    } catch { /* non-fatal mirror */ }
+
+    return doJson({ ok: true, licenseKey, expiresAt })
+  }
+
+  async #writeLicenseKV(code, email, licenseKey, expiresAt) {
+    const licenseHash = await sha256(licenseKey)
+    await this.env.TRIAL_KV.put(`license:${licenseHash}`, JSON.stringify({
+      status: 'active',
+      plan: 'promo',
+      eventName: 'promo_redeem',
+      promoCode: code,
+      email,
+      expiresAt,
+      updatedAt: Date.now()
+    }))
+  }
+}
+
+function doJson(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json' }
+  })
 }
