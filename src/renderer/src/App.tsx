@@ -20,6 +20,7 @@ import { LtcWavExportDialog } from './components/LtcWavExportDialog'
 import { LicenseDialog } from './components/LicenseDialog'
 import { ProGate } from './components/ProGate'
 import { useStore, TimecodeFrame } from './store'
+import { useShallow } from 'zustand/react/shallow'
 import { alignAudio } from './audio/AudioAligner'
 import { getTimecodeAtTime, formatTimecode } from './audio/LtcDecoder'
 import { tcToFrames } from './audio/timecodeConvert'
@@ -74,6 +75,11 @@ export default function App(): React.JSX.Element {
     setAutoAdvanceCountdown(null)
   }, [])
 
+  // NARROW SELECTOR with useShallow — prevents App from re-rendering on every
+  // setCurrentTime (30Hz) and setTimecode (30Hz). Previously App subscribed to
+  // the WHOLE store via useStore() with no selector, causing the entire App
+  // tree to re-render 30×/sec during playback. Now it only re-renders when
+  // one of THESE specific fields changes.
   const {
     filePath, fileName, presetName, presetDirty, lang, loop,
     setFilePath, setPlayState, setCurrentTime,
@@ -97,7 +103,31 @@ export default function App(): React.JSX.Element {
     midiMappings, updateMidiMapping,
     trialDaysLeft, isPro, savePreset,
     audioLoading, loadingFileName, setAudioLoading
-  } = useStore()
+  } = useStore(useShallow((s) => ({
+    filePath: s.filePath, fileName: s.fileName, presetName: s.presetName,
+    presetDirty: s.presetDirty, lang: s.lang, loop: s.loop,
+    setFilePath: s.setFilePath, setPlayState: s.setPlayState, setCurrentTime: s.setCurrentTime,
+    setTimecode: s.setTimecode, setDetectedFps: s.setDetectedFps, setLtcSignalOk: s.setLtcSignalOk,
+    setDetectedLtcChannel: s.setDetectedLtcChannel, setMidiConnected: s.setMidiConnected, setMidiOutputs: s.setMidiOutputs,
+    setTimecodeLookup: s.setTimecodeLookup, setVideoFile: s.setVideoFile, setVideoOffsetSeconds: s.setVideoOffsetSeconds,
+    setVideoStartTimecode: s.setVideoStartTimecode, setVideoLoading: s.setVideoLoading, clearVideo: s.clearVideo,
+    offsetFrames: s.offsetFrames, loopA: s.loopA, loopB: s.loopB,
+    tcGeneratorMode: s.tcGeneratorMode, setTcGeneratorMode: s.setTcGeneratorMode,
+    generatorStartTC: s.generatorStartTC, generatorFps: s.generatorFps,
+    forceFps: s.forceFps,
+    ltcChannel: s.ltcChannel,
+    ltcSignalOk: s.ltcSignalOk, ltcConfidence: s.ltcConfidence, detectedLtcChannel: s.detectedLtcChannel,
+    setLtcConfidence: s.setLtcConfidence, setDetectedBpm: s.setDetectedBpm,
+    artnetEnabled: s.artnetEnabled, artnetTargetIp: s.artnetTargetIp,
+    oscEnabled: s.oscEnabled, oscTargetIp: s.oscTargetIp, oscTargetPort: s.oscTargetPort,
+    setSelectedMidiPort: s.setSelectedMidiPort,
+    rightTab: s.rightTab, setMidiInputs: s.setMidiInputs, showLocked: s.showLocked, setShowLocked: s.setShowLocked,
+    selectedCueMidiPort: s.selectedCueMidiPort, setSelectedCueMidiPort: s.setSelectedCueMidiPort,
+    midiInputPort: s.midiInputPort, setMidiInputPort: s.setMidiInputPort,
+    midiMappings: s.midiMappings, updateMidiMapping: s.updateMidiMapping,
+    trialDaysLeft: s.trialDaysLeft, isPro: s.isPro, savePreset: s.savePreset,
+    audioLoading: s.audioLoading, loadingFileName: s.loadingFileName, setAudioLoading: s.setAudioLoading
+  })))
 
   // Sync window title bar with preset name
   useEffect(() => {
