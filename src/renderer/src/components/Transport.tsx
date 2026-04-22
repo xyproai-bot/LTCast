@@ -114,6 +114,52 @@ export function Transport({ onPlay, onPause, onStop, onSeek, onPanic }: Props): 
     if (!isNaN(val)) setOffsetFrames(Math.max(-999, Math.min(999, val)))
   }
 
+  // F2: Wheel-to-offset nudging on the whole `.transport-offset` wrapper
+  // (covers +/- buttons, slider, and number input).
+  // Scroll = ±1 frame, Shift+scroll = ±10 frames.
+  // UI Lock is already handled by CSS `.ui-locked .transport-offset { pointer-events: none }`
+  // so wheel events won't reach this element when locked — no extra guard needed here.
+  // Attached via useEffect + non-passive listener so preventDefault() works
+  // (React synthetic onWheel is passive by default).
+  const offsetWrapRef = useRef<HTMLDivElement>(null)
+  const offsetWheelAccumRef = useRef(0)
+  useEffect(() => {
+    const el = offsetWrapRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent): void => {
+      // Natural "wheel up = value up":
+      //   scroll up (deltaY < 0) → step +1 (AC-1)
+      //   scroll down (deltaY > 0) → step -1 (AC-2)
+      let step = 0
+      if (e.deltaMode === 1) {
+        // Line mode (typical Windows mouse, ±3 per detent). One step per event.
+        if (e.deltaY < 0) step = 1
+        else if (e.deltaY > 0) step = -1
+      } else {
+        // Pixel mode (mac trackpad, precision touchpad, hi-res wheels).
+        // Accumulate deltaY; emit a step every 40 pixels crossed (AC-8).
+        offsetWheelAccumRef.current += e.deltaY
+        while (offsetWheelAccumRef.current >= 40) {
+          step -= 1
+          offsetWheelAccumRef.current -= 40
+        }
+        while (offsetWheelAccumRef.current <= -40) {
+          step += 1
+          offsetWheelAccumRef.current += 40
+        }
+      }
+      // Always preventDefault so page/slider don't also scroll (AC-6)
+      e.preventDefault()
+      if (step === 0) return
+      // Shift multiplier (AC-4)
+      if (e.shiftKey) step *= 10
+      // setOffsetFrames clamps -999..999 and sets presetDirty (AC-5, AC-11)
+      setOffsetFrames(offsetFrames + step)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [offsetFrames, setOffsetFrames])
+
   const hasLoopRegion = loopA !== null && loopB !== null
   const remaining = duration > 0 ? Math.max(0, duration - scrubValue) : 0
 
@@ -143,7 +189,7 @@ export function Transport({ onPlay, onPause, onStop, onSeek, onPanic }: Props): 
       {/* Main transport row */}
       <div className="transport-main">
         {/* Left: offset control */}
-        <div className="transport-offset">
+        <div ref={offsetWrapRef} className="transport-offset">
           <span className="offset-label">{t(lang, 'offset')}</span>
           <button className="btn-offset" onClick={() => setOffsetFrames(Math.max(-999, offsetFrames - 1))}>−</button>
           <input

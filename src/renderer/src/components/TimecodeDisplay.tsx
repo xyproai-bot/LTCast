@@ -31,7 +31,8 @@ export function TimecodeDisplay({ fullscreen, onSeekToTimecode }: Props): React.
     ltcSignalOk, playState,
     currentTime, duration,
     ltcStartTime,
-    autoAdvance, setlist, activeSetlistIndex
+    autoAdvance, setlist, activeSetlistIndex,
+    offsetFrames, setOffsetFrames, showLocked
   } = useStore()
 
   // Toggle elapsed vs remaining time (click to switch, like Arena)
@@ -41,6 +42,52 @@ export function TimecodeDisplay({ fullscreen, onSeekToTimecode }: Props): React.
   const [tcEditing, setTcEditing] = useState(false)
   const [tcEditValue, setTcEditValue] = useState('')
   const tcEditRef = useRef<HTMLInputElement>(null)
+
+  // F2: Wheel-to-offset nudging on .tc-digits
+  // Scroll = ±1 frame, Shift+scroll = ±10 frames.
+  // Attached via useEffect + non-passive listener so preventDefault() works
+  // (React synthetic onWheel is passive by default).
+  const tcDigitsRef = useRef<HTMLDivElement>(null)
+  const wheelAccumRef = useRef(0)
+  useEffect(() => {
+    const el = tcDigitsRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent): void => {
+      // AC-7: UI Lock → do nothing, let page scroll normally (no preventDefault)
+      if (showLocked) return
+      // Natural "wheel up = value up":
+      //   scroll up (deltaY < 0) → step +1 (AC-1)
+      //   scroll down (deltaY > 0) → step -1 (AC-2)
+      let step = 0
+      if (e.deltaMode === 1) {
+        // Line mode (typical Windows mouse, ±3 per detent). One step per event.
+        if (e.deltaY < 0) step = 1
+        else if (e.deltaY > 0) step = -1
+      } else {
+        // Pixel mode (mac trackpad, precision touchpad, hi-res wheels).
+        // Accumulate deltaY; emit a step every 40 pixels crossed (AC-8).
+        wheelAccumRef.current += e.deltaY
+        while (wheelAccumRef.current >= 40) {
+          step -= 1
+          wheelAccumRef.current -= 40
+        }
+        while (wheelAccumRef.current <= -40) {
+          step += 1
+          wheelAccumRef.current += 40
+        }
+      }
+      // Always preventDefault so page does not scroll while wheeling over digits (AC-6)
+      e.preventDefault()
+      if (step === 0) return
+      // Shift multiplier (AC-4)
+      if (e.shiftKey) step *= 10
+      // setOffsetFrames clamps -999..999 and sets presetDirty (AC-5, AC-11)
+      setOffsetFrames(offsetFrames + step)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+    // tcEditing included because .tc-digits unmounts when editing; re-attach when it re-mounts
+  }, [offsetFrames, setOffsetFrames, showLocked, tcEditing])
 
   const handleTcDoubleClick = (): void => {
     if (!duration || !onSeekToTimecode) return
@@ -103,7 +150,7 @@ export function TimecodeDisplay({ fullscreen, onSeekToTimecode }: Props): React.
           />
         </div>
       ) : (
-        <div className="tc-digits" onDoubleClick={handleTcDoubleClick} style={{ cursor: duration ? 'pointer' : undefined }}>
+        <div ref={tcDigitsRef} className="tc-digits" onDoubleClick={handleTcDoubleClick} style={{ cursor: duration ? 'pointer' : undefined }}>
           <span className="tc-seg">{h}</span>
           <span className="tc-colon">:</span>
           <span className="tc-seg">{m}</span>

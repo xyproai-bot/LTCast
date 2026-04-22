@@ -108,6 +108,14 @@ export class AudioEngine {
   private generatorFps = 25
   private lastGeneratedFrame = -1
 
+  // ── Pre-buffer (F1) — one-slot cache for the next cued song ──────
+  // A disposable scratch AudioContext decodes the next file ahead of time
+  // so Space/GO can skip the multi-second read+decode pipeline. Identity
+  // is tracked by a caller-supplied Symbol so a stale decode that resolves
+  // after the operator has moved on self-destructs instead of firing.
+  private prebufferedBuffer: AudioBuffer | null = null
+  private prebufferedToken: symbol | null = null
+
   private _deviceChangeHandler = (): void => { this._checkDeviceAvailability() }
 
   constructor(callbacks: AudioEngineCallbacks) {
@@ -164,11 +172,123 @@ export class AudioEngine {
     this.callbacks.onTimeUpdate(0)
 
     const decodeCtx = new AudioContext()
+    let decoded: AudioBuffer
     try {
-      this.buffer = await decodeCtx.decodeAudioData(arrayBuffer)
+      decoded = await decodeCtx.decodeAudioData(arrayBuffer)
     } finally {
       await decodeCtx.close()
     }
+
+    this._applyDecodedBuffer(decoded)
+  }
+
+  /**
+   * Post-decode pipeline for an already-decoded AudioBuffer.
+   *
+   * Public entry point for the prebuffer fast path: callers (e.g. App.tsx
+   * after a successful consumePrebuffered) pass in an AudioBuffer that was
+   * decoded on a scratch context ahead of time. This method reproduces the
+   * exact dispose → reset offset → set buffer → detect LTC → extract
+   * waveform → build timecode lookup sequence that loadFile performs, so
+   * the caller's post-decode side-effects (UI state, OSC fires, etc.) can
+   * remain identical between the fast and fallback paths.
+   */
+  async loadDecodedBuffer(buffer: AudioBuffer): Promise<void> {
+    await this.dispose()
+    this.startOffset = 0
+    this.callbacks.onTimeUpdate(0)
+    this._applyDecodedBuffer(buffer)
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // Pre-buffer (F1) — decode next song ahead of time
+  // ════════════════════════════════════════════════════════════
+
+  /**
+   * Decode an ArrayBuffer on a disposable scratch AudioContext and cache
+   * the result under the given token. Returns the decoded AudioBuffer on
+   * success, or null if decoding failed (silent failure — caller falls
+   * back to the full loadFile path).
+   *
+   * Scratch context is closed in a finally block — it never touches
+   * `ctx`, `ltcCtx`, or any playback node. If a previous prebuffer is
+   * still cached, it is cleared synchronously before decoding starts.
+   *
+   * On decode rejection the cached state is cleared. If the token no
+   * longer matches the engine's `prebufferedToken` at resolution time
+   * (e.g. a subsequent prebuffer call overwrote it), the decoded buffer
+   * is dropped and null is returned — this covers the "standby A, then
+   * standby B before A's decode finishes" race.
+   */
+  async prebufferFile(arrayBuffer: ArrayBuffer, token: symbol): Promise<AudioBuffer | null> {
+    // Clear any previous slot synchronously so nothing from a stale token
+    // lingers while this decode is in flight (per contract memory lifecycle).
+    this.prebufferedBuffer = null
+    this.prebufferedToken = token
+
+    const decodeCtx = new AudioContext()
+    try {
+      const decoded = await decodeCtx.decodeAudioData(arrayBuffer)
+      // Race check: a later prebuffer call may have replaced our token.
+      // If so, the new token owns the slot — drop this result on the floor.
+      if (this.prebufferedToken !== token) return null
+      this.prebufferedBuffer = decoded
+      return decoded
+    } catch {
+      // Decode failure — wipe the slot so a future consume sees nothing.
+      // Only clear if we still own the token (a newer prebuffer may have
+      // taken over).
+      if (this.prebufferedToken === token) {
+        this.prebufferedBuffer = null
+        this.prebufferedToken = null
+      }
+      return null
+    } finally {
+      try { await decodeCtx.close() } catch { /* best effort */ }
+    }
+  }
+
+  /**
+   * Retrieve the pre-decoded AudioBuffer if the supplied token matches
+   * the one stored by the most recent prebufferFile call. Returns null
+   * on token mismatch (stale consumer) or when no buffer is cached.
+   *
+   * A successful consume clears the slot in one shot — subsequent calls
+   * return null. This guarantees a prebuffered buffer is used at most
+   * once and never held across songs.
+   */
+  consumePrebuffered(token: symbol): AudioBuffer | null {
+    if (this.prebufferedToken !== token) return null
+    const buf = this.prebufferedBuffer
+    if (!buf) return null
+    this.prebufferedBuffer = null
+    this.prebufferedToken = null
+    return buf
+  }
+
+  /**
+   * Drop the pre-decoded buffer and its token. If `token` is provided,
+   * only clears when it matches (prevents a cancelled job from wiping
+   * out a newer one that overlapped it). With no argument, clears
+   * unconditionally.
+   */
+  clearPrebuffered(token?: symbol): void {
+    if (token !== undefined && this.prebufferedToken !== token) return
+    this.prebufferedBuffer = null
+    this.prebufferedToken = null
+  }
+
+  /**
+   * Internal: set the active buffer and fire the post-decode callbacks.
+   * Assumes dispose/startOffset/onTimeUpdate have already been handled by
+   * the caller (loadFile or loadDecodedBuffer).
+   *
+   * Order is load-bearing — detect LTC channel → set ltc/music indices →
+   * extract waveform → build timecode lookup — must match the original
+   * loadFile tail bit-for-bit.
+   */
+  private _applyDecodedBuffer(buffer: AudioBuffer): void {
+    this.buffer = buffer
 
     // Auto-detect LTC channel
     const detection = detectLtcChannel(this.buffer)
@@ -408,6 +528,9 @@ export class AudioEngine {
     this._stopPlayback()
     await this._closeLtcCtx()
     this.buffer = null
+    // Drop any cached prebuffer so it can't outlive the engine session
+    this.prebufferedBuffer = null
+    this.prebufferedToken = null
   }
 
   /**

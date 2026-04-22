@@ -2,6 +2,33 @@
 
 All notable changes to LTCast are documented here. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] — 2026-04-22
+
+Live-show operator polish. Four features, all addressing pain points that surfaced after v0.5.1 shipped and the app hit real shows. No breaking changes; no architecture shifts.
+
+### Added
+
+- **Pre-buffer next song (F1).** Setting a setlist item to standby now decodes that file in the background so that pressing Space / GO to fire the transition completes in under 100 ms instead of re-reading disk + running `decodeAudioData` on the hot path (previously froze the UI for 1–2 seconds on 50 MB+ WAVs). Falls back cleanly to the existing openFile path when prebuffer is missing, still in-flight, or fails. Token-based identity so a cancelled standby can't bleed into a later GO. One-slot cache — never pre-decodes the entire setlist.
+- **Offset scroll-wheel fine-tune (F2).** Mouse wheel over the giant TC digits or the Offset input nudges `offsetFrames` by ±1 per detent; Shift+wheel = ±10. Trackpad rate-limited (40-pixel accumulator) so a fast swipe moves at most 10 frames, not 100. UI-Lock guard; double-click-to-edit still works; Waveform wheel zoom unaffected.
+- **Independent Show Timer (F4).** New right-panel tab. Create named countdowns ("Doors", "Intermission", "Lockout" — user-defined) that run wall-clock-accurate (`Date.now()` arithmetic, survives app backgrounding and JS throttling) and are completely independent of audio playback. Persist across restart via Zustand storage. Row flashes red for 5 seconds on reaching zero. OSC broadcast deferred to a later release.
+- **Setlist long-press drag (F6).** Reordering songs now requires a 300 ms hold before drag initiates. A nervous operator can no longer accidentally reorder the show by grazing a setlist item mid-cue. Visual "drag armed" affordance (subtle lift + grab cursor) confirms the gesture. Click-to-standby and double-click-to-load behaviour unchanged; UI Lock still blocks drag entirely.
+
+### Changed
+
+- `CLAUDE.md` workflow documentation refreshed — updated directory map, added collaboration-tips section.
+
+### Tests
+
+- +28 `showTimer.test.ts` — pure helpers: `msToMmSs`, `computeRemaining`, completion detection, clamp.
+- +15 `prebuffer.test.ts` — `prebufferFile` / `consumePrebuffered` / `clearPrebuffered` + `loadDecodedBuffer` refactor parity.
+- Suite total: **314 passing** (was 271 on v0.5.1).
+
+### Not in this release (deferred to v0.5.3 / v0.6.0)
+
+- F3 — OSC feedback / TC sync monitoring (main-process work, OSC listener)
+- F5 — Stage Display fullscreen upgrade (extends TimecodeDisplay in fullscreen mode)
+- F7 — any field-surfaced bugs from v0.5.1 / v0.5.2 usage
+
 ## [0.5.1] — 2026-04-17
 
 Patch release. Two user-reported bugs against 0.5.0.

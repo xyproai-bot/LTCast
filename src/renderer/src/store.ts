@@ -84,9 +84,28 @@ export interface WaveformMarker {
   type?: MarkerType  // section type (undefined = 'custom' for backward compat)
 }
 
+// F4 — Independent Show Timer (v0.5.2)
+// A standalone countdown timer, independent of audio playback. Multiple
+// timers can coexist in `AppState.showTimers`. Wall-clock arithmetic
+// (`startedAt = Date.now()` + clamp) keeps remaining accurate across tab
+// throttling / sleep. See `utils/showTimer.ts` for the pure math.
+export interface ShowTimer {
+  id: string
+  name: string
+  durationMs: number
+  running: boolean
+  /** `Date.now()` snapshot when `running = true`; null otherwise. */
+  startedAt: number | null
+  /** Frozen remaining snapshot used while stopped and for persisted restore. */
+  remainingMsAtStop: number
+}
+
+let _showTimerIdCounter = Date.now()
+export function nextShowTimerId(): string { return `st-${++_showTimerIdCounter}` }
+
 export interface PresetData {
   lang: 'en' | 'zh' | 'ja'
-  rightTab: 'devices' | 'setlist' | 'cues' | 'structure' | 'calc' | 'log'
+  rightTab: 'devices' | 'setlist' | 'cues' | 'structure' | 'calc' | 'log' | 'timer'
   offsetFrames: number
   loop: boolean
   loopA?: number | null
@@ -325,6 +344,10 @@ export interface AppState {
   setlist: SetlistItem[]
   activeSetlistIndex: number | null
   standbySetlistIndex: number | null  // cued but not yet loaded (Standby/GO workflow)
+  // Index currently being pre-buffered in the background (null = idle).
+  // Transient — not persisted, does not mark preset dirty. UI may render
+  // a spinner in the future; for v0.5.2 no renderer consumes this field.
+  prebufferingIndex: number | null
   previousSetlist: { setlist: SetlistItem[]; activeIndex: number | null } | null
   autoAdvance: boolean
   autoAdvanceGap: number  // seconds, 0–30
@@ -344,8 +367,14 @@ export interface AppState {
   // Waveform zoom memory (per-file pxPerSec)
   waveformZoom: Record<string, number>
 
+  // F4 — Independent Show Timer (v0.5.2)
+  // Standalone countdown timers; independent of audio playback. Persisted via
+  // Zustand (partialize). On rehydrate we force `running = false` so a timer
+  // that was ticking at quit comes back stopped at its last-known remaining.
+  showTimers: ShowTimer[]
+
   // UI
-  rightTab: 'devices' | 'setlist' | 'cues' | 'structure' | 'calc' | 'log'
+  rightTab: 'devices' | 'setlist' | 'cues' | 'structure' | 'calc' | 'log' | 'timer'
   lang: 'en' | 'zh' | 'ja'
   showLocked: boolean   // UI lock mode — prevents accidental changes during live shows
   ultraDark: boolean    // Ultra-dark high-contrast mode for dim environments
@@ -412,6 +441,7 @@ export interface AppState {
   removeFromSetlist: (index: number) => void
   setActiveSetlistIndex: (index: number | null) => void
   setStandbySetlistIndex: (index: number | null) => void
+  setPrebufferingIndex: (index: number | null) => void
   reorderSetlist: (from: number, to: number) => void
   clearSetlist: () => void
   undoClearSetlist: () => void
@@ -420,7 +450,16 @@ export interface AppState {
   setSetlistItemOffset: (index: number, offsetFrames: number | undefined) => void
   setSetlistItemNotes: (index: number, notes: string | undefined) => void
   setSetlistItemMidiCues: (index: number, cues: MidiCuePoint[]) => void
-  setRightTab: (tab: 'devices' | 'setlist' | 'cues' | 'structure' | 'calc' | 'log') => void
+  setRightTab: (tab: 'devices' | 'setlist' | 'cues' | 'structure' | 'calc' | 'log' | 'timer') => void
+  // F4 Show Timer actions
+  addShowTimer: (name: string, durationMs: number) => void
+  removeShowTimer: (id: string) => void
+  startShowTimer: (id: string) => void
+  stopShowTimer: (id: string) => void
+  resetShowTimer: (id: string) => void
+  renameShowTimer: (id: string, name: string) => void
+  setShowTimerDuration: (id: string, durationMs: number) => void
+  markShowTimerCompleted: (id: string) => void
   setLang: (lang: 'en' | 'zh' | 'ja') => void
   setShowLocked: (locked: boolean) => void
   setUltraDark: (dark: boolean) => void
@@ -528,6 +567,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   setlist: [],
   activeSetlistIndex: null,
   standbySetlistIndex: null,
+  prebufferingIndex: null,
   previousSetlist: null,
   autoAdvance: false,
   autoAdvanceGap: 2,
@@ -540,6 +580,8 @@ export const useStore = create<AppState>()(persist((set) => ({
   markers: {},
   markerUndoStack: [],
   waveformZoom: {},
+  // F4 — Independent Show Timer. Default empty per Q-A.
+  showTimers: [],
   showLocked: false,
   ultraDark: false,
 
@@ -655,6 +697,10 @@ export const useStore = create<AppState>()(persist((set) => ({
   }),
   setActiveSetlistIndex: (activeSetlistIndex) => set({ activeSetlistIndex }),
   setStandbySetlistIndex: (standbySetlistIndex) => set({ standbySetlistIndex }),
+  // Transient UI feedback for the prebuffer subscriber. Not persisted and
+  // does not mark the preset dirty (per Q4 decision — field exists for a
+  // future UI sprint; v0.5.2 has no renderer reading it).
+  setPrebufferingIndex: (prebufferingIndex) => set({ prebufferingIndex }),
   reorderSetlist: (from, to) => set((s) => {
     if (from < 0 || from >= s.setlist.length || to < 0 || to >= s.setlist.length) return s
     if (from === to) return s
@@ -768,6 +814,84 @@ export const useStore = create<AppState>()(persist((set) => ({
     return { setlist, presetDirty: true }
   }),
   setRightTab: (rightTab) => set({ rightTab }),
+
+  // ── F4 Show Timer actions ──────────────────────────────────────────
+  // Timers are per-install (Zustand persist only, NOT in .ltcast preset per
+  // Q-E), so none of these mark presetDirty.
+  addShowTimer: (name, durationMs) => set((s) => {
+    const trimmed = name.trim() || 'Timer'
+    const safeDuration = Math.max(1000, Math.floor(durationMs))
+    const newTimer: ShowTimer = {
+      id: nextShowTimerId(),
+      name: trimmed,
+      durationMs: safeDuration,
+      running: false,
+      startedAt: null,
+      remainingMsAtStop: safeDuration,
+    }
+    return { showTimers: [...s.showTimers, newTimer] }
+  }),
+  removeShowTimer: (id) => set((s) => ({
+    showTimers: s.showTimers.filter(t => t.id !== id),
+  })),
+  startShowTimer: (id) => set((s) => ({
+    showTimers: s.showTimers.map(t => {
+      if (t.id !== id) return t
+      // Resume from the last-known remaining; startedAt anchors wall-clock.
+      const remaining = t.remainingMsAtStop > 0 ? t.remainingMsAtStop : t.durationMs
+      return {
+        ...t,
+        running: true,
+        // Pretend startedAt = now - (durationMs - remaining) so the running-time
+        // math (durationMs - (now - startedAt)) yields `remaining` right now.
+        startedAt: Date.now() - (t.durationMs - remaining),
+        remainingMsAtStop: remaining,
+      }
+    }),
+  })),
+  stopShowTimer: (id) => set((s) => ({
+    showTimers: s.showTimers.map(t => {
+      if (t.id !== id || !t.running || t.startedAt === null) return t
+      const elapsed = Date.now() - t.startedAt
+      const remaining = Math.max(0, Math.min(t.durationMs, t.durationMs - elapsed))
+      return { ...t, running: false, startedAt: null, remainingMsAtStop: remaining }
+    }),
+  })),
+  resetShowTimer: (id) => set((s) => ({
+    showTimers: s.showTimers.map(t =>
+      t.id === id
+        ? { ...t, running: false, startedAt: null, remainingMsAtStop: t.durationMs }
+        : t
+    ),
+  })),
+  renameShowTimer: (id, name) => set((s) => ({
+    showTimers: s.showTimers.map(t =>
+      t.id === id ? { ...t, name: name.trim() || t.name } : t
+    ),
+  })),
+  setShowTimerDuration: (id, durationMs) => set((s) => ({
+    showTimers: s.showTimers.map(t => {
+      if (t.id !== id) return t
+      const safe = Math.max(1000, Math.floor(durationMs))
+      return {
+        ...t,
+        durationMs: safe,
+        // If idle (not running), snap remaining to the new duration.
+        remainingMsAtStop: t.running ? t.remainingMsAtStop : safe,
+      }
+    }),
+  })),
+  // Called by the panel when wall-clock shows the timer has crossed zero
+  // while running. Flips `running` off and pins remaining to 0 so the
+  // next render stops ticking (AC-6).
+  markShowTimerCompleted: (id) => set((s) => ({
+    showTimers: s.showTimers.map(t =>
+      t.id === id && t.running
+        ? { ...t, running: false, startedAt: null, remainingMsAtStop: 0 }
+        : t
+    ),
+  })),
+
   setLang: (lang) => set({ lang, presetDirty: true }),
   setShowLocked: (showLocked) => set({ showLocked, presetDirty: true }),
   setUltraDark: (ultraDark) => set({ ultraDark }),
@@ -1155,6 +1279,10 @@ export const useStore = create<AppState>()(persist((set) => ({
     midiClockManualBpm: state.midiClockManualBpm,
     markers: state.markers,
     waveformZoom: state.waveformZoom,
+    // F4 — Show Timer: per-install, not per-preset (Q-E). On rehydrate we
+    // force running=false in merge() so a ticking timer at quit comes back
+    // stopped at its last snapshot (AC-8).
+    showTimers: state.showTimers,
     showLocked: state.showLocked,
     ultraDark: state.ultraDark,
     presetPath: state.presetPath,
@@ -1186,6 +1314,33 @@ export const useStore = create<AppState>()(persist((set) => ({
     merged.setlist = merged.setlist.map((item: SetlistItem) =>
       item.id ? item : { ...item, id: nextSetlistId() }
     )
+    // F4 — rehydrate Show Timers as stopped (AC-8). Guard against corrupted
+    // storage: anything non-array or missing required fields becomes [].
+    if (!Array.isArray(merged.showTimers)) {
+      merged.showTimers = []
+    } else {
+      merged.showTimers = merged.showTimers
+        .filter((t: unknown): t is ShowTimer =>
+          !!t && typeof t === 'object' &&
+          typeof (t as ShowTimer).id === 'string' &&
+          typeof (t as ShowTimer).name === 'string' &&
+          typeof (t as ShowTimer).durationMs === 'number' &&
+          isFinite((t as ShowTimer).durationMs) &&
+          (t as ShowTimer).durationMs > 0
+        )
+        .map((t: ShowTimer) => ({
+          id: t.id,
+          name: t.name,
+          durationMs: t.durationMs,
+          // Force-stop on rehydrate — clock rollback / sleep / hibernate all
+          // break naive resume (see AC-8 in sprint-contract-F4.md).
+          running: false,
+          startedAt: null,
+          remainingMsAtStop: typeof t.remainingMsAtStop === 'number' && isFinite(t.remainingMsAtStop)
+            ? Math.max(0, Math.min(t.durationMs, t.remainingMsAtStop))
+            : t.durationMs,
+        }))
+    }
     return merged as AppState
   },
 }))

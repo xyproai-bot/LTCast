@@ -6,6 +6,10 @@ import { toast } from './Toast'
 import { buildCueSheetHtml } from '../utils/exportCueSheet'
 import { Tooltip } from './Tooltip'
 
+// F6: Long-press threshold before a setlist row becomes draggable.
+// Below this, mousedown+mouseup is treated as a normal click (standby toggle).
+const LONG_PRESS_MS = 300
+
 interface Props {
   onLoadFile: (path: string, offsetFrames?: number) => void
   onImportFiles?: () => void
@@ -32,11 +36,18 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
   const [editingOffsetStr, setEditingOffsetStr] = useState('')
   const [editingNotesIdx, setEditingNotesIdx] = useState<number | null>(null)
   const [editingNotesStr, setEditingNotesStr] = useState('')
+  // F6: which row (if any) has passed the LONG_PRESS_MS threshold and is now draggable.
+  const [armedIdx, setArmedIdx] = useState<number | null>(null)
   const offsetInputRef = useRef<HTMLInputElement>(null)
   const notesInputRef = useRef<HTMLInputElement>(null)
   const sortRef = useRef<HTMLDivElement>(null)
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // F6: pending long-press timer handle; set on mousedown, cleared on mouseup/mouseleave/unmount.
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // F6: when true, the next synthetic click event is swallowed (Q2: armed release does not
+  // re-fire the standby toggle).
+  const suppressNextClickRef = useRef(false)
 
   // Auto-focus offset input when it appears
   useEffect(() => {
@@ -53,11 +64,12 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     }
   }, [editingNotesIdx])
 
-  // Clear hold timer/interval on unmount
+  // Clear hold timer/interval on unmount (also F6 long-press timer)
   useEffect(() => {
     return () => {
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current)
       if (holdIntervalRef.current) clearInterval(holdIntervalRef.current)
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
     }
   }, [])
 
@@ -286,7 +298,50 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     }
     dragIdx.current = null
     dragOverIdx.current = null
+    // F6: clear armed visual once the drag gesture ends (success, cancel, or drop off-target).
+    setArmedIdx(null)
+    // Clean up any still-pending long-press timer (belt-and-braces; should already be cleared
+    // because dragstart only fires after we armed the row).
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
   }, [reorderSetlist])
+
+  // F6: long-press gate. We keep the HTML5 drag-and-drop flow intact; `draggable` is only
+  // true once the user has held the row for LONG_PRESS_MS. Mousedown starts the timer;
+  // mouseup/mouseleave clears it. If the timer fires, the row arms and the next click on
+  // the same row is suppressed (Q2).
+  const handleItemMouseDown = useCallback((_e: React.MouseEvent, index: number): void => {
+    // If a previous gesture left a pending timer, clear it first.
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null
+      suppressNextClickRef.current = true
+      setArmedIdx(index)
+    }, LONG_PRESS_MS)
+  }, [])
+
+  const handleItemMouseUp = useCallback((_e: React.MouseEvent, _index: number): void => {
+    // Release before threshold → cancel timer, let the native click fire normally.
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+    // If the row was already armed but the user released without dragging, clear the
+    // armed visual. `suppressNextClickRef` is already true from the timer callback, so
+    // the trailing React click event will be swallowed (Q2).
+    if (armedIdx !== null) setArmedIdx(null)
+  }, [armedIdx])
+
+  const handleItemMouseLeave = useCallback((): void => {
+    // Leaving the row mid-gesture cancels the long-press. Also clears armed visual if set.
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+    if (armedIdx !== null) setArmedIdx(null)
+  }, [armedIdx])
 
   const handleSort = useCallback((mode: SortMode): void => {
     sortSetlist(mode)
@@ -514,12 +569,22 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
               return (
                 <div key={item.id} className="setlist-item-wrap">
                   <div
-                    className={`setlist-item${i === activeSetlistIndex ? ' active' : ''}${i === standbySetlistIndex ? ' standby' : ''}${isMissing ? ' missing' : ''}${isEditingOffset ? ' offset-open' : ''}`}
-                    draggable={!isEditingOffset}
+                    className={`setlist-item${i === activeSetlistIndex ? ' active' : ''}${i === standbySetlistIndex ? ' standby' : ''}${isMissing ? ' missing' : ''}${isEditingOffset ? ' offset-open' : ''}${armedIdx === i ? ' drag-armed' : ''}`}
+                    draggable={armedIdx === i && !isEditingOffset}
                     onDragStart={(e) => handleDragStart(e, i)}
                     onDragOver={(e) => handleDragOver(e, i)}
                     onDragEnd={handleDragEnd}
-                    onClick={() => handleItemClick(i)}
+                    onMouseDown={(e) => handleItemMouseDown(e, i)}
+                    onMouseUp={(e) => handleItemMouseUp(e, i)}
+                    onMouseLeave={handleItemMouseLeave}
+                    onClick={() => {
+                      // F6: swallow the click that trails a long-press gesture (Q2).
+                      if (suppressNextClickRef.current) {
+                        suppressNextClickRef.current = false
+                        return
+                      }
+                      handleItemClick(i)
+                    }}
                     onDoubleClick={() => handleItemDoubleClick(i)}
                     title={isMissing ? t(lang, 'fileMissing') : item.name}
                   >
@@ -547,12 +612,14 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                     <Tooltip text={t(lang, 'songOffset')}>
                       <button
                         className={`setlist-offset-btn${isEditingOffset ? ' active' : ''}`}
+                        onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => handleToggleOffsetEdit(e, i)}
                       >⊕</button>
                     </Tooltip>
                     <Tooltip text={t(lang, 'songNotes')}>
                       <button
                         className={`setlist-offset-btn${editingNotesIdx === i ? ' active' : ''}`}
+                        onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation()
                           if (editingNotesIdx === i) {
@@ -568,6 +635,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                     <Tooltip text={t(lang, 'remove')}>
                       <button
                         className="setlist-remove"
+                        onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => { e.stopPropagation(); removeFromSetlist(i) }}
                       >✕</button>
                     </Tooltip>

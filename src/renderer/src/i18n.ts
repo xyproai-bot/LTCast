@@ -273,7 +273,24 @@ export const strings = {
     checkFilesMissing: 'files missing',
     showLogTitle: 'Show Log',
     showLogEmpty: 'No events yet. Play something!',
-    tabLog: 'Log'
+    tabLog: 'Log',
+    // F4 — Independent Show Timer
+    tabTimer: 'Timer',
+    showTimerTitle: 'Show Timer',
+    showTimerEmpty: 'No timers yet — add one above (e.g. Doors, Intermission, Lockout)',
+    showTimerAdd: 'Add',
+    showTimerStart: 'Start',
+    showTimerStop: 'Stop',
+    showTimerReset: 'Reset',
+    showTimerRemove: 'Remove',
+    showTimerName: 'Name',
+    showTimerDuration: 'Duration',
+    showTimerNamePlaceholder: 'Name (e.g. Doors)',
+    showTimerDurationPlaceholder: 'mm:ss or minutes',
+    showTimerDefaultName: 'Timer',
+    showTimerDurationError: 'Enter mm:ss or minutes (e.g. 15 or 15:00)',
+    showTimerRename: 'Double-click to rename',
+    showTimerEditDuration: 'Double-click to edit duration'
   },
   zh: {
     appTitle: 'LTCast',
@@ -546,7 +563,24 @@ export const strings = {
     checkFilesMissing: '個檔案遺失',
     showLogTitle: '演出記錄',
     showLogEmpty: '尚無事件。開始播放吧！',
-    tabLog: '記錄'
+    tabLog: '記錄',
+    // F4 — 獨立演出計時器
+    tabTimer: '計時器',
+    showTimerTitle: '演出計時器',
+    showTimerEmpty: '尚無計時器 — 在上方新增（例如：開場、中場、清場）',
+    showTimerAdd: '新增',
+    showTimerStart: '開始',
+    showTimerStop: '停止',
+    showTimerReset: '重設',
+    showTimerRemove: '移除',
+    showTimerName: '名稱',
+    showTimerDuration: '時長',
+    showTimerNamePlaceholder: '名稱（例如：開場）',
+    showTimerDurationPlaceholder: 'mm:ss 或分鐘',
+    showTimerDefaultName: '計時器',
+    showTimerDurationError: '請輸入 mm:ss 或分鐘（例：15 或 15:00）',
+    showTimerRename: '雙擊重新命名',
+    showTimerEditDuration: '雙擊編輯時長'
   },
   ja: {
     appTitle: 'LTCast',
@@ -819,7 +853,24 @@ export const strings = {
     checkFilesMissing: 'ファイル不明',
     showLogTitle: 'ショーログ',
     showLogEmpty: 'まだイベントがありません。再生してみましょう！',
-    tabLog: 'ログ'
+    tabLog: 'ログ',
+    // F4 — 独立ショータイマー
+    tabTimer: 'タイマー',
+    showTimerTitle: 'ショータイマー',
+    showTimerEmpty: 'タイマーなし — 上で追加（例：開場・休憩・撤収）',
+    showTimerAdd: '追加',
+    showTimerStart: '開始',
+    showTimerStop: '停止',
+    showTimerReset: 'リセット',
+    showTimerRemove: '削除',
+    showTimerName: '名前',
+    showTimerDuration: '時間',
+    showTimerNamePlaceholder: '名前（例：開場）',
+    showTimerDurationPlaceholder: 'mm:ss または分',
+    showTimerDefaultName: 'タイマー',
+    showTimerDurationError: 'mm:ss または分で入力（例：15 または 15:00）',
+    showTimerRename: 'ダブルクリックで名前変更',
+    showTimerEditDuration: 'ダブルクリックで時間を編集'
   }
 }
 

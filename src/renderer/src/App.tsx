@@ -13,6 +13,7 @@ import { MidiCuePanel } from './components/MidiCuePanel'
 import { StructurePanel } from './components/StructurePanel'
 import { TcCalcPanel } from './components/TcCalcPanel'
 import { ShowLogPanel } from './components/ShowLogPanel'
+import { ShowTimerPanel } from './components/ShowTimerPanel'
 import { PresetBar } from './components/PresetBar'
 import { TapBpm } from './components/TapBpm'
 import { StatusBar } from './components/StatusBar'
@@ -67,6 +68,22 @@ export default function App(): React.JSX.Element {
   const midiActivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [lastFiredCueId, setLastFiredCueId] = useState<string | null>(null)
   const cueFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Pre-buffer state (F1). Tracks the currently in-flight / completed
+  // prebuffer so openFile() can grab it when the user finally fires Space.
+  // - token: identity for the AudioEngine slot (engine.consumePrebuffered)
+  // - index: setlist index the prebuffer was started for (used by the
+  //   standby subscriber's before-change cleanup)
+  // - path: the setlist item's file path at start time — openFile() matches
+  //   against this to decide whether to use the fast path
+  // - abort: best-effort cancellation flag; decodeAudioData cannot truly
+  //   be cancelled mid-flight, so this just marks the result as unwanted
+  const prebufferStateRef = useRef<{
+    token: symbol
+    index: number
+    path: string
+    abort: AbortController
+  } | null>(null)
 
   // Cancel any pending auto-advance countdown
   const cancelAutoAdvance = useCallback((): void => {
@@ -686,6 +703,84 @@ export default function App(): React.JSX.Element {
     return unsub
   }, [])
 
+  // Pre-buffer next song (F1). When the operator cues a song to standby,
+  // decode it on a scratch AudioContext ahead of time so Space/GO becomes
+  // effectively instant (no multi-second read+decode on large WAVs).
+  //
+  // Policy:
+  //   - standby cleared → cancel any in-flight prebuffer, clear state
+  //   - standby changed → cancel previous, start new
+  //   - new standby == active index AND path matches currently-loaded file:
+  //     skip (Q3 decision — song is already the one playing/loaded)
+  //   - decode rejection → silent failure, state cleared (Q2 decision)
+  //   - no debounce (Q1 decision — wasted decode on a racy click is cheap)
+  useEffect(() => {
+    const unsub = useStore.subscribe((s, prev) => {
+      if (s.standbySetlistIndex === prev.standbySetlistIndex) return
+
+      const nextIdx = s.standbySetlistIndex
+      const engineRef = engine.current
+
+      // Cancel any previous in-flight prebuffer first — unconditional.
+      const old = prebufferStateRef.current
+      if (old) {
+        old.abort.abort()
+        // The engine's token-identity check will drop the eventual decode
+        // if it was in flight, but we also explicitly clear the slot to
+        // reclaim memory the moment the token changes.
+        engineRef?.clearPrebuffered(old.token)
+        prebufferStateRef.current = null
+      }
+
+      // Standby cleared — done, just make sure UI-level state is idle.
+      if (nextIdx === null || !engineRef) {
+        if (s.prebufferingIndex !== null) s.setPrebufferingIndex(null)
+        return
+      }
+
+      const item = s.setlist[nextIdx]
+      if (!item) {
+        if (s.prebufferingIndex !== null) s.setPrebufferingIndex(null)
+        return
+      }
+
+      // Q3 short-circuit: standby is the currently-active song and its
+      // filePath matches what's loaded. Prebuffering would do nothing
+      // useful — the engine already has this buffer resident.
+      if (nextIdx === s.activeSetlistIndex && item.path === s.filePath) {
+        if (s.prebufferingIndex !== null) s.setPrebufferingIndex(null)
+        return
+      }
+
+      const token = Symbol('prebuffer')
+      const abort = new AbortController()
+      prebufferStateRef.current = { token, index: nextIdx, path: item.path, abort }
+      s.setPrebufferingIndex(nextIdx)
+
+      // Kick off the async read + decode. We deliberately do NOT await —
+      // the subscriber must return synchronously so the next standby
+      // change can cancel us cleanly.
+      ;(async (): Promise<void> => {
+        try {
+          const arrayBuffer = await window.api.readAudioFile(item.path)
+          if (abort.signal.aborted) return
+          if (!arrayBuffer) return
+          await engineRef.prebufferFile(arrayBuffer, token)
+        } catch {
+          // Silent failure per Q2 — user will hit fallback openFile path.
+        } finally {
+          // Only clear UI state if we're still the active prebuffer job.
+          // A newer job may have taken over (prebufferStateRef rotated).
+          if (prebufferStateRef.current?.token === token) {
+            useStore.getState().setPrebufferingIndex(null)
+          }
+        }
+      })()
+    })
+    return unsub
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -719,9 +814,16 @@ export default function App(): React.JSX.Element {
           const idx = state.standbySetlistIndex
           const item = state.setlist[idx]
           if (item) {
-            state.setStandbySetlistIndex(null)
+            // Order matters for the prebuffer fast path: openFile() reads
+            // prebufferStateRef to decide whether to consume the cached
+            // decode. If we cleared standby first, the subscriber would
+            // fire synchronously and wipe the ref — killing the fast path.
+            // We clear standby AFTER openFile has consumed (or declined to
+            // consume) the prebuffered buffer.
             state.setActiveSetlistIndex(idx)
             openFile(item.path, item.offsetFrames).then(() => {
+              // Clear standby now that the song is loaded (or failed).
+              useStore.getState().setStandbySetlistIndex(null)
               const s = useStore.getState()
               if (s.duration > 0) {
                 s.setPlayState('playing')
@@ -991,10 +1093,48 @@ export default function App(): React.JSX.Element {
     setAudioLoading(true, name)
     showLog.log('file', `Loading: ${name}`)
 
+    // Pre-buffer fast path (F1): if the file we're about to load matches the
+    // song we prebuffered for, skip the read+decode pipeline and hand the
+    // already-decoded buffer straight to the engine.
+    //
+    // "Match" requires both:
+    //   1. path identity — same file on disk as the prebuffer was started for
+    //   2. token identity — engine's prebufferedToken still equals ours (the
+    //      engine short-circuits if it was overwritten by a newer prebuffer)
+    //
+    // If either condition fails (decode still in flight, file changed, token
+    // stale) consumePrebuffered returns null and we drop through to the
+    // standard read-and-decode path. No double-load, no audio gap.
+    let decodedBuffer: AudioBuffer | null = null
+    const prebufState = prebufferStateRef.current
+    if (prebufState && prebufState.path === filePath_ && engine.current) {
+      decodedBuffer = engine.current.consumePrebuffered(prebufState.token)
+      if (!decodedBuffer) {
+        // Mid-decode GO — the in-flight prebuffer's promise hasn't resolved
+        // yet. Abort the signal, invalidate the engine token so the eventual
+        // decode result self-destructs instead of sticking in the slot, and
+        // let the fallback path run.
+        prebufState.abort.abort()
+        engine.current.clearPrebuffered(prebufState.token)
+      }
+      // Whether consume succeeded or not, this slot is now "spent" — clear
+      // the ref so a subsequent openFile doesn't try to reuse it.
+      prebufferStateRef.current = null
+      useStore.getState().setPrebufferingIndex(null)
+    }
+
     try {
-      const arrayBuffer = await window.api.readAudioFile(filePath_)
-      if (!arrayBuffer) throw new Error('Empty file')
-      await engine.current?.loadFile(arrayBuffer)
+      if (decodedBuffer) {
+        // Fast path: engine already has the decoded buffer. loadDecodedBuffer
+        // runs the same dispose → set buffer → detect → waveform → lookup
+        // pipeline as loadFile minus the read+decode that normally costs
+        // 1–2s on large WAVs.
+        await engine.current?.loadDecodedBuffer(decodedBuffer)
+      } else {
+        const arrayBuffer = await window.api.readAudioFile(filePath_)
+        if (!arrayBuffer) throw new Error('Empty file')
+        await engine.current?.loadFile(arrayBuffer)
+      }
 
       // Reset BPM on new file load (real-time detection happens during playback)
       setDetectedBpm(null)
@@ -1525,6 +1665,10 @@ export default function App(): React.JSX.Element {
               className={`right-tab-btn${rightTab === 'log' ? ' active' : ''}`}
               onClick={() => useStore.getState().setRightTab('log')}
             >{t(lang, 'tabLog')}</button>
+            <button
+              className={`right-tab-btn${rightTab === 'timer' ? ' active' : ''}`}
+              onClick={() => useStore.getState().setRightTab('timer')}
+            >{t(lang, 'tabTimer')}</button>
           </div>
 
           {rightTab === 'devices' && (
@@ -1559,6 +1703,8 @@ export default function App(): React.JSX.Element {
           {rightTab === 'calc' && <TcCalcPanel />}
 
           {rightTab === 'log' && <ShowLogPanel />}
+
+          {rightTab === 'timer' && <ShowTimerPanel />}
         </div>
       </div>
 

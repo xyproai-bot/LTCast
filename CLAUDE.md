@@ -13,27 +13,49 @@ LTCast 是 Electron + React + TypeScript 的 LTC timecode player。
 
 ```
 src/
-  main/index.ts              ← Electron 主程序（IPC、FFmpeg、Art-Net UDP socket）
-  preload/index.ts            ← Context bridge（window.api.*）
+  main/index.ts              ← Electron 主程序（IPC、FFmpeg、Art-Net/OSC UDP socket）
+  preload/index.ts           ← Context bridge（window.api.*）
   renderer/src/
     audio/
-      AudioEngine.ts          ← 雙 AudioContext 架構（music + LTC）
-      LtcDecoder.ts           ← LTC 解碼
+      AudioEngine.ts          ← 雙 AudioContext 架構（music + LTC），含 F1 prebuffer
+      LtcDecoder.ts           ← LTC 解碼（外部訊號 → timecode）
       LtcDetector.ts          ← LTC 通道自動偵測
       ltcProcessor.js         ← AudioWorklet：LTC 解碼
-      ltcEncoderProcessor.js  ← AudioWorklet：LTC 編碼輸出
-      MtcOutput.ts            ← MTC MIDI 輸出
-      ArtNetOutput.ts         ← Art-Net UDP 輸出
-      timecodeConvert.ts      ← SMPTE timecode ↔ frame 換算（drop-frame 29.97 / NDF 25,30）
+      ltcEncoderProcessor.js  ← AudioWorklet：即時 LTC 音訊輸出
+      ltcWavGenerator.ts      ← 離線 LTC WAV 匯出（main thread，不用 worklet）
+      MtcOutput.ts            ← MTC 輸出（quarter-frame + full-frame SysEx + MIDI Clock）
+      ArtNetOutput.ts         ← Art-Net UDP 輸出（OpTimeCode packet）
+      OscOutput.ts            ← OSC/UDP 輸出（generic / Resolume / disguise / Watchout templates）
+      MidiInput.ts            ← MIDI 輸入（外部遙控 play/pause/next/prev/goto + learn）
+      timecodeConvert.ts      ← SMPTE timecode ↔ frame 換算（drop-frame 29.97 / NDF 25/30）
       AudioAligner.ts         ← 音訊/LTC 時間對齊
       BpmDetector.ts          ← BPM 偵測
       __tests__/
-        timecodeConvert.test.ts ← 81 個 unit tests（Vitest）
+        timecodeConvert.test.ts ← 核心 TC 轉換（drop-frame / NDF round-trip）
+        midiClock.test.ts       ← MIDI Clock output
+        mtcRateCode.test.ts     ← MTC fps rate code
+        prebuffer.test.ts       ← F1 pre-buffer 機制
     components/
-      Waveform.tsx, Transport.tsx, TimecodeDisplay.tsx,
-      DevicePanel.tsx, SetlistPanel.tsx, StatusBar.tsx,
-      PresetBar.tsx, TapBpm.tsx, Toast.tsx, ErrorBoundary.tsx
-    store.ts                  ← Zustand store（PlayState、設備、preset、setlist）
+      # 播放主介面
+      Transport.tsx, Waveform.tsx, TimecodeDisplay.tsx
+      # 設備、狀態、歌單、preset
+      DevicePanel.tsx, StatusBar.tsx, SetlistPanel.tsx, PresetBar.tsx
+      # 歌曲結構與 BPM
+      StructurePanel.tsx, TapBpm.tsx
+      # MIDI cue list（Pro 功能）
+      MidiCuePanel.tsx
+      # 演出前檢查 / 事件 log
+      PreShowCheck.tsx, ShowLogPanel.tsx
+      # 工具
+      TcCalcPanel.tsx, LtcWavExportDialog.tsx
+      # License / Pro gate
+      LicenseDialog.tsx, ProGate.tsx
+      # 共用 UI
+      Toast.tsx, Tooltip.tsx, ErrorBoundary.tsx
+    utils/
+      showLog.ts              ← 演出事件 log（pub/sub，給 ShowLogPanel）
+      exportCueSheet.ts       ← 匯出 cue sheet
+    store.ts                  ← Zustand store（PlayState、設備、preset、setlist、license、MIDI cue、marker）
     App.tsx, main.tsx, i18n.ts, constants.ts, globals.css
 ```
 
@@ -46,6 +68,27 @@ npx vitest run               # 跑全部測試
 npx vitest run --reporter=verbose  # 詳細測試輸出
 npm run package:win          # Windows NSIS installer
 ```
+
+---
+
+## 跟 Claude 協作原則
+
+這一節是**給主人的提醒**（不是給 Claude 的規則），是減少走彎路的溝通習慣。
+
+1. **先講「為什麼」，再講「做什麼」**
+   目標決定做法 —「我要效能」和「我要歸檔」會走到不同結論。動機放在最前面，Claude 就不用反問。
+
+2. **一開口就標禁區**
+   Claude 預設「要動就動」。進行中的檔案、不能碰的功能、正在測試的分支，最前面講。進行中的 sprint 看 `.claude/sprint-contract.md` 是否存在。
+
+3. **狀態快照勝過情境描述**
+   大改動前給一句「X 做一半、Y 剛完成、Z 是下一步」，比 Claude 自己 grep + git log 快 10 倍，也不會漏。
+
+4. **反饋帶「因為」**
+   「不是這個方向，因為 A 要優先於 B」比「不對」有用。Claude 有決策框架，下一題才不會再錯。
+
+5. **超過 ~30 輪對話就重啟**
+   Claude 的 context 被壓縮後細節會失準。叫 Claude 先「總結現況」再開新對話，比硬撐乾淨。
 
 ---
 
@@ -312,9 +355,15 @@ Claude 執行：
 
 ### Sprint 產出檔案
 
-所有 sprint 文件放在 `.claude/` 目錄：
+**進行中的 sprint** 放在 `.claude/` 根目錄：
 - `.claude/sprint-contract.md` — Planner 輸出
 - `.claude/generator-report.md` — Generator 輸出
 - `.claude/evaluator-report.md` — Evaluator 輸出
 
-每次新 sprint 會覆蓋這些檔案。如需保留歷史，主人可以手動備份。
+**完成的 sprint（Evaluator 判定 PASS 之後）** 歸檔到 `.claude/sprints/<slug>/`：
+- `slug` 用 kebab-case + 簡短描述，例如 `midi-clock-companion`、`f1-prebuffer`
+- Evaluator 出 PASS 判定後，Claude 主動把三個檔（contract + generator-report + evaluator-report）搬進 `.claude/sprints/<slug>/`，讓下一個 sprint 的輸出不會蓋掉歷史
+- 歸檔後 `.claude/` 根目錄清空這三個檔，等下一個 Planner 寫新的 contract
+- 如果 3 次都 FAIL 停下來，**不歸檔**，由主人決定後續處理（修復、放棄、或手動歸檔到 `sprints/<slug>-failed/`）
+
+歷史 sprint 列表直接看 `.claude/sprints/` 下的資料夾。
