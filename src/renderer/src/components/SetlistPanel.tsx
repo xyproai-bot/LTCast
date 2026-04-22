@@ -312,9 +312,18 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
   // true once the user has held the row for LONG_PRESS_MS. Mousedown starts the timer;
   // mouseup/mouseleave clears it. If the timer fires, the row arms and the next click on
   // the same row is suppressed (Q2).
-  const handleItemMouseDown = useCallback((_e: React.MouseEvent, index: number): void => {
+  const handleItemMouseDown = useCallback((_e: React.MouseEvent, index: number, isEditingOffset: boolean): void => {
+    // Every fresh interaction starts from a clean state. Without this, a
+    // drag gesture ended off-window (no mouseup on a setlist row) would
+    // leave `suppressNextClickRef` stuck true and silently eat the NEXT
+    // unrelated click on any row.
+    suppressNextClickRef.current = false
     // If a previous gesture left a pending timer, clear it first.
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
+    // Offset-editor open on this row: the row is already non-draggable
+    // (`draggable={false}`), so arming would only show misleading visual
+    // feedback — skip entirely.
+    if (isEditingOffset) return
     longPressTimerRef.current = setTimeout(() => {
       longPressTimerRef.current = null
       suppressNextClickRef.current = true
@@ -574,7 +583,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                     onDragStart={(e) => handleDragStart(e, i)}
                     onDragOver={(e) => handleDragOver(e, i)}
                     onDragEnd={handleDragEnd}
-                    onMouseDown={(e) => handleItemMouseDown(e, i)}
+                    onMouseDown={(e) => handleItemMouseDown(e, i, isEditingOffset)}
                     onMouseUp={(e) => handleItemMouseUp(e, i)}
                     onMouseLeave={handleItemMouseLeave}
                     onClick={() => {
