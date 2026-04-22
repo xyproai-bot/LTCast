@@ -100,8 +100,15 @@ export interface ShowTimer {
   remainingMsAtStop: number
 }
 
-let _showTimerIdCounter = Date.now()
-export function nextShowTimerId(): string { return `st-${++_showTimerIdCounter}` }
+export function nextShowTimerId(): string {
+  // Prefer crypto.randomUUID() so IDs survive multi-window / add-remove-add
+  // cycles without collision. Falls back to time+random for envs without it
+  // (older Node in tests, though Electron 40 ships crypto.randomUUID).
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `st-${crypto.randomUUID()}`
+  }
+  return `st-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
 
 export interface PresetData {
   lang: 'en' | 'zh' | 'ja'
@@ -837,6 +844,10 @@ export const useStore = create<AppState>()(persist((set) => ({
   startShowTimer: (id) => set((s) => ({
     showTimers: s.showTimers.map(t => {
       if (t.id !== id) return t
+      // Idempotent: calling start on an already-running timer is a no-op.
+      // Prevents accidental double-click from resetting the anchor + visibly
+      // snapping the remaining back up.
+      if (t.running) return t
       // Resume from the last-known remaining; startedAt anchors wall-clock.
       const remaining = t.remainingMsAtStop > 0 ? t.remainingMsAtStop : t.durationMs
       return {

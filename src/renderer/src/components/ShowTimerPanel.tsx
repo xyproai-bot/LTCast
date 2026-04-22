@@ -45,10 +45,11 @@ export function ShowTimerPanel(): React.JSX.Element {
 
   // 1 Hz re-render tick. The actual remaining is derived from Date.now() at
   // each render, so a dropped interval just means a visual skip — the next
-  // tick corrects. See AC-5.
+  // tick corrects. See AC-5. 1000 ms (not 500 ms) because the display is
+  // whole-second resolution; ticking twice per second was pure CPU waste.
   const [, setTick] = useState(0)
   useEffect(() => {
-    const id = setInterval(() => setTick(n => (n + 1) % 1_000_000), 500)
+    const id = setInterval(() => setTick(n => (n + 1) % 1_000_000), 1000)
     return () => clearInterval(id)
   }, [])
 
@@ -57,6 +58,10 @@ export function ShowTimerPanel(): React.JSX.Element {
   // timeout to un-flash after FLASH_DURATION_MS.
   const [flashingIds, setFlashingIds] = useState<Set<string>>(() => new Set())
   const alreadyCompleted = useRef<Set<string>>(new Set())
+  // Track in-flight flash-clear timeouts so unmount can cancel them before
+  // they fire setState on a dead component (React would warn + keep the
+  // scheduled closure alive until it fires).
+  const flashTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
 
   useEffect(() => {
     const now = Date.now()
@@ -71,13 +76,15 @@ export function ShowTimerPanel(): React.JSX.Element {
           next.add(timer.id)
           return next
         })
-        setTimeout(() => {
+        const handle = setTimeout(() => {
+          flashTimeoutsRef.current.delete(handle)
           setFlashingIds(prev => {
             const next = new Set(prev)
             next.delete(timer.id)
             return next
           })
         }, FLASH_DURATION_MS)
+        flashTimeoutsRef.current.add(handle)
       }
       // Allow the same timer to flash again after it has been reset/restarted.
       if (!timer.running && timer.remainingMsAtStop > 0) {
@@ -90,6 +97,16 @@ export function ShowTimerPanel(): React.JSX.Element {
       if (!liveIds.has(id)) alreadyCompleted.current.delete(id)
     }
   })
+
+  // On unmount, cancel any flash timeouts still in the air so they don't
+  // fire setState on a dead panel.
+  useEffect(() => {
+    const pending = flashTimeoutsRef.current
+    return () => {
+      for (const h of pending) clearTimeout(h)
+      pending.clear()
+    }
+  }, [])
 
   const handleAdd = (): void => {
     const parsed = parseDurationInput(newDuration)
