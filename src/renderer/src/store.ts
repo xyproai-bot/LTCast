@@ -26,6 +26,13 @@ export interface MidiPort {
   name: string
 }
 
+/** F3 — OSC Feedback. Transient renderer-side record of an inbound ack source. */
+export interface FeedbackDevice {
+  sourceId: string                // "IP:port" from dgram rinfo
+  lastTc: { h: number; m: number; s: number; f: number }
+  lastSeenAt: number              // ms epoch
+}
+
 let _setlistIdCounter = Date.now()
 export function nextSetlistId(): string { return `sl-${++_setlistIdCounter}` }
 
@@ -318,6 +325,15 @@ export interface AppState {
   oscTargetIp: string             // unicast IP, default '127.0.0.1'
   oscTargetPort: number           // default 8000
 
+  // OSC Feedback (F3) — INBOUND TC ack listener
+  // Per-install setting (Q-G). NOT bound to .ltcast preset, never marks
+  // presetDirty. Default-off, default-loopback. oscFeedbackDevices is
+  // transient and must never be persisted.
+  oscFeedbackEnabled: boolean
+  oscFeedbackPort: number                                   // default 9001
+  oscFeedbackBindAddress: '127.0.0.1' | '0.0.0.0'           // default loopback
+  oscFeedbackDevices: Record<string, FeedbackDevice>         // transient
+
   // MIDI Clock Output
   midiClockEnabled: boolean
   midiClockSource: 'detected' | 'tapped' | 'manual'
@@ -433,6 +449,13 @@ export interface AppState {
   setOscEnabled: (enabled: boolean) => void
   setOscTargetIp: (ip: string) => void
   setOscTargetPort: (port: number) => void
+  // F3 — OSC Feedback. None of these mark presetDirty (Q-G).
+  setOscFeedbackEnabled: (enabled: boolean) => void
+  setOscFeedbackPort: (port: number) => void
+  setOscFeedbackBindAddress: (addr: '127.0.0.1' | '0.0.0.0') => void
+  recordOscFeedbackDevice: (sourceId: string, tc: { h: number; m: number; s: number; f: number }, ts: number) => void
+  pruneOscFeedbackDevices: (now: number, maxAgeMs: number) => void
+  clearOscFeedbackDevices: () => void
   setMidiClockEnabled: (enabled: boolean) => void
   setMidiClockSource: (source: 'detected' | 'tapped' | 'manual') => void
   setMidiClockManualBpm: (bpm: number) => void
@@ -550,6 +573,13 @@ export const useStore = create<AppState>()(persist((set) => ({
   oscTargetIp: '127.0.0.1',
   oscTargetPort: 8000,
 
+  // F3 — OSC Feedback defaults. Default-off, default-loopback (Q-A).
+  // Default port 9001 (Q-B). Devices map is transient (never persisted).
+  oscFeedbackEnabled: false,
+  oscFeedbackPort: 9001,
+  oscFeedbackBindAddress: '127.0.0.1',
+  oscFeedbackDevices: {},
+
   midiClockEnabled: false,
   midiClockSource: 'detected',
   midiClockManualBpm: 120,
@@ -665,6 +695,52 @@ export const useStore = create<AppState>()(persist((set) => ({
   setOscEnabled: (oscEnabled) => set({ oscEnabled, presetDirty: true }),
   setOscTargetIp: (oscTargetIp) => set({ oscTargetIp, presetDirty: true }),
   setOscTargetPort: (oscTargetPort) => set({ oscTargetPort, presetDirty: true }),
+  // F3 — OSC Feedback. Per Q-G: persist via Zustand only, never touch
+  // presetDirty, never written to .ltcast preset.
+  setOscFeedbackEnabled: (oscFeedbackEnabled) => set({ oscFeedbackEnabled }),
+  setOscFeedbackPort: (oscFeedbackPort) => {
+    if (!Number.isInteger(oscFeedbackPort) || oscFeedbackPort < 1024 || oscFeedbackPort > 65535) return
+    set({ oscFeedbackPort })
+  },
+  setOscFeedbackBindAddress: (oscFeedbackBindAddress) => {
+    // Strict whitelist: defends against accidental binding to any other interface.
+    if (oscFeedbackBindAddress !== '127.0.0.1' && oscFeedbackBindAddress !== '0.0.0.0') return
+    set({ oscFeedbackBindAddress })
+  },
+  recordOscFeedbackDevice: (sourceId, tc, ts) => set((s) => {
+    // Existing device — always update timestamp + TC.
+    if (sourceId in s.oscFeedbackDevices) {
+      return {
+        oscFeedbackDevices: {
+          ...s.oscFeedbackDevices,
+          [sourceId]: { sourceId, lastTc: tc, lastSeenAt: ts }
+        }
+      }
+    }
+    // New device — only accept if under the 32-device cap. Drop new sources
+    // when full (NOT evict). Mirrors the main-side cap and prevents an
+    // attacker from rotating source IPs to force eviction of a real device.
+    if (Object.keys(s.oscFeedbackDevices).length >= 32) return {}
+    return {
+      oscFeedbackDevices: {
+        ...s.oscFeedbackDevices,
+        [sourceId]: { sourceId, lastTc: tc, lastSeenAt: ts }
+      }
+    }
+  }),
+  pruneOscFeedbackDevices: (now, maxAgeMs) => set((s) => {
+    let changed = false
+    const next: Record<string, FeedbackDevice> = {}
+    for (const [k, v] of Object.entries(s.oscFeedbackDevices)) {
+      if (now - v.lastSeenAt <= maxAgeMs) {
+        next[k] = v
+      } else {
+        changed = true
+      }
+    }
+    return changed ? { oscFeedbackDevices: next } : {}
+  }),
+  clearOscFeedbackDevices: () => set({ oscFeedbackDevices: {} }),
   setMidiClockEnabled: (midiClockEnabled) => set({ midiClockEnabled, presetDirty: true }),
   setMidiClockSource: (midiClockSource) => set({ midiClockSource, presetDirty: true }),
   setMidiClockManualBpm: (midiClockManualBpm) => set({ midiClockManualBpm: Math.max(20, Math.min(300, midiClockManualBpm)), presetDirty: true }),
@@ -1285,6 +1361,11 @@ export const useStore = create<AppState>()(persist((set) => ({
     oscTargetIp: state.oscTargetIp,
     oscTargetPort: state.oscTargetPort,
     oscTemplate: state.oscTemplate,
+    // F3 — OSC Feedback (Q-G: Zustand-only, NOT preset-bound).
+    // oscFeedbackDevices is intentionally excluded — transient.
+    oscFeedbackEnabled: state.oscFeedbackEnabled,
+    oscFeedbackPort: state.oscFeedbackPort,
+    oscFeedbackBindAddress: state.oscFeedbackBindAddress,
     midiClockEnabled: state.midiClockEnabled,
     midiClockSource: state.midiClockSource,
     midiClockManualBpm: state.midiClockManualBpm,
@@ -1321,6 +1402,18 @@ export const useStore = create<AppState>()(persist((set) => ({
     if (typeof merged.waveformZoom !== 'object' || merged.waveformZoom === null) merged.waveformZoom = {}
     // Validate license expiry (prevent NaN display from corrupted data)
     if (merged.licenseExpiresAt && isNaN(new Date(merged.licenseExpiresAt).getTime())) merged.licenseExpiresAt = null
+    // F3 — OSC Feedback. Validate persisted settings; reset to defaults on
+    // corruption. oscFeedbackDevices is always reset to {} on launch (AC-11).
+    if (typeof merged.oscFeedbackEnabled !== 'boolean') merged.oscFeedbackEnabled = false
+    if (
+      typeof merged.oscFeedbackPort !== 'number' ||
+      !Number.isInteger(merged.oscFeedbackPort) ||
+      merged.oscFeedbackPort < 1024 || merged.oscFeedbackPort > 65535
+    ) merged.oscFeedbackPort = 9001
+    if (merged.oscFeedbackBindAddress !== '127.0.0.1' && merged.oscFeedbackBindAddress !== '0.0.0.0') {
+      merged.oscFeedbackBindAddress = '127.0.0.1'
+    }
+    merged.oscFeedbackDevices = {}
     // Ensure setlist items from old storage have IDs
     merged.setlist = merged.setlist.map((item: SetlistItem) =>
       item.id ? item : { ...item, id: nextSetlistId() }

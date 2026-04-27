@@ -3283,3 +3283,112 @@ html, body, #root {
   100% { background: rgba(255, 68, 68, 0.5); }
 }
 
+/* ─────────────────────────────────────────────────────────────
+ * F5 — Stage Display (fullscreen TC) layout overrides.
+ * Append-only. Must NOT touch F4's .timer-row--flashing block above
+ * or F6's .setlist-item.drag-armed block (line ~1505).
+ *
+ * Scoped under .tc-display--fullscreen so non-fullscreen mode is
+ * pixel-identical to v0.5.2 master (AC-7). Sizing uses clamp() with
+ * vh units (Q-6) so the layout scales linearly between 720p and
+ * 1440p without per-breakpoint media queries (AC-12).
+ * ───────────────────────────────────────────────────────────── */
+
+/* Vertical column inside the fullscreen black backdrop. The
+ * .fullscreen-tc parent already centres this with align/justify. */
+.tc-display.tc-display--fullscreen {
+  width: 100%;
+  max-width: min(96vw, 1800px);
+  padding: clamp(16px, 4vh, 64px) clamp(16px, 4vw, 64px);
+  gap: clamp(8px, 2vh, 32px);
+  align-items: stretch;
+  text-align: center;
+}
+
+/* Song name zone. Hidden via conditional render when no fileName /
+ * setlist name (AC-2: no empty bar). Q-5: shows fileName whenever set. */
+.stage-display-songname {
+  font-size: clamp(48px, 8vh, 96px);
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  text-align: center;
+  text-shadow: 0 0 24px rgba(255, 255, 255, 0.08);
+  /* Truncate ridiculously long file names with an ellipsis rather
+   * than wrapping into multiple lines (AC-12: no horizontal overflow,
+   * no unreadable wrapping). */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Q-6: TC digits dominate the display at clamp(96px, 17vh, 220px).
+ * Override the existing .tc-display--fullscreen .tc-seg / .tc-colon
+ * declarations from line 705-706 so vh-based scaling kicks in. */
+.tc-display--fullscreen .tc-digits {
+  justify-content: center;
+}
+.tc-display--fullscreen .tc-seg {
+  font-size: clamp(96px, 17vh, 220px);
+  min-width: clamp(120px, 22vh, 280px);
+  letter-spacing: -0.02em;
+}
+.tc-display--fullscreen .tc-colon {
+  font-size: clamp(88px, 15vh, 200px);
+}
+
+/* fps badge stays small in fullscreen — operator does not need a
+ * giant fps readout. The existing .tc-fps base styles already render
+ * it at 12 px; we just centre it in the column. */
+.tc-display--fullscreen .tc-fps {
+  align-self: center;
+}
+
+/* Q-4: Remaining + total on a single line at clamp(48px, 8vh, 88px),
+ * same size for both halves. Format is "-MM:SS / TOTAL" rendered by
+ * the .tc-countdown div (existing element) plus a .tc-countdown-total
+ * span appended only in fullscreen. */
+.tc-display--fullscreen .tc-countdown {
+  font-size: clamp(48px, 8vh, 88px);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.tc-display--fullscreen .tc-countdown-total {
+  /* Same size as the main countdown (Q-4: same line, same size).
+   * Slightly dimmer so the operator parses "remaining" first. */
+  color: #888;
+  font-weight: 700;
+}
+
+/* NEXT chip at the bottom. Same 15-second predicate as normal mode
+ * (Q-1); only the font-size differs. */
+.tc-display--fullscreen .tc-next-song {
+  font-size: clamp(20px, 3.5vh, 40px);
+  margin-top: 0;
+  letter-spacing: 0.05em;
+}
+
+/* Signal-lost banner stays large enough to read at distance, but
+ * does not dominate the layout. Reserved-space pattern (visibility
+ * hidden, not display:none) is inherited from the base .tc-banner
+ * block — no override needed there (AC-6). */
+.tc-display--fullscreen .tc-signal-lost-banner {
+  font-size: clamp(16px, 2.4vh, 28px);
+  letter-spacing: 0.15em;
+}
+
+/* Inline TC edit input in fullscreen needs to be readable at the
+ * same distance as the static digits (AC-9). Base .tc-edit-input
+ * is 48px / max-width 380px; override here so the operator does not
+ * lose visual context while typing a target TC. */
+.tc-display--fullscreen .tc-edit-input {
+  font-size: clamp(64px, 12vh, 160px);
+  max-width: min(80vw, 1200px);
+  padding: clamp(4px, 1vh, 12px) clamp(8px, 2vw, 24px);
+  border-width: 2px;
+}
+
