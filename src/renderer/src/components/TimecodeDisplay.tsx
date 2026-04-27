@@ -32,7 +32,8 @@ export function TimecodeDisplay({ fullscreen, onSeekToTimecode }: Props): React.
     currentTime, duration,
     ltcStartTime,
     autoAdvance, setlist, activeSetlistIndex,
-    offsetFrames, setOffsetFrames, showLocked
+    offsetFrames, setOffsetFrames, showLocked,
+    fileName
   } = useStore()
 
   // Toggle elapsed vs remaining time (click to switch, like Arena)
@@ -129,70 +130,128 @@ export function TimecodeDisplay({ fullscreen, onSeekToTimecode }: Props): React.
       ? `${generatorFps % 1 !== 0 ? generatorFps.toFixed(2) : generatorFps} ${t(lang, generatorFps === 29.97 ? 'dropFrame' : 'nonDropFrame')}`
       : `${fps} ${t(lang, fps === 29.97 ? 'dropFrame' : 'nonDropFrame')}`
 
-  return (
-    <div className={`tc-display${fullscreen ? ' tc-display--fullscreen' : ''}${signalLost ? ' tc-signal-lost' : ''}`}>
-      <div className="tc-label">{t(lang, 'timecode')}</div>
-      {tcEditing ? (
-        <div className="tc-digits">
-          <input
-            ref={tcEditRef}
-            className="tc-edit-input"
-            autoFocus
-            value={tcEditValue}
-            onChange={(e) => setTcEditValue(e.target.value)}
-            onBlur={commitTcEdit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitTcEdit()
-              if (e.key === 'Escape') setTcEditing(false)
-            }}
-            placeholder="HH:MM:SS:FF"
-            spellCheck={false}
-          />
-        </div>
-      ) : (
-        <div ref={tcDigitsRef} className="tc-digits" onDoubleClick={handleTcDoubleClick} style={{ cursor: duration ? 'pointer' : undefined }}>
-          <span className="tc-seg">{h}</span>
-          <span className="tc-colon">:</span>
-          <span className="tc-seg">{m}</span>
-          <span className="tc-colon">:</span>
-          <span className="tc-seg">{s}</span>
-          <span className="tc-colon">{sep}</span>
-          <span className="tc-seg tc-frames">{f}</span>
-        </div>
-      )}
-      <div className="tc-fps">{fpsLabel}</div>
+  // F5 — Stage Display: derive the song name shown in fullscreen.
+  // Q-5: show fileName whenever it's set (regardless of activeSetlistIndex).
+  // Prefer the active setlist entry's name when present (covers the
+  // setlist-driven flow); otherwise fall back to fileName (single-file Open).
+  const stageSongName: string | null = (() => {
+    if (activeSetlistIndex !== null
+      && activeSetlistIndex >= 0
+      && activeSetlistIndex < setlist.length) {
+      const item = setlist[activeSetlistIndex]
+      if (item && item.name) return item.name
+    }
+    return fileName
+  })()
 
-      {/* Elapsed / Remaining timer (click to toggle) */}
-      {duration > 0 ? (() => {
-        const remaining = Math.max(0, duration - currentTime)
-        const elapsed = Math.max(0, currentTime)
-        const displayTime = showElapsed ? elapsed : remaining
-        const isWarning = remaining <= 30
-        return (
-          <div
-            className={`tc-countdown${isWarning ? ' tc-countdown--warn' : ''}`}
-            onClick={() => setShowElapsed(prev => !prev)}
-            title={showElapsed ? 'Elapsed (click for remaining)' : 'Remaining (click for elapsed)'}
-          >
-            {showElapsed ? '' : '-'}{formatCountdown(displayTime)}
-          </div>
-        )
-      })() : (
-        <div className="tc-countdown tc-countdown--empty">--:--</div>
-      )}
+  // F5 — Reusable JSX building blocks (so fullscreen and normal modes share
+  // the same handlers / refs and don't fork the wheel-handler useEffect or
+  // double-click-to-edit lifecycle).
+  const tcDigitsBlock: React.JSX.Element = tcEditing ? (
+    <div className="tc-digits">
+      <input
+        ref={tcEditRef}
+        className="tc-edit-input"
+        autoFocus
+        value={tcEditValue}
+        onChange={(e) => setTcEditValue(e.target.value)}
+        onBlur={commitTcEdit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commitTcEdit()
+          if (e.key === 'Escape') setTcEditing(false)
+        }}
+        placeholder="HH:MM:SS:FF"
+        spellCheck={false}
+      />
+    </div>
+  ) : (
+    <div ref={tcDigitsRef} className="tc-digits" onDoubleClick={handleTcDoubleClick} style={{ cursor: duration ? 'pointer' : undefined }}>
+      <span className="tc-seg">{h}</span>
+      <span className="tc-colon">:</span>
+      <span className="tc-seg">{m}</span>
+      <span className="tc-colon">:</span>
+      <span className="tc-seg">{s}</span>
+      <span className="tc-colon">{sep}</span>
+      <span className="tc-seg tc-frames">{f}</span>
+    </div>
+  )
 
-      {/* Next song indicator (auto-advance, last 15 seconds) */}
-      {(() => {
-        if (!autoAdvance || duration <= 0 || activeSetlistIndex === null) return null
-        const remaining = duration - currentTime
-        const nextIdx = activeSetlistIndex + 1
-        if (nextIdx >= setlist.length || remaining > 15 || remaining <= 0) return null
-        return <div className="tc-next-song">NEXT: {setlist[nextIdx].name}</div>
-      })()}
+  const fpsBlock = <div className="tc-fps">{fpsLabel}</div>
 
-      <div className={`tc-signal-lost-banner${signalLost ? '' : ' tc-banner--hidden'}`}>
-        {t(lang, 'ltcSignalLost')}
+  // F5 — Remaining + total time row.
+  // Normal mode: just the remaining/elapsed countdown (click to toggle).
+  // Fullscreen mode: same toggle, but appended with " / TOTAL" (Q-4) so the
+  // operator can read both "how much is left" and "song length" at a glance.
+  const timerBlock: React.JSX.Element = duration > 0 ? (() => {
+    const remaining = Math.max(0, duration - currentTime)
+    const elapsed = Math.max(0, currentTime)
+    const displayTime = showElapsed ? elapsed : remaining
+    const isWarning = remaining <= 30
+    return (
+      <div
+        className={`tc-countdown${isWarning ? ' tc-countdown--warn' : ''}`}
+        onClick={() => setShowElapsed(prev => !prev)}
+        title={showElapsed ? 'Elapsed (click for remaining)' : 'Remaining (click for elapsed)'}
+      >
+        {showElapsed ? '' : '-'}{formatCountdown(displayTime)}
+        {fullscreen && <span className="tc-countdown-total"> / {formatCountdown(duration)}</span>}
       </div>
+    )
+  })() : (
+    <div className="tc-countdown tc-countdown--empty">--:--</div>
+  )
+
+  // F5 — NEXT chip. Q-1: keep the existing 15-second threshold (parity with
+  // normal mode so behaviour is unchanged). Same predicate is used in both
+  // modes; only the font-size differs (controlled by .tc-display--fullscreen
+  // .tc-next-song in CSS).
+  const nextChipBlock: React.JSX.Element | null = (() => {
+    if (!autoAdvance || duration <= 0 || activeSetlistIndex === null) return null
+    const remaining = duration - currentTime
+    const nextIdx = activeSetlistIndex + 1
+    if (nextIdx >= setlist.length || remaining > 15 || remaining <= 0) return null
+    return <div className="tc-next-song">NEXT: {setlist[nextIdx].name}</div>
+  })()
+
+  const signalLostBanner = (
+    <div className={`tc-signal-lost-banner${signalLost ? '' : ' tc-banner--hidden'}`}>
+      {t(lang, 'ltcSignalLost')}
+    </div>
+  )
+
+  if (fullscreen) {
+    // F5 — Stage Display layout. Vertical column of zones:
+    //   1. Song name (hidden when null; no empty bar — AC-2)
+    //   2. Giant TC digits + fps badge
+    //   3. Remaining + total time row
+    //   4. NEXT chip
+    //   5. Signal-lost banner (always reserves space — AC-6)
+    // All sizing lives in globals.css under .tc-display--fullscreen using
+    // clamp() values from Q-6 so the layout scales linearly 720p → 1440p.
+    return (
+      <div className={`tc-display tc-display--fullscreen${signalLost ? ' tc-signal-lost' : ''}`}>
+        {stageSongName !== null && stageSongName !== '' && (
+          <div className="stage-display-songname" title={stageSongName}>
+            {stageSongName}
+          </div>
+        )}
+        {tcDigitsBlock}
+        {fpsBlock}
+        {timerBlock}
+        {nextChipBlock}
+        {signalLostBanner}
+      </div>
+    )
+  }
+
+  return (
+    <div className={`tc-display${signalLost ? ' tc-signal-lost' : ''}`}>
+      <div className="tc-label">{t(lang, 'timecode')}</div>
+      {tcDigitsBlock}
+      {fpsBlock}
+      {timerBlock}
+      {nextChipBlock}
+      {signalLostBanner}
       {!fullscreen && !tcGeneratorMode && (
         <div className={`tc-preroll-banner${ltcStartTime > 0 ? '' : ' tc-banner--hidden'}`}>
           {ltcStartTime > 0

@@ -2,6 +2,36 @@
 
 All notable changes to LTCast are documented here. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] — 2026-04-22
+
+Two features completing the v0.5.2 plan. No breaking changes. First inbound network surface in LTCast (off by default, loopback-only, defensive parser).
+
+### Added
+
+- **Stage Display fullscreen upgrade (F5).** Pressing F11 (or the existing fullscreen toggle) now shows a stage-display layout instead of just the timecode digits — current song name on top, giant TC in the centre, `-MM:SS / TOTAL` remaining on the same line, and a `NEXT: <song>` chip in the last 15 seconds when auto-advance is on. All zones use `clamp()` font-sizes so the layout is legible from 10 m on a 1080p display and still readable on a 14" laptop. F2's offset wheel-nudge and the existing double-click-to-edit on the TC digits both continue to work in fullscreen. Falls back to `fileName` when no setlist is loaded.
+- **OSC feedback / TC sync monitoring (F3).** New "TC Feedback" sub-panel in the Devices tab. Downstream devices (MA3, Resolume, Hog4, etc.) can send their last-received timecode back via OSC `/ltcast/tc_ack` (`,iiii` payload — h, m, s, f). The panel shows each device by `IP:port` with its last-reported TC, alongside the drift in frames vs the TC LTCast is sending. Drift colour-coded green ≤1 frame / amber 2–4 / red ≥5. Stale devices auto-disappear after 5 seconds of silence.
+
+### Security baseline (F3)
+
+- **Off by default.** Operator must explicitly enable in Devices panel.
+- **Loopback by default.** Bind address dropdown defaults to `127.0.0.1`. LAN-wide (`0.0.0.0`) requires explicit opt-in.
+- **Defensive parser.** Drops on oversize buffers (>256 bytes), bundles, wrong address pattern, wrong type tags, malformed strings, and out-of-range integer fields. Never throws out of the message handler.
+- **Rate limited.** 200 packets/sec/source. Excess silently dropped.
+- **Capped at 32 distinct sources.** New sources beyond the cap are dropped (not LRU evicted) — protects existing connections under flood.
+- **No raw bytes cross IPC.** Renderer only sees `{sourceId, h, m, s, f, ts}`.
+- **No auto-start across restart.** Even though enabled state persists in Zustand, the listener does NOT auto-open at app launch — operator must re-enable each session. Defence-in-depth against accidental long-running listener state.
+- **IPv4 only** in v0.5.3. IPv6 (`::1`) deferred to v0.5.4 if requested.
+
+### Tests
+
+- +24 `oscParser.test.ts` — every malformed-input branch + 200 fuzz inputs. Suite total **338 passing** (was 314).
+
+### Known limitations (deferred to v0.5.4 polish)
+
+- F3 rate limit is per-source 200 pps, not aggregate (theoretical max with 32 sources = 6,400 pps; parser handles it but spec said aggregate).
+- F3 IPC events are not coalesced — high-rate feedback streams produce 1:1 IPC traffic to renderer.
+- F3 enable toggle visually shows ON after restart even though the listener is closed; user must click off→on to re-enable.
+
 ## [0.5.2] — 2026-04-22
 
 Live-show operator polish. Four features, all addressing pain points that surfaced after v0.5.1 shipped and the app hit real shows. No breaking changes; no architecture shifts.

@@ -84,6 +84,22 @@ contextBridge.exposeInMainWorld('api', {
   oscSendTcCustom: (address: string, tcString: string, fps: number, targetIp: string, port: number) =>
     ipcRenderer.send('osc-send-tc-custom', address, tcString, fps, targetIp, port),
 
+  // OSC Feedback (F3) — inbound listener for /ltcast/tc_ack
+  oscFeedbackStart: (port: number, bindAddress: '127.0.0.1' | '0.0.0.0') =>
+    ipcRenderer.invoke('osc-feedback-start', port, bindAddress) as Promise<{ ok: true } | { ok: false; error: string }>,
+  oscFeedbackStop: () =>
+    ipcRenderer.invoke('osc-feedback-stop') as Promise<{ ok: true }>,
+  onOscFeedbackTc: (callback: (data: { sourceId: string; h: number; m: number; s: number; f: number; ts: number }) => void) => {
+    const handler = (_event: unknown, data: { sourceId: string; h: number; m: number; s: number; f: number; ts: number }): void => callback(data)
+    ipcRenderer.on('osc-feedback-tc', handler)
+    return () => { ipcRenderer.removeListener('osc-feedback-tc', handler) }
+  },
+  onOscFeedbackError: (callback: (data: { message: string }) => void) => {
+    const handler = (_event: unknown, data: { message: string }): void => callback(data)
+    ipcRenderer.on('osc-feedback-error', handler)
+    return () => { ipcRenderer.removeListener('osc-feedback-error', handler) }
+  },
+
   // Menu command listeners
   onMenuCommand: (channel: string, callback: (...args: unknown[]) => void) => {
     const handler = (_event: unknown, ...args: unknown[]): void => callback(...args)

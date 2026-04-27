@@ -290,7 +290,18 @@ export const strings = {
     showTimerDefaultName: 'Timer',
     showTimerDurationError: 'Enter mm:ss or minutes (e.g. 15 or 15:00)',
     showTimerRename: 'Double-click to rename',
-    showTimerEditDuration: 'Double-click to edit duration'
+    showTimerEditDuration: 'Double-click to edit duration',
+    // F3 — OSC Feedback (TC sync monitoring)
+    oscFeedbackTitle: 'TC Feedback (Inbound)',
+    oscFeedbackPort: 'Port',
+    oscFeedbackBind: 'Bind',
+    oscFeedbackBindLocal: 'Local only (127.0.0.1)',
+    oscFeedbackBindLan: 'LAN (0.0.0.0)',
+    oscFeedbackActive: 'Listening',
+    oscFeedbackHint: 'Receives /ltcast/tc_ack from downstream rigs (loopback only).',
+    oscFeedbackLanWarning: 'LAN-wide bind — listening on all interfaces. On Windows, the firewall may prompt.',
+    oscFeedbackNoDevices: 'No devices reporting yet — start a downstream sender on this port.',
+    oscFeedbackError: 'OSC Feedback error: {message}'
   },
   zh: {
     appTitle: 'LTCast',
@@ -580,7 +591,18 @@ export const strings = {
     showTimerDefaultName: '計時器',
     showTimerDurationError: '請輸入 mm:ss 或分鐘（例：15 或 15:00）',
     showTimerRename: '雙擊重新命名',
-    showTimerEditDuration: '雙擊編輯時長'
+    showTimerEditDuration: '雙擊編輯時長',
+    // F3 — OSC Feedback (TC 同步監控)
+    oscFeedbackTitle: 'TC 回報 (接收)',
+    oscFeedbackPort: '埠',
+    oscFeedbackBind: '繫結',
+    oscFeedbackBindLocal: '僅本機 (127.0.0.1)',
+    oscFeedbackBindLan: '區域網路 (0.0.0.0)',
+    oscFeedbackActive: '監聽中',
+    oscFeedbackHint: '接收下游設備傳回的 /ltcast/tc_ack（僅本機）。',
+    oscFeedbackLanWarning: '已綁定全部網路介面。Windows 首次啟用時可能會出現防火牆提示。',
+    oscFeedbackNoDevices: '尚無下游設備回報 — 請於下游設備啟動回報訊息。',
+    oscFeedbackError: 'OSC 回報錯誤：{message}'
   },
   ja: {
     appTitle: 'LTCast',
@@ -870,7 +892,18 @@ export const strings = {
     showTimerDefaultName: 'タイマー',
     showTimerDurationError: 'mm:ss または分で入力（例：15 または 15:00）',
     showTimerRename: 'ダブルクリックで名前変更',
-    showTimerEditDuration: 'ダブルクリックで時間を編集'
+    showTimerEditDuration: 'ダブルクリックで時間を編集',
+    // F3 — OSC フィードバック（TC 同期モニター）
+    oscFeedbackTitle: 'TC フィードバック（受信）',
+    oscFeedbackPort: 'ポート',
+    oscFeedbackBind: 'バインド',
+    oscFeedbackBindLocal: 'ローカルのみ (127.0.0.1)',
+    oscFeedbackBindLan: 'LAN (0.0.0.0)',
+    oscFeedbackActive: '受信中',
+    oscFeedbackHint: '下流機器からの /ltcast/tc_ack を受信（ループバックのみ）。',
+    oscFeedbackLanWarning: 'LAN 全体に公開中。Windows ではファイアウォールの確認が表示される場合があります。',
+    oscFeedbackNoDevices: '下流機器からの報告はまだありません — 下流送信を開始してください。',
+    oscFeedbackError: 'OSC フィードバックエラー：{message}'
   }
 }
 

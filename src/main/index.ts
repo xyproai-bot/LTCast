@@ -6,6 +6,7 @@ import { is } from '@electron-toolkit/utils'
 import ffmpeg from 'fluent-ffmpeg'
 import dgram from 'dgram'
 import { autoUpdater } from 'electron-updater'
+import { parseOscTcAck } from './oscParser'
 
 // Point fluent-ffmpeg at the bundled binary
 // In production, ffmpeg-static is asarUnpacked so we resolve manually
@@ -621,6 +622,149 @@ function closeOscSocket(): void {
   if (oscSocket) {
     try { oscSocket.close() } catch { /**/ }
     oscSocket = null
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// OSC Feedback (F3) — INBOUND UDP listener for /ltcast/tc_ack
+// ════════════════════════════════════════════════════════════
+// First inbound network surface in LTCast. Default-off, default-loopback.
+// Distinct from oscSocket (outbound, ephemeral source port) and artnetSocket
+// (outbound, broadcast). The listener stays closed until the operator opts in.
+
+let oscFeedbackSocket: dgram.Socket | null = null
+
+/** Per-source rate-limit window. Key = "IP:port". */
+interface RateBucket { count: number; windowStart: number }
+const oscFeedbackRateMap: Map<string, RateBucket> = new Map()
+
+/** Cap to prevent unbounded growth of the rate-limit map under flood. */
+const OSC_FEEDBACK_MAX_DEVICES = 32
+/** Max packets/second per source. Excess is dropped silently before parsing. */
+const OSC_FEEDBACK_MAX_PPS_PER_SOURCE = 200
+
+/**
+ * Apply per-source rate limit + device cap. Returns true if packet should be
+ * dropped. Per the contract security baseline: when the 32-device cap is full,
+ * NEW sources are dropped — existing tracked devices are NOT evicted. This
+ * prevents an attacker from rotating IPs to force eviction of a real device.
+ */
+function shouldDropForRateLimit(sourceId: string, now: number): boolean {
+  let bucket = oscFeedbackRateMap.get(sourceId)
+  if (!bucket) {
+    if (oscFeedbackRateMap.size >= OSC_FEEDBACK_MAX_DEVICES) {
+      // Cap reached — drop the new source silently. Do NOT evict an existing
+      // entry. (Stale entries age out via the renderer-side pruner; main
+      // mirrors that with the prune-tick below.)
+      return true
+    }
+    bucket = { count: 0, windowStart: now }
+    oscFeedbackRateMap.set(sourceId, bucket)
+  }
+  if (now - bucket.windowStart >= 1000) {
+    bucket.windowStart = now
+    bucket.count = 0
+  }
+  bucket.count++
+  return bucket.count > OSC_FEEDBACK_MAX_PPS_PER_SOURCE
+}
+
+/**
+ * Periodically expire rate-limit buckets that haven't been seen for >5s, so
+ * the device cap doesn't deadlock with stale entries occupying slots.
+ */
+const OSC_FEEDBACK_STALE_MS = 5000
+function pruneOscFeedbackRateMap(now: number): void {
+  for (const [k, v] of oscFeedbackRateMap) {
+    if (now - v.windowStart > OSC_FEEDBACK_STALE_MS) {
+      oscFeedbackRateMap.delete(k)
+    }
+  }
+}
+let oscFeedbackPruneInterval: NodeJS.Timeout | null = null
+
+function broadcastOscFeedback(channel: string, payload: unknown): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) {
+      try { w.webContents.send(channel, payload) } catch { /* renderer gone, ignore */ }
+    }
+  }
+}
+
+function closeOscFeedbackSocket(): void {
+  if (oscFeedbackSocket) {
+    try { oscFeedbackSocket.close() } catch { /* already closed */ }
+    oscFeedbackSocket = null
+  }
+  oscFeedbackRateMap.clear()
+  if (oscFeedbackPruneInterval) {
+    clearInterval(oscFeedbackPruneInterval)
+    oscFeedbackPruneInterval = null
+  }
+}
+
+/**
+ * Open the inbound UDP socket on the given port + bind address.
+ * Strict input validation: bindAddress MUST be one of two whitelisted strings.
+ * Any other value is rejected before reaching socket.bind() to ensure we never
+ * accidentally bind to a public interface.
+ */
+function ensureOscFeedbackSocket(port: number, bindAddress: '127.0.0.1' | '0.0.0.0'): { ok: true } | { ok: false; error: string } {
+  // Defensive validation — duplicates the IPC handler check so callers cannot
+  // bypass it. bindAddress must be exactly one of the two allowed values.
+  if (bindAddress !== '127.0.0.1' && bindAddress !== '0.0.0.0') {
+    return { ok: false, error: 'invalid bind address' }
+  }
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    return { ok: false, error: 'port out of range' }
+  }
+  // If a previous listener exists, close it first so reconfiguration is clean.
+  if (oscFeedbackSocket) closeOscFeedbackSocket()
+
+  try {
+    const sock = dgram.createSocket({ type: 'udp4', reuseAddr: false })
+    sock.on('error', (err) => {
+      // Surface to renderer with sanitised message — no PII / sourceIP / port.
+      const msg = (err as NodeJS.ErrnoException).code || err.message || 'socket error'
+      broadcastOscFeedback('osc-feedback-error', { message: msg })
+      try { sock.close() } catch { /* already closed */ }
+      if (oscFeedbackSocket === sock) {
+        oscFeedbackSocket = null
+        oscFeedbackRateMap.clear()
+      }
+    })
+    sock.on('message', (msg, rinfo) => {
+      try {
+        const sourceId = `${rinfo.address}:${rinfo.port}`
+        const now = Date.now()
+        if (shouldDropForRateLimit(sourceId, now)) return
+        const tc = parseOscTcAck(msg)
+        if (!tc) return
+        // Minimal payload — no raw bytes, no fields beyond what UI needs.
+        broadcastOscFeedback('osc-feedback-tc', {
+          sourceId,
+          h: tc.h,
+          m: tc.m,
+          s: tc.s,
+          f: tc.f,
+          ts: now
+        })
+      } catch {
+        // Defensive — should be unreachable; parser handles its own errors.
+      }
+    })
+    sock.bind({ address: bindAddress, port, exclusive: true }, () => {
+      // Bound successfully.
+    })
+    oscFeedbackSocket = sock
+    // Start the rate-map prune ticker so stale buckets free their slot for
+    // genuinely new sources (otherwise the cap is effectively permanent).
+    if (oscFeedbackPruneInterval) clearInterval(oscFeedbackPruneInterval)
+    oscFeedbackPruneInterval = setInterval(() => pruneOscFeedbackRateMap(Date.now()), 1000)
+    return { ok: true }
+  } catch (e) {
+    closeOscFeedbackSocket()
+    return { ok: false, error: (e as Error).message || 'bind failed' }
   }
 }
 
@@ -1545,6 +1689,25 @@ app.whenReady().then(() => {
     safeUdpSend(oscSocket, pkt, port, ip)
   })
 
+  // ── OSC Feedback (F3) — INBOUND listener for /ltcast/tc_ack ──
+  ipcMain.handle('osc-feedback-start', (_event, port: unknown, bindAddress: unknown) => {
+    // Strict IPC-boundary validation. Reject any input that isn't exactly
+    // what we expect — a number in 1024-65535 and one of two literal strings.
+    const portNum = typeof port === 'number' ? port : NaN
+    if (!Number.isInteger(portNum) || portNum < 1024 || portNum > 65535) {
+      return { ok: false, error: 'invalid port' }
+    }
+    if (bindAddress !== '127.0.0.1' && bindAddress !== '0.0.0.0') {
+      return { ok: false, error: 'invalid bind address' }
+    }
+    return ensureOscFeedbackSocket(portNum, bindAddress)
+  })
+
+  ipcMain.handle('osc-feedback-stop', () => {
+    closeOscFeedbackSocket()
+    return { ok: true }
+  })
+
   // IPC: show input dialog (replacement for prompt())
   // ── License IPC ──
   ipcMain.handle('license-activate', async (_event, key: string) => lemonSqueezyRequest('activate', key))
@@ -1719,5 +1882,12 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   closeArtnetSocket()
+  closeOscFeedbackSocket()
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  // Belt-and-braces: ensure inbound listener is closed even on macOS where
+  // window-all-closed does not always fire before quit (dock-quit path).
+  closeOscFeedbackSocket()
 })

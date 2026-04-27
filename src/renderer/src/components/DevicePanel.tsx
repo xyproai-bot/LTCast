@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useMemo } from 'react'
 import { useStore, AudioDevice } from '../store'
 import { t } from '../i18n'
+import { tcToFrames } from '../audio/timecodeConvert'
 
 interface Props {
   onMidiPortChange: (portId: string) => void
@@ -41,6 +42,12 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
     oscTargetIp, setOscTargetIp,
     oscTargetPort, setOscTargetPort,
     oscTemplate, setOscTemplate,
+    // F3 — OSC Feedback
+    oscFeedbackEnabled, setOscFeedbackEnabled,
+    oscFeedbackPort, setOscFeedbackPort,
+    oscFeedbackBindAddress, setOscFeedbackBindAddress,
+    oscFeedbackDevices, recordOscFeedbackDevice, pruneOscFeedbackDevices, clearOscFeedbackDevices,
+    timecode,
     midiClockEnabled, setMidiClockEnabled,
     midiClockSource, setMidiClockSource,
     midiClockManualBpm, setMidiClockManualBpm,
@@ -62,6 +69,39 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
     navigator.mediaDevices.addEventListener('devicechange', refresh)
     return () => navigator.mediaDevices.removeEventListener('devicechange', refresh)
   }, [setAudioOutputDevices])
+
+  // F3 — Subscribe to inbound TC ack events from main. Always subscribed so
+  // packets that arrive while the user is on a different tab are still
+  // recorded; the listener is cheap when no packets flow.
+  useEffect(() => {
+    const offTc = window.api.onOscFeedbackTc((data) => {
+      recordOscFeedbackDevice(data.sourceId, { h: data.h, m: data.m, s: data.s, f: data.f }, data.ts)
+    })
+    const offErr = window.api.onOscFeedbackError((data) => {
+      // Surface as a transient error and force-disable the toggle.
+      console.warn('[OSC Feedback] socket error:', data.message)
+      setOscFeedbackEnabled(false)
+      clearOscFeedbackDevices()
+    })
+    return () => {
+      offTc()
+      offErr()
+    }
+  }, [recordOscFeedbackDevice, setOscFeedbackEnabled, clearOscFeedbackDevices])
+
+  // F3 — Periodic stale-device pruning. 5s timeout per AC-6.
+  useEffect(() => {
+    if (!oscFeedbackEnabled) return
+    const id = setInterval(() => {
+      pruneOscFeedbackDevices(Date.now(), 5000)
+    }, 1000)
+    return () => clearInterval(id)
+  }, [oscFeedbackEnabled, pruneOscFeedbackDevices])
+
+  // F3 — Cleanup: when component unmounts, stop the listener so we don't
+  // leak a UDP socket. (DevicePanel mount/unmount tracks Devices tab visibility,
+  // but in practice the listener should keep running while enabled. We only
+  // close on app quit; the renderer doesn't auto-close on unmount.)
 
   const handleMidiSelect = (portId: string): void => {
     setSelectedMidiPort(portId)
@@ -92,6 +132,52 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
     setLtcChannel(ch)
     onLtcChannelChange(ch)
   }
+
+  // F3 — Toggle handler. Validates port + bind, then calls main. On failure,
+  // surfaces error via console + disable toggle so UI stays consistent.
+  const handleOscFeedbackToggle = async (enabled: boolean): Promise<void> => {
+    if (enabled) {
+      const result = await window.api.oscFeedbackStart(oscFeedbackPort, oscFeedbackBindAddress)
+      if (result.ok) {
+        setOscFeedbackEnabled(true)
+      } else {
+        console.warn('[OSC Feedback] start failed:', result.error)
+        setOscFeedbackEnabled(false)
+      }
+    } else {
+      await window.api.oscFeedbackStop()
+      setOscFeedbackEnabled(false)
+      clearOscFeedbackDevices()
+    }
+  }
+
+  // Sent TC in absolute frames, used to compute drift for each device.
+  // useMemo keeps the calc cheap on rerender; recomputes only when timecode
+  // changes (~30 Hz).
+  const sentFrames = useMemo<number | null>(() => {
+    if (!timecode) return null
+    const fps = timecode.fps
+    if (!fps || fps <= 0) return null
+    const tcStr = `${String(timecode.hours).padStart(2, '0')}:${String(timecode.minutes).padStart(2, '0')}:${String(timecode.seconds).padStart(2, '0')}:${String(timecode.frames).padStart(2, '0')}`
+    return tcToFrames(tcStr, fps)
+  }, [timecode])
+
+  // Format an inbound TC for display.
+  const formatTc = (tc: { h: number; m: number; s: number; f: number }): string => {
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    return `${pad(tc.h)}:${pad(tc.m)}:${pad(tc.s)}:${pad(tc.f)}`
+  }
+
+  // Compute drift colour per Q-C: green ≤1, amber 2-4, red ≥5.
+  const driftColor = (driftFrames: number | null): string => {
+    if (driftFrames === null) return '#888'
+    const abs = Math.abs(driftFrames)
+    if (abs <= 1) return '#4ade80'   // green
+    if (abs <= 4) return '#fbbf24'   // amber
+    return '#ef4444'                 // red
+  }
+
+  const feedbackDeviceList = Object.values(oscFeedbackDevices).sort((a, b) => a.sourceId.localeCompare(b.sourceId))
 
   return (
     <div className="device-panel">
@@ -361,6 +447,89 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
               <option value="disguise">Disguise (d3)</option>
               <option value="watchout">WATCHOUT</option>
             </select>
+          </div>
+        )}
+      </div>
+
+      {/* TC Feedback (F3) — INBOUND OSC ack listener */}
+      <div className="device-row">
+        <span className="device-label">{t(lang, 'oscFeedbackTitle')}</span>
+        <div className="artnet-row">
+          <label className="artnet-toggle">
+            <input
+              type="checkbox"
+              checked={oscFeedbackEnabled}
+              onChange={(e) => { handleOscFeedbackToggle(e.target.checked) }}
+            />
+            <span>{oscFeedbackEnabled ? t(lang, 'artnetOn') : t(lang, 'artnetOff')}</span>
+          </label>
+          <span className={`signal-dot${oscFeedbackEnabled ? ' signal-ok' : ' signal-off'}`} />
+          {oscFeedbackEnabled && <span className="signal-label">{t(lang, 'oscFeedbackActive')}</span>}
+        </div>
+        {!oscFeedbackEnabled && (
+          <div className="artnet-ip-row">
+            <span className="artnet-ip-label">{t(lang, 'oscFeedbackPort')}</span>
+            <input
+              type="number"
+              className="artnet-ip-input"
+              value={oscFeedbackPort}
+              min={1024}
+              max={65535}
+              onChange={(e) => {
+                const v = parseInt(e.target.value, 10)
+                if (Number.isInteger(v) && v >= 1024 && v <= 65535) setOscFeedbackPort(v)
+              }}
+              style={{ width: '70px' }}
+            />
+            <span className="artnet-ip-label">{t(lang, 'oscFeedbackBind')}</span>
+            <select
+              className="device-select"
+              value={oscFeedbackBindAddress}
+              onChange={(e) => {
+                const v = e.target.value
+                if (v === '127.0.0.1' || v === '0.0.0.0') setOscFeedbackBindAddress(v)
+              }}
+              style={{ width: 'auto', minWidth: '150px' }}
+            >
+              <option value="127.0.0.1">{t(lang, 'oscFeedbackBindLocal')}</option>
+              <option value="0.0.0.0">{t(lang, 'oscFeedbackBindLan')}</option>
+            </select>
+          </div>
+        )}
+        {oscFeedbackEnabled && (
+          <span className="ltc-gain-hint">
+            {oscFeedbackBindAddress === '0.0.0.0'
+              ? t(lang, 'oscFeedbackLanWarning')
+              : t(lang, 'oscFeedbackHint')}
+          </span>
+        )}
+        {oscFeedbackEnabled && (
+          <div className="osc-feedback-list" style={{ marginTop: 8 }}>
+            {feedbackDeviceList.length === 0 ? (
+              <span className="ltc-gain-hint">{t(lang, 'oscFeedbackNoDevices')}</span>
+            ) : (
+              feedbackDeviceList.map((d) => {
+                let drift: number | null = null
+                if (sentFrames !== null && timecode) {
+                  // Compute received absolute frames using the sender's local fps.
+                  const rcvStr = formatTc(d.lastTc)
+                  const rcvFrames = tcToFrames(rcvStr, timecode.fps)
+                  drift = rcvFrames - sentFrames
+                }
+                return (
+                  <div key={d.sourceId} className="osc-feedback-row" style={{
+                    display: 'flex', alignItems: 'center', gap: 12, padding: '4px 0',
+                    fontFamily: 'monospace', fontSize: 12
+                  }}>
+                    <span style={{ flex: '0 0 auto', minWidth: 140 }}>{d.sourceId}</span>
+                    <span style={{ flex: '0 0 auto', minWidth: 110 }}>{formatTc(d.lastTc)}</span>
+                    <span style={{ flex: '1 1 auto', color: driftColor(drift) }}>
+                      {drift === null ? '—' : (drift >= 0 ? '+' : '') + drift + 'f'}
+                    </span>
+                  </div>
+                )
+              })
+            )}
           </div>
         )}
       </div>

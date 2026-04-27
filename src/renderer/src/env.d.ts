@@ -64,6 +64,12 @@ interface Window {
     oscSendTransport(state: string, targetIp: string, port: number): void
     oscSendSong(name: string, index: number, targetIp: string, port: number): void
 
+    // OSC Feedback (F3) — INBOUND listener for /ltcast/tc_ack
+    oscFeedbackStart(port: number, bindAddress: '127.0.0.1' | '0.0.0.0'): Promise<{ ok: true } | { ok: false; error: string }>
+    oscFeedbackStop(): Promise<{ ok: true }>
+    onOscFeedbackTc(callback: (data: { sourceId: string; h: number; m: number; s: number; f: number; ts: number }) => void): () => void
+    onOscFeedbackError(callback: (data: { message: string }) => void): () => void
+
     // Menu command listeners
     onMenuCommand(channel: string, callback: (...args: unknown[]) => void): () => void
 
