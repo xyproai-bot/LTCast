@@ -3392,3 +3392,111 @@ html, body, #root {
   border-width: 2px;
 }
 
+/* ── v0.5.4 sprint A: Auto-update progress overlay ──────────────
+   Append-only. Must NOT modify any preceding selector — in particular:
+     - F4's .timer-row--flashing block (line ~3277)
+     - F6's .setlist-item.drag-armed block (line ~1505)
+     - existing .toast-* / .license-* blocks
+   Bottom-right floating panel (Q-1) above PresetBar/StatusBar but below
+   OS-level dialog.showMessageBox modals (those are native and always on top).
+   Dark palette + #00d4ff accent matches .license-dialog and .toast (AC-12). */
+.update-progress-overlay {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  width: 320px;
+  z-index: 9000;
+  padding: 12px 14px 10px;
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+  color: #e0e0e0;
+  /* Slide in from the right edge — same easing as .toast for visual cohesion. */
+  animation: update-progress-slide-in 0.25s ease-out;
+  /* Panel itself accepts pointer events (cancel button), but only within
+     its own footprint (AC-6). The wrapper does NOT cover the rest of the
+     viewport, so playback / cues / output controls stay clickable. */
+  pointer-events: auto;
+}
+
+@keyframes update-progress-slide-in {
+  from { opacity: 0; transform: translateX(40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.update-progress-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+.update-progress-bar {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  background: #2a2a2a;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.update-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00d4ff, #00b8e6);
+  /* Smooth out the bar between throttled progress events. */
+  transition: width 0.2s linear;
+}
+
+.update-progress-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 11px;
+  color: #b0b0b0;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.update-progress-bytes {
+  flex: 1 1 100%;
+  color: #d0d0d0;
+}
+
+.update-progress-speed,
+.update-progress-eta {
+  flex: 0 0 auto;
+}
+
+.update-progress-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.update-progress-cancel {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid #444;
+  color: #d0d0d0;
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.update-progress-cancel:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #666;
+  color: #fff;
+}
+.update-progress-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+

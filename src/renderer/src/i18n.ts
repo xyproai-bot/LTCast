@@ -301,7 +301,13 @@ export const strings = {
     oscFeedbackHint: 'Receives /ltcast/tc_ack from downstream rigs (loopback only).',
     oscFeedbackLanWarning: 'LAN-wide bind — listening on all interfaces. On Windows, the firewall may prompt.',
     oscFeedbackNoDevices: 'No devices reporting yet — start a downstream sender on this port.',
-    oscFeedbackError: 'OSC Feedback error: {message}'
+    oscFeedbackError: 'OSC Feedback error: {message}',
+    // v0.5.4 sprint A — auto-update progress overlay
+    updateDownloading: 'Downloading update…',
+    updateStarting: 'Starting download…',
+    updateEta: 'ETA',
+    updateCancel: 'Cancel',
+    updateCancelled: 'Update cancelled'
   },
   zh: {
     appTitle: 'LTCast',
@@ -602,7 +608,13 @@ export const strings = {
     oscFeedbackHint: '接收下游設備傳回的 /ltcast/tc_ack（僅本機）。',
     oscFeedbackLanWarning: '已綁定全部網路介面。Windows 首次啟用時可能會出現防火牆提示。',
     oscFeedbackNoDevices: '尚無下游設備回報 — 請於下游設備啟動回報訊息。',
-    oscFeedbackError: 'OSC 回報錯誤：{message}'
+    oscFeedbackError: 'OSC 回報錯誤：{message}',
+    // v0.5.4 sprint A — 自動更新進度覆蓋層
+    updateDownloading: '正在下載更新…',
+    updateStarting: '開始下載…',
+    updateEta: '剩餘',
+    updateCancel: '取消',
+    updateCancelled: '已取消更新下載'
   },
   ja: {
     appTitle: 'LTCast',
@@ -903,7 +915,13 @@ export const strings = {
     oscFeedbackHint: '下流機器からの /ltcast/tc_ack を受信（ループバックのみ）。',
     oscFeedbackLanWarning: 'LAN 全体に公開中。Windows ではファイアウォールの確認が表示される場合があります。',
     oscFeedbackNoDevices: '下流機器からの報告はまだありません — 下流送信を開始してください。',
-    oscFeedbackError: 'OSC フィードバックエラー：{message}'
+    oscFeedbackError: 'OSC フィードバックエラー：{message}',
+    // v0.5.4 sprint A — 自動アップデート進捗オーバーレイ
+    updateDownloading: 'アップデートをダウンロード中…',
+    updateStarting: 'ダウンロード開始中…',
+    updateEta: '残り',
+    updateCancel: 'キャンセル',
+    updateCancelled: 'アップデートをキャンセルしました'
   }
 }
 

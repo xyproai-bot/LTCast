@@ -25,31 +25,33 @@ jobs:
       - name: Run tests
         run: npx vitest run
 
-      - name: Build and publish (Windows)
+      - name: Build (Windows)
         shell: pwsh
         run: |
           Remove-Item -Recurse -Force dist, out, release -ErrorAction SilentlyContinue
           npm run build
           if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
-          $publishFlag = if ("${{ github.ref }}".StartsWith("refs/tags/")) { "always" } else { "never" }
-          # Invoke electron-builder via node directly. `npx electron-builder`
-          # silently exited 0 in <2s on windows-latest during v0.4.1 / first
-          # v0.5.0 / first v0.5.1 attempts, producing no .exe. Calling the
-          # CLI through node bypasses whatever the npx shim is doing wrong.
-          node node_modules/electron-builder/out/cli/cli.js --win --publish $publishFlag
+          # Always --publish never. v0.5.3 hit a race where build-win and
+          # build-mac both called --publish always concurrently — second to
+          # arrive at the GitHub API silently lost its uploads. Now both jobs
+          # only build; the publish-release job downloads the artifacts and
+          # uploads them to the release in a single transaction.
+          # Invoke electron-builder via node directly: `npx electron-builder`
+          # silently exited 0 in <2s on windows-latest historically.
+          node node_modules/electron-builder/out/cli/cli.js --win --publish never
           if ($LASTEXITCODE -ne 0) { throw "electron-builder failed" }
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           USE_HARD_LINKS: "false"
 
-      - name: Upload Windows artifacts (non-tag runs)
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: LTCast-win
           path: |
             dist/*.exe
-            dist/*.yml
+            dist/*.exe.blockmap
+            dist/latest.yml
+          if-no-files-found: error
 
   build-mac:
     runs-on: macos-latest
@@ -71,42 +73,35 @@ jobs:
 
       - name: Build Universal macOS app
         run: |
-          PUBLISH_FLAG="never"
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            PUBLISH_FLAG="always"
-          fi
-          # Clean slate — v0.4.1 and first v0.5.0 attempt both hit
-          # EEXIST hardlink errors because of stale state on the dist path.
+          # Always --publish never (see build-win comment for the race fix).
           rm -rf dist out release
-          # Build JS
           npm run build
-          # Pack x64 and arm64 separately
-          # Rename x64 output to avoid icon hardlink conflict during arm64 build
+          # Pack x64 and arm64 separately, then merge into a Universal binary.
           npx electron-builder --mac --dir --x64
           mv dist/mac dist/mac-x64
           npx electron-builder --mac --dir --arm64
           mv dist/mac-x64 dist/mac
-          # Merge into Universal binary (needs dist/mac/ + dist/mac-arm64/)
           node scripts/create-universal.js
           rm -rf dist/mac dist/mac-arm64
           # Patch plist and ad-hoc sign
           bash scripts/patch-mac-plist.sh dist/mac-universal/LTCast.app
           bash scripts/sign-mac.sh dist/mac-universal/LTCast.app
-          # Create Universal DMG + zip and publish
-          npx electron-builder --mac --pd dist/mac-universal --publish "$PUBLISH_FLAG"
+          # Create Universal DMG + zip — no publish; publish-release uploads.
+          npx electron-builder --mac --pd dist/mac-universal --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           USE_HARD_LINKS: "false"
 
-      - name: Upload macOS artifacts (non-tag runs)
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: LTCast-mac
           path: |
             dist/*.dmg
+            dist/*.dmg.blockmap
             dist/*.zip
-            dist/*.yml
+            dist/*.zip.blockmap
+            dist/latest-mac.yml
+          if-no-files-found: error
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -117,7 +112,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Publish GitHub Release
-        run: gh release edit "${{ github.ref_name }}" --draft=false --latest --title "LTCast ${{ github.ref_name }}"
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: LTCast-win
+          path: dist-win
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: LTCast-mac
+          path: dist-mac
+
+      - name: Create / update GitHub Release with all artifacts
+        # Single-job publish removes the v0.5.3-era race between concurrent
+        # `electron-builder --publish always` calls. We create the release
+        # if absent, upload everything in one shot, then mark it latest.
+        run: |
+          set -e
+          TAG="${{ github.ref_name }}"
+          # Create the release as a draft if it doesn't exist yet (the tag
+          # push that triggered this workflow does NOT auto-create a release).
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --title "LTCast $TAG" --notes "Release notes will be added shortly."
+          fi
+          # Upload (or replace) every artifact from both build jobs.
+          gh release upload "$TAG" dist-win/* dist-mac/* --clobber
+          # Flip to public + latest.
+          gh release edit "$TAG" --draft=false --latest --title "LTCast $TAG"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

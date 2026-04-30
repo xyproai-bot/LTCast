@@ -66,6 +66,7 @@ export interface SetlistItem {
   offsetFrames?: number  // per-song offset override; undefined = use global
   notes?: string         // user notes (e.g. "間奏有換場")
   midiCues?: MidiCuePoint[]  // per-song MIDI cue points
+  markers?: WaveformMarker[]  // per-song structure markers (intro/verse/etc); v8+
 }
 
 export type MarkerType = 'intro' | 'verse' | 'chorus' | 'bridge' | 'outro' | 'break' | 'song-title' | 'custom'
@@ -181,7 +182,7 @@ function ensureSetlistIds(data: PresetData): PresetData {
   return data
 }
 
-const CURRENT_PRESET_VERSION = 7
+const CURRENT_PRESET_VERSION = 8
 
 /** Warn once if a preset was created by a newer version of the app. */
 function warnIfNewerVersion(data: PresetData): void {
@@ -234,11 +235,30 @@ function migratePreset(data: PresetData): PresetData {
     data.midiClockManualBpm = data.midiClockManualBpm ?? 120
     data.oscTemplate = data.oscTemplate ?? 'generic'
   }
+  // version 7 → 8: relocate markers from top-level path-keyed Record onto
+  // each SetlistItem. Path-keyed storage broke when sharing presets — the
+  // recipient's local file path differs from the saver's, so the lookup
+  // missed and markers appeared empty. Per-item storage travels with the
+  // setlist serialization. Markers attached to paths that don't match any
+  // setlist item are silently dropped (Q-D).
+  if (version < 8) {
+    type LegacyMarkers = Record<string, WaveformMarker[]> | undefined
+    const legacy = (data as { markers?: LegacyMarkers }).markers
+    if (legacy && data.setlist) {
+      for (const item of data.setlist) {
+        const arr = legacy[item.path]
+        if (arr && arr.length > 0) item.markers = arr
+      }
+    }
+    delete (data as { markers?: unknown }).markers
+  }
   data.version = CURRENT_PRESET_VERSION
   return data
 }
 
-/** Build a PresetData snapshot from the current store state. */
+/** Build a PresetData snapshot from the current store state.
+ *  Stamps each setlist item with its markers from the in-memory id-keyed
+ *  state.markers map (v8 storage). Top-level `markers` field is gone. */
 function buildPresetData(s: Pick<AppState,
   'lang' | 'rightTab' | 'offsetFrames' | 'loop' | 'loopA' | 'loopB' | 'musicOutputDeviceId' |
   'ltcOutputDeviceId' | 'ltcGain' | 'selectedMidiPort' | 'forceFps' |
@@ -247,6 +267,12 @@ function buildPresetData(s: Pick<AppState,
   'selectedCueMidiPort' | 'midiInputPort' | 'midiMappings' |
   'oscEnabled' | 'oscTargetIp' | 'oscTargetPort' | 'oscTemplate' | 'markers' | 'showLocked' |
   'midiClockEnabled' | 'midiClockSource' | 'midiClockManualBpm'>): PresetData {
+  // Stamp markers onto each item before serialisation. The empty-array case
+  // is omitted to keep .ltcast files compact.
+  const setlistWithMarkers = s.setlist.map(item => {
+    const arr = s.markers[item.id]
+    return arr && arr.length > 0 ? { ...item, markers: arr } : { ...item, markers: undefined }
+  })
   return {
     version: CURRENT_PRESET_VERSION,
     lang: s.lang, rightTab: s.rightTab, offsetFrames: s.offsetFrames,
@@ -254,7 +280,7 @@ function buildPresetData(s: Pick<AppState,
     musicOutputDeviceId: s.musicOutputDeviceId,
     ltcOutputDeviceId: s.ltcOutputDeviceId, ltcGain: s.ltcGain,
     selectedMidiPort: s.selectedMidiPort, forceFps: s.forceFps,
-    ltcChannel: s.ltcChannel, setlist: s.setlist,
+    ltcChannel: s.ltcChannel, setlist: setlistWithMarkers,
     generatorStartTC: s.generatorStartTC, generatorFps: s.generatorFps,
     tcGeneratorMode: s.tcGeneratorMode,
     artnetEnabled: s.artnetEnabled, artnetTargetIp: s.artnetTargetIp,
@@ -263,12 +289,23 @@ function buildPresetData(s: Pick<AppState,
     selectedCueMidiPort: s.selectedCueMidiPort,
     midiInputPort: s.midiInputPort, midiMappings: s.midiMappings,
     oscEnabled: s.oscEnabled, oscTargetIp: s.oscTargetIp, oscTargetPort: s.oscTargetPort, oscTemplate: s.oscTemplate,
-    markers: s.markers,
     showLocked: s.showLocked,
     midiClockEnabled: s.midiClockEnabled,
     midiClockSource: s.midiClockSource,
     midiClockManualBpm: s.midiClockManualBpm
   }
+}
+
+/** Rebuild the runtime id-keyed markers map from a freshly-loaded setlist
+ *  whose items carry `markers` (v8). Empty / undefined arrays are omitted. */
+function deriveMarkersFromSetlist(setlist: SetlistItem[]): Record<string, WaveformMarker[]> {
+  const out: Record<string, WaveformMarker[]> = {}
+  for (const item of setlist) {
+    if (item.markers && item.markers.length > 0) {
+      out[item.id] = item.markers
+    }
+  }
+  return out
 }
 
 export type SortMode = 'az' | 'za' | 'ext' | 'reverse'
@@ -998,30 +1035,48 @@ export const useStore = create<AppState>()(persist((set) => ({
   })),
   setMidiInputs: (midiInputs) => set({ midiInputs }),
 
-  addMarker: (filePath, marker) => set((s) => ({
-    markerUndoStack: [...s.markerUndoStack.slice(-19), s.markers],  // keep last 20
-    markers: {
-      ...s.markers,
-      [filePath]: [...(s.markers[filePath] ?? []), marker]
-    },
-    presetDirty: true
-  })),
-  removeMarker: (filePath, markerId) => set((s) => ({
-    markerUndoStack: [...s.markerUndoStack.slice(-19), s.markers],
-    markers: {
-      ...s.markers,
-      [filePath]: (s.markers[filePath] ?? []).filter(m => m.id !== markerId)
-    },
-    presetDirty: true
-  })),
-  updateMarker: (filePath, markerId, updates) => set((s) => ({
-    markerUndoStack: [...s.markerUndoStack.slice(-19), s.markers],
-    markers: {
-      ...s.markers,
-      [filePath]: (s.markers[filePath] ?? []).map(m => m.id === markerId ? { ...m, ...updates } : m)
-    },
-    presetDirty: true
-  })),
+  // Marker actions still take filePath at the public boundary (every existing
+  // caller already has a filePath in scope). Internally we resolve to the
+  // setlist item's stable id and store under that — this is what makes
+  // markers travel correctly when the preset is shared to another machine.
+  // If the file isn't currently in the setlist, the call is a silent no-op
+  // (single-file mode markers are not supported in v0.5.4 per Q-A).
+  addMarker: (filePath, marker) => set((s) => {
+    const itemId = s.setlist.find(it => it.path === filePath)?.id
+    if (!itemId) return s
+    return {
+      markerUndoStack: [...s.markerUndoStack.slice(-19), s.markers],
+      markers: {
+        ...s.markers,
+        [itemId]: [...(s.markers[itemId] ?? []), marker]
+      },
+      presetDirty: true
+    }
+  }),
+  removeMarker: (filePath, markerId) => set((s) => {
+    const itemId = s.setlist.find(it => it.path === filePath)?.id
+    if (!itemId) return s
+    return {
+      markerUndoStack: [...s.markerUndoStack.slice(-19), s.markers],
+      markers: {
+        ...s.markers,
+        [itemId]: (s.markers[itemId] ?? []).filter(m => m.id !== markerId)
+      },
+      presetDirty: true
+    }
+  }),
+  updateMarker: (filePath, markerId, updates) => set((s) => {
+    const itemId = s.setlist.find(it => it.path === filePath)?.id
+    if (!itemId) return s
+    return {
+      markerUndoStack: [...s.markerUndoStack.slice(-19), s.markers],
+      markers: {
+        ...s.markers,
+        [itemId]: (s.markers[itemId] ?? []).map(m => m.id === markerId ? { ...m, ...updates } : m)
+      },
+      presetDirty: true
+    }
+  }),
   undoMarker: () => set((s) => {
     if (s.markerUndoStack.length === 0) return s
     const prev = s.markerUndoStack[s.markerUndoStack.length - 1]
@@ -1167,8 +1222,11 @@ export const useStore = create<AppState>()(persist((set) => ({
     const presets = await loadPresetsFromDisk()
     // Add to recent files
     useStore.getState().addRecentFile(result.path ?? '', result.name)
+    const markersFromItems = presetData.setlist ? deriveMarkersFromSetlist(presetData.setlist) : {}
     set({
       ...presetData,
+      markers: markersFromItems,
+      markerUndoStack: [],
       loopA: presetData.loopA ?? null, loopB: presetData.loopB ?? null,
       previousSetlist: null,
       activeSetlistIndex: null,
@@ -1194,10 +1252,13 @@ export const useStore = create<AppState>()(persist((set) => ({
       warnIfNewerVersion(result.data as PresetData)
       const presetData = ensureSetlistIds(migratePreset(result.data as PresetData))
       const presets = await loadPresetsFromDisk()
+      const markersFromItems = presetData.setlist ? deriveMarkersFromSetlist(presetData.setlist) : {}
       // Move to top of recent list and rebuild the native File > Open Recent menu
       useStore.getState().addRecentFile(path, result.name)
       set({
         ...presetData,
+        markers: markersFromItems,
+        markerUndoStack: [],
         loopA: presetData.loopA ?? null, loopB: presetData.loopB ?? null,
         previousSetlist: null,
         activeSetlistIndex: null,
@@ -1231,8 +1292,12 @@ export const useStore = create<AppState>()(persist((set) => ({
     if (!preset) return s
     warnIfNewerVersion(preset.data)
     const data = ensureSetlistIds(migratePreset(preset.data))
+    // v8: rebuild the runtime id-keyed markers map from item-stamped data.
+    const markers = data.setlist ? deriveMarkersFromSetlist(data.setlist) : {}
     return {
       ...data, presetName: name, presetPath: null, presetDirty: false,
+      markers,
+      markerUndoStack: [],
       // Explicitly reset loop points in case old preset doesn't have them
       loopA: data.loopA ?? null, loopB: data.loopB ?? null,
       previousSetlist: null,
@@ -1399,12 +1464,40 @@ export const useStore = create<AppState>()(persist((set) => ({
     if (typeof merged.generatorFps !== 'number' || merged.generatorFps <= 0) merged.generatorFps = current.generatorFps
     if (!Array.isArray(merged.midiMappings)) merged.midiMappings = current.midiMappings ?? []
     if (typeof merged.markers !== 'object' || merged.markers === null) merged.markers = current.markers ?? {}
+    // v8 storage: state.markers is keyed by setlist-item id, not filePath.
+    // Detect a legacy localStorage shape (keys are filePaths matching items'
+    // path field) and migrate them to id-keyed in place. Markers attached to
+    // paths not in the current setlist are dropped silently (Q-D / Q-F).
+    if (Array.isArray(merged.setlist) && merged.markers) {
+      const ids = new Set<string>(merged.setlist.map((it: SetlistItem) => it.id))
+      const persistedKeys = Object.keys(merged.markers)
+      const hasIdKey = persistedKeys.some(k => ids.has(k))
+      const hasPathKey = persistedKeys.some(
+        k => merged.setlist.some((it: SetlistItem) => it.path === k)
+      )
+      if (!hasIdKey && hasPathKey) {
+        // Pure legacy shape (no id keys, has path keys). Migrate.
+        const migrated: Record<string, WaveformMarker[]> = {}
+        for (const item of merged.setlist as SetlistItem[]) {
+          const arr = (merged.markers as Record<string, WaveformMarker[]>)[item.path]
+          if (arr && arr.length > 0) migrated[item.id] = arr
+        }
+        merged.markers = migrated
+        // Q-F: signal a one-time toast in the UI on first launch after upgrade.
+        // The flag is read + cleared by App.tsx; not persisted.
+        ;(merged as { _markersMigrated?: boolean })._markersMigrated = true
+      }
+    }
     if (typeof merged.waveformZoom !== 'object' || merged.waveformZoom === null) merged.waveformZoom = {}
     // Validate license expiry (prevent NaN display from corrupted data)
     if (merged.licenseExpiresAt && isNaN(new Date(merged.licenseExpiresAt).getTime())) merged.licenseExpiresAt = null
     // F3 — OSC Feedback. Validate persisted settings; reset to defaults on
     // corruption. oscFeedbackDevices is always reset to {} on launch (AC-11).
-    if (typeof merged.oscFeedbackEnabled !== 'boolean') merged.oscFeedbackEnabled = false
+    // v0.5.4 nit fix: ALWAYS force oscFeedbackEnabled=false on launch so the
+    // toggle visual matches the actual listener state (which is closed at
+    // boot per F3 security baseline). Without this the toggle showed ON but
+    // the listener was off, forcing users to flip OFF→ON to re-enable.
+    merged.oscFeedbackEnabled = false
     if (
       typeof merged.oscFeedbackPort !== 'number' ||
       !Number.isInteger(merged.oscFeedbackPort) ||

@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ToastContainer } from './components/Toast'
+import { UpdateProgressOverlay } from './components/UpdateProgressOverlay'
 import './globals.css'
 
 if (window.api?.platform === 'darwin') {
@@ -15,5 +16,6 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
       <App />
     </ErrorBoundary>
     <ToastContainer />
+    <UpdateProgressOverlay />
   </React.StrictMode>
 )

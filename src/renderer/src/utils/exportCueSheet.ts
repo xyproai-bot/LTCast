@@ -31,7 +31,8 @@ export function buildCueSheetHtml(options: CueSheetOptions): string {
 
   for (let i = 0; i < setlist.length; i++) {
     const song = setlist[i]
-    const songMarkers = [...(markers[song.path] ?? [])].sort((a, b) => a.time - b.time)
+    // v8 storage: markers keyed by setlist-item id, not filePath.
+    const songMarkers = [...(markers[song.id] ?? [])].sort((a, b) => a.time - b.time)
     const songCues = (song.midiCues ?? []).filter(c => c.enabled)
 
     body += `<div class="song-header">${i + 1}. ${esc(song.name)}`

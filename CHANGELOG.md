@@ -2,6 +2,30 @@
 
 All notable changes to LTCast are documented here. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] — 2026-04-28
+
+User-reported pain-point release. Five fixes — three of them affect Pro users directly. Preset format bumped to v8 with a one-shot auto-migration; older `.ltcast` files load cleanly.
+
+### Fixed
+
+- **Pro / promo state disappears after Windows / app update.** Root cause was `wmic csproduct get uuid` being removed from Windows 11 24H2; the fallback fingerprint differed from the one stored at activation, so `computeIsPro` returned `hardware-changed` and dropped users to Free silently. Two-layer fix: (a) `_getHardwareUUID` now tries `wmic` first then falls back to PowerShell `Get-CimInstance Win32_ComputerSystemProduct`, with the resolved UUID cached for the app lifetime; (b) `computeIsPro` no longer locks on fingerprint mismatch — it calls the Cloudflare Worker's `/license/check` to silently re-validate, and on success rebinds the local fingerprint. Same recovery path activates if `safeStorage.decryptString` fails after a macOS ad-hoc-sign rotation. A plaintext `.pro-recovery` file (licenseKey only) is written opportunistically as a hint when a normal save succeeds. The 30-day offline grace now applies to fingerprint drift too — a Windows update right before an offline festival no longer kicks Pro out.
+- **Song-structure markers don't follow shared `.ltcast` files** ("我 key 完之後別人打開沒有"). Markers were stored in a top-level `Record<filePath, WaveformMarker[]>`, keyed by the absolute audio path on the saver's machine — a recipient with the file at a different path got a cache miss. v0.5.4 relocates markers onto each `SetlistItem` (mirroring how `midiCues` are already stored), bumps `CURRENT_PRESET_VERSION` to 8, and migrates v7 presets in-place: each `markers[path]` entry is attached to the matching setlist item; markers on paths not in the setlist are dropped. Collect Project bundles now propagate markers correctly to any machine. Five new migration tests pin the behaviour.
+- **Update download silently sat with no UI.** Pressing "Download" in the auto-updater dialog used to return zero feedback for the 120–230 MB transfer. Now a bottom-right progress overlay shows percent, transferred / total bytes, current speed (kB/s under 1 MB/s, MB/s above), and an ETA that only appears once 2 s of stable throughput has accumulated. A Cancel button is wired through `electron-updater`'s `CancellationToken`. Overlay dismisses automatically on success, error, or cancel.
+- **Release pipeline race lost the Windows installer in v0.5.3.** `build-win` and `build-mac` both called `electron-builder --publish always` concurrently and raced to create / upload to the GitHub Release; whichever job lost dropped its assets silently, which is how v0.5.3 shipped without `LTCast-Setup-0.5.3.exe`. Both build jobs now `--publish never` and upload artifacts to the workflow; a single `publish-release` job downloads everything and creates the release in one transaction.
+- **OSC feedback nits (from F3 Evaluator):** rate limit now also enforces a 1000 pps aggregate cap (32 cooperating sources can no longer collectively flood); IPC events are coalesced to at most ~25 Hz per source so the renderer doesn't get a packet-rate IPC stream; `oscFeedbackEnabled` is now forced to `false` on rehydrate so the toggle's visual state matches the actual listener (closed at boot per security baseline).
+
+### Changed
+
+- **Preset format version bumped from 7 → 8.** Migration is automatic and lossless when the saver's setlist contains the marker paths. Older versions of LTCast cannot read v8 presets — operators sharing presets with collaborators should ensure everyone is on 0.5.4+.
+
+### Tests
+
+- +5 marker-migration cases covering: path-keyed → item-keyed conversion, orphan markers dropped (Q-D), v7 with no markers field, idempotent on v8, cross-machine roundtrip simulation. Suite total: **363 passing** (was 358 on v0.5.3).
+
+### Internal
+
+- `state.markers` is now keyed by setlist-item id (was filePath). `addMarker` / `removeMarker` / `updateMarker` action signatures still take filePath at the public boundary and resolve to id internally, so existing call sites are unchanged. Top-level `state.markers` field in `PresetData` is removed; markers live per-item.
+
 ## [0.5.3] — 2026-04-22
 
 Two features completing the v0.5.2 plan. No breaking changes. First inbound network surface in LTCast (off by default, loopback-only, defensive parser).
