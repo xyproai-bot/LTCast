@@ -932,7 +932,9 @@ export default function App(): React.JSX.Element {
         e.preventDefault()
         const state = useStore.getState()
         if (!state.filePath || state.duration <= 0) return
-        const fileMarkers = state.markers[state.filePath] ?? []
+        // v8 storage: markers keyed by setlist-item id, not filePath.
+        const itemId = state.setlist.find(it => it.path === state.filePath)?.id
+        const fileMarkers = itemId ? (state.markers[itemId] ?? []) : []
         if (fileMarkers.length === 0) return
         const sorted = [...fileMarkers].sort((a, b) => a.time - b.time)
         const ct = state.currentTime

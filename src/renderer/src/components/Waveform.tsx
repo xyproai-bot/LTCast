@@ -258,8 +258,10 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       if (bX > -10 && bX < cssW + 10) ctx.fillText('B', bX + 3, 11)
     }
 
-    // Draw file markers
-    const fileMarkers = markersRef.current[fp] ?? []
+    // Draw file markers. v8 storage: markers keyed by setlist-item id, so
+    // we resolve the current filePath → item id; if not in setlist, no markers.
+    const itemId = useStore.getState().setlist.find(it => it.path === fp)?.id
+    const fileMarkers = itemId ? (markersRef.current[itemId] ?? []) : []
     for (const marker of fileMarkers) {
       const absX = marker.time * pxPerSec
       const x = absX - scrollLeft

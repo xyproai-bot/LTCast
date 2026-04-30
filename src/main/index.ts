@@ -6,7 +6,13 @@ import { is } from '@electron-toolkit/utils'
 import ffmpeg from 'fluent-ffmpeg'
 import dgram from 'dgram'
 import { autoUpdater } from 'electron-updater'
+import { CancellationToken } from 'builder-util-runtime'
 import { parseOscTcAck } from './oscParser'
+import {
+  readRecoveryCache,
+  writeRecoveryCache,
+  clearRecoveryCache
+} from './proRecovery'
 
 // Point fluent-ffmpeg at the bundled binary
 // In production, ffmpeg-static is asarUnpacked so we resolve manually
@@ -42,6 +48,9 @@ let isManualUpdateCheck = false
 /** True while a download triggered by the user is in progress — ensures download
  *  errors are always surfaced even when the original check was silent. */
 let isDownloadInProgress = false
+/** Token attached to the active downloadUpdate() call so the renderer can cancel
+ *  it via the `update-cancel` IPC. Reset to null on download-end / error / cancel. */
+let updateCancellationToken: CancellationToken | null = null
 
 function getUpdateWindow(): BrowserWindow | null {
   return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
@@ -92,7 +101,37 @@ autoUpdater.on('update-available', async (info) => {
   const result = await (win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts))
   if (result.response === 0) {
     isDownloadInProgress = true
-    autoUpdater.downloadUpdate().catch(() => {})
+    updateCancellationToken = new CancellationToken()
+    // Swallow the rejection — `error` and `update-cancelled` listeners handle
+    // both real failures and user-initiated cancellation. Without the catch
+    // Electron logs an unhandled-promise-rejection.
+    autoUpdater.downloadUpdate(updateCancellationToken).catch(() => {})
+  }
+})
+
+// Download progress → forward to renderer for the in-app progress overlay.
+// electron-updater throttles these to roughly once per chunk; the overlay
+// runs its own rolling-window smoothing for ETA.
+autoUpdater.on('download-progress', (info) => {
+  const win = getUpdateWindow()
+  if (!win || win.isDestroyed()) return
+  win.webContents.send('update-progress', {
+    percent: info.percent,
+    transferred: info.transferred,
+    total: info.total,
+    bytesPerSecond: info.bytesPerSecond
+  })
+})
+
+// User-initiated cancel via update-cancel IPC fires this event. Dismiss the
+// overlay and surface a small toast — no error dialog (cancel is not a failure).
+autoUpdater.on('update-cancelled', () => {
+  isDownloadInProgress = false
+  updateCancellationToken = null
+  const win = getUpdateWindow()
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('update-progress-dismiss')
+    win.webContents.send('update-cancelled-toast')
   }
 })
 
@@ -113,6 +152,15 @@ autoUpdater.on('update-not-available', () => {
 
 // Error during update check or download
 autoUpdater.on('error', async (err) => {
+  // CancellationError ("cancelled") is dispatched by electron-updater when the
+  // active CancellationToken is cancelled. The dedicated `update-cancelled`
+  // event already handles the dismiss/toast — suppress the error dialog so the
+  // user doesn't see a "Download Failed" pop-up for an action they triggered.
+  if (err.message === 'cancelled' || err.name === 'CancellationError') {
+    isDownloadInProgress = false
+    updateCancellationToken = null
+    return
+  }
   // Suppress ENOENT for app-update.yml — happens when running a local build
   // that wasn't published (no app-update.yml injected into bundle)
   if ((err as NodeJS.ErrnoException).code === 'ENOENT' &&
@@ -127,9 +175,14 @@ autoUpdater.on('error', async (err) => {
   const wasManual = isManualUpdateCheck
   isManualUpdateCheck = false
   isDownloadInProgress = false
+  updateCancellationToken = null
   if (!wasManual && !wasDownload) return
 
   const win = getUpdateWindow()
+  // Dismiss the in-app progress overlay before the error dialog opens (AC-5).
+  if (wasDownload && win && !win.isDestroyed()) {
+    win.webContents.send('update-progress-dismiss')
+  }
   if (wasDownload) {
     // Download failed — offer to open the releases page as fallback
     const opts = {
@@ -158,7 +211,14 @@ autoUpdater.on('error', async (err) => {
 // Update fully downloaded → prompt to restart
 autoUpdater.on('update-downloaded', async (info) => {
   isDownloadInProgress = false
+  updateCancellationToken = null
   const win = getUpdateWindow()
+  // Dismiss the in-app progress overlay BEFORE the modal "Restart Now" dialog
+  // opens (AC-4). Send is async so the renderer has time to unmount before
+  // the modal grabs focus.
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('update-progress-dismiss')
+  }
   const isMac = process.platform === 'darwin'
   const opts = {
     type: 'info' as const,
@@ -276,19 +336,41 @@ function getProStatePath(): string {
   return join(app.getPath('userData'), '.pro-state')
 }
 
+/** Dev-only logger. Production paths must stay silent (Q-G: no telemetry, no on-disk log). */
+function devLog(msg: string): void {
+  if (!app.isPackaged) {
+    // eslint-disable-next-line no-console
+    console.log(`[pro-recovery] ${msg}`)
+  }
+}
+
 function saveProState(state: ProState): void {
   try {
     const { safeStorage } = require('electron')
     if (!safeStorage.isEncryptionAvailable()) {
       // Fallback: write plaintext (still better than renderer-modifiable store)
       writeFileSync(getProStatePath(), JSON.stringify(state), 'utf-8')
-      return
+    } else {
+      const encrypted = safeStorage.encryptString(JSON.stringify(state))
+      writeFileSync(getProStatePath(), encrypted)
     }
-    const encrypted = safeStorage.encryptString(JSON.stringify(state))
-    writeFileSync(getProStatePath(), encrypted)
+    // Q-E: opportunistically write the recovery cache so the FIRST time the
+    // user hits a fingerprint drift / safeStorage decrypt failure we have a
+    // plaintext hint to identify which licenseKey to re-validate. Cache holds
+    // ONLY the licenseKey — never the fingerprint, never the email.
+    if (state.licenseKey) {
+      writeRecoveryCache(app.getPath('userData'), state.licenseKey)
+    }
   } catch { /* non-fatal */ }
 }
 
+/**
+ * Read the persisted ProState. Returns null when:
+ * - the file does not exist
+ * - safeStorage rejects the blob (e.g. macOS ad-hoc signature rotated, Keychain
+ *   is locked, or DPAPI key changed). Recovery is performed by the async path
+ *   in `computeIsPro`, NOT here, so this remains synchronous and side-effect-free.
+ */
 function readProState(): ProState | null {
   try {
     const p = getProStatePath()
@@ -306,23 +388,49 @@ function readProState(): ProState | null {
 function clearProState(): void {
   try {
     const p = getProStatePath()
-    if (existsSync(p)) require('fs').unlinkSync(p)
+    if (existsSync(p)) unlinkSync(p)
+  } catch { /* non-fatal */ }
+  // Always clear the recovery cache alongside the encrypted state. Otherwise a
+  // genuinely revoked / refunded license could keep recovering itself on next
+  // boot via the leftover hint.
+  try {
+    clearRecoveryCache(app.getPath('userData'))
   } catch { /* non-fatal */ }
 }
 
 /**
  * Returns true if the app is currently in Pro state.
- * Main process is authoritative — renderer cannot forge this because
- * the state is encrypted via OS keychain.
- * Clock rollback check is built-in (expire immediately on tamper).
+ *
+ * Main process is authoritative — renderer cannot forge this because the state
+ * is encrypted via OS keychain. Clock rollback check is built-in.
+ *
+ * Async because fingerprint drift / safeStorage decrypt failure may trigger a
+ * silent Worker `/license/check` recovery attempt. The happy path
+ * (decryptable state + matching fingerprint + within grace) does NOT touch the
+ * network — see AC-9.
+ *
+ * Recovery flow per the v0.5.4 B sprint contract:
+ *   - decrypt fails BUT recovery cache exists → call `/license/check`. If
+ *     `active`, rebuild ProState with current fingerprint.
+ *   - decrypt OK BUT fingerprint mismatch → call `/license/check`. If `active`,
+ *     silently update fingerprint. If `revoked`/`expired`/`refunded`, drop to
+ *     Free. If Worker unreachable, fall back to the existing 30-day grace
+ *     (Q-F: trust grace for offline drift).
  */
-function computeIsPro(): { isPro: boolean; reason: string } {
+async function computeIsPro(): Promise<{ isPro: boolean; reason: string }> {
   // Rollback check first
   const hw = updateHighWater()
   if (hw.rolledBack) return { isPro: false, reason: 'clock-tampered' }
 
   const state = readProState()
-  if (!state) return { isPro: false, reason: 'no-license' }
+  if (!state) {
+    // safeStorage may have rejected the blob (e.g. macOS ad-hoc signature
+    // rotated). Try to recover via the plaintext recovery cache, which only
+    // holds the licenseKey — ProState is rebuilt server-authoritatively.
+    const recovered = await tryRecoverFromCache()
+    if (recovered) return recovered
+    return { isPro: false, reason: 'no-license' }
+  }
   if (state.status !== 'active') return { isPro: false, reason: `status-${state.status}` }
 
   // Promo hard expiry
@@ -334,10 +442,14 @@ function computeIsPro(): { isPro: boolean; reason: string } {
 
   // Hardware fingerprint binding: if the license was activated on a different
   // machine (user cloned .pro-state, swapped hardware, or transferred install),
-  // require re-activation. Legitimate hardware swaps just need one re-activate.
+  // historically we returned `hardware-changed` here. That bug is what locked
+  // out users whose Windows auto-updated to 24H2 (wmic removed → fingerprint
+  // changes). We now attempt silent recovery via the Worker. AC-1 / AC-3.
   if (state.fingerprint) {
     const current = getMachineFingerprint()
     if (state.fingerprint !== current) {
+      const recovered = await tryRecoverFingerprint(state)
+      if (recovered) return recovered
       return { isPro: false, reason: 'hardware-changed' }
     }
   }
@@ -348,6 +460,114 @@ function computeIsPro(): { isPro: boolean; reason: string } {
   if (daysSince > 30) return { isPro: false, reason: 'offline-grace-exceeded' }
 
   return { isPro: true, reason: 'ok' }
+}
+
+/**
+ * Recovery path 1: safeStorage decrypt failed (no usable ProState) but the
+ * plaintext recovery cache holds a licenseKey. Validate against the Worker; on
+ * `active`, rebuild a fresh encrypted ProState bound to the current fingerprint.
+ */
+async function tryRecoverFromCache(): Promise<{ isPro: boolean; reason: string } | null> {
+  let cached: { licenseKey: string } | null = null
+  try {
+    cached = readRecoveryCache(app.getPath('userData'))
+  } catch {
+    return null
+  }
+  if (!cached || !cached.licenseKey) return null
+  devLog('recovery-attempted (decrypt-failure path)')
+
+  let result: { status: string; expiresAt?: string | null } | null = null
+  try {
+    const { net } = require('electron')
+    const response = await net.fetch(`${WORKER_API}/license/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ licenseKey: cached.licenseKey })
+    })
+    result = await response.json()
+  } catch {
+    devLog('recovery-network-error')
+    return null
+  }
+  if (!result) return null
+
+  if (result.status === 'active') {
+    saveProState({
+      licenseKey: cached.licenseKey,
+      validatedAt: Date.now(),
+      status: 'active',
+      expiresAt: result.expiresAt || undefined,
+      fingerprint: getMachineFingerprint()
+    })
+    devLog('recovery-confirmed (decrypt-failure path)')
+    return { isPro: true, reason: 'recovered' }
+  }
+  if (result.status === 'revoked' || result.status === 'refunded' || result.status === 'expired') {
+    // Genuinely invalid — Q-C: silent drop. clearProState also clears the
+    // recovery cache, so we don't keep trying to revive a revoked license.
+    clearProState()
+    devLog(`recovery-rejected (${result.status})`)
+    return { isPro: false, reason: result.status === 'expired' ? 'expired' : `status-${result.status}` }
+  }
+  // 'unknown' or anything else → leave state unchanged (Worker doesn't know
+  // this key yet, e.g. the webhook hasn't fired). Recovery cannot proceed.
+  devLog(`recovery-unknown (${result.status})`)
+  return null
+}
+
+/**
+ * Recovery path 2: ProState decrypted fine but the fingerprint mismatches the
+ * current machine. Most common cause is Windows 24H2 removing wmic — the UUID
+ * suddenly arrives via PowerShell instead, but the SMBIOS UUID itself didn't
+ * change so we expect AC-6's wmic+PowerShell fallback to make this case rare.
+ *
+ * Q-F: when offline (Worker unreachable), trust the existing 30-day grace.
+ */
+async function tryRecoverFingerprint(state: ProState): Promise<{ isPro: boolean; reason: string } | null> {
+  devLog('recovery-attempted (fingerprint-drift path)')
+
+  let result: { status: string; expiresAt?: string | null } | null = null
+  try {
+    const { net } = require('electron')
+    const response = await net.fetch(`${WORKER_API}/license/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ licenseKey: state.licenseKey })
+    })
+    result = await response.json()
+  } catch {
+    devLog('recovery-network-error (fingerprint-drift)')
+    // Q-F: offline + drift — fall back to existing 30-day grace.
+    const daysSince = (Date.now() - state.validatedAt) / (1000 * 60 * 60 * 24)
+    if (daysSince < -1) return { isPro: false, reason: 'clock-tampered' }
+    if (daysSince > 30) return { isPro: false, reason: 'offline-grace-exceeded' }
+    return { isPro: true, reason: 'offline-grace' }
+  }
+  if (!result) return null
+
+  if (result.status === 'active') {
+    saveProState({
+      ...state,
+      validatedAt: Date.now(),
+      status: 'active',
+      expiresAt: result.expiresAt || state.expiresAt,
+      fingerprint: getMachineFingerprint()
+    })
+    devLog('recovery-confirmed (fingerprint-drift path)')
+    return { isPro: true, reason: 'recovered' }
+  }
+  if (result.status === 'revoked' || result.status === 'refunded' || result.status === 'expired') {
+    clearProState()
+    devLog(`recovery-rejected (${result.status})`)
+    return { isPro: false, reason: result.status === 'expired' ? 'expired' : `status-${result.status}` }
+  }
+  // 'unknown' → fall back to grace per Q-F (treat like offline).
+  devLog(`recovery-unknown (${result.status}) — falling back to grace`)
+  const daysSince = (Date.now() - state.validatedAt) / (1000 * 60 * 60 * 24)
+  if (daysSince < -1) return { isPro: false, reason: 'clock-tampered' }
+  if (daysSince > 30) return { isPro: false, reason: 'offline-grace-exceeded' }
+  return { isPro: true, reason: 'offline-grace' }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -441,30 +661,69 @@ function getLegacyFingerprint(): string {
   return crypto.createHash('sha256').update(raw).digest('hex')
 }
 
-/** Get hardware UUID (motherboard/platform). Stable across network changes. */
+/** Module-level cache so repeated `getMachineFingerprint()` calls don't spawn
+ *  a subprocess per check. Resolved once per app launch. */
+let _cachedHardwareUUID: string | null | undefined = undefined
+
+/** Get hardware UUID (motherboard/platform). Stable across network changes.
+ *  Cached for the app lifetime — first call may shell out, subsequent calls
+ *  return immediately. */
 function _getHardwareUUID(): string | null {
-  try {
-    const { execSync } = require('child_process')
-    if (process.platform === 'win32') {
-      // Windows: SMBIOS UUID from motherboard
-      const out = execSync('wmic csproduct get uuid', { timeout: 5000 }).toString()
+  if (_cachedHardwareUUID !== undefined) return _cachedHardwareUUID
+  _cachedHardwareUUID = _resolveHardwareUUID()
+  return _cachedHardwareUUID
+}
+
+function _resolveHardwareUUID(): string | null {
+  const { execSync } = require('child_process')
+  if (process.platform === 'win32') {
+    // Windows: SMBIOS UUID from motherboard.
+    // Try `wmic` first for backward compat with pre-24H2 systems where it
+    // still exists. On Windows 11 24H2 Microsoft removed `wmic`, so fall
+    // back to PowerShell `Get-CimInstance Win32_ComputerSystemProduct`.
+    // Without this fallback, an OS auto-update from 22H2 → 24H2 changes
+    // the resolved fingerprint and silently kicks Pro users out — which is
+    // the bug user reported ("redeem promo, restart, Pro disappears").
+    try {
+      const out = execSync('wmic csproduct get uuid', {
+        timeout: 5000,
+        windowsHide: true
+      }).toString()
       const lines = out.trim().split('\n').map((l: string) => l.trim()).filter(Boolean)
       if (lines.length >= 2 && lines[1] !== 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF') {
         return lines[1]
       }
-    } else if (process.platform === 'darwin') {
-      // macOS: IOPlatformUUID
-      const out = execSync('ioreg -rd1 -c IOPlatformExpertDevice', { timeout: 5000 }).toString()
+    } catch { /* wmic missing on 24H2+ → try PowerShell next */ }
+    try {
+      // Use `powershell -NoProfile -Command` for a fast, deterministic call.
+      // The cmdlet exists on every supported Windows version (22H2 + 24H2).
+      const out = execSync(
+        'powershell.exe -NoProfile -NonInteractive -Command "(Get-CimInstance Win32_ComputerSystemProduct).UUID"',
+        { timeout: 5000, windowsHide: true }
+      ).toString().trim()
+      if (out && out !== 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF') {
+        return out
+      }
+    } catch { /* both methods failed → fall through to fingerprint fallback */ }
+    return null
+  }
+  if (process.platform === 'darwin') {
+    try {
+      const out = execSync('ioreg -rd1 -c IOPlatformExpertDevice', {
+        timeout: 5000
+      }).toString()
       const match = out.match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/)
       if (match) return match[1]
-    } else {
-      // Linux: machine-id
-      const { readFileSync, existsSync } = require('fs')
-      if (existsSync('/etc/machine-id')) {
-        return readFileSync('/etc/machine-id', 'utf8').trim()
-      }
+    } catch { /* fall through */ }
+    return null
+  }
+  // Linux
+  try {
+    const { readFileSync, existsSync } = require('fs')
+    if (existsSync('/etc/machine-id')) {
+      return readFileSync('/etc/machine-id', 'utf8').trim()
     }
-  } catch { /* UUID unavailable — use fallback */ }
+  } catch { /* fall through */ }
   return null
 }
 
@@ -642,6 +901,15 @@ const oscFeedbackRateMap: Map<string, RateBucket> = new Map()
 const OSC_FEEDBACK_MAX_DEVICES = 32
 /** Max packets/second per source. Excess is dropped silently before parsing. */
 const OSC_FEEDBACK_MAX_PPS_PER_SOURCE = 200
+/** Aggregate cap across all sources — prevents 32 cooperating sources from
+ *  collectively flooding 6,400 pps into the parser. v0.5.3 F3 nit fix. */
+const OSC_FEEDBACK_MAX_PPS_AGGREGATE = 1000
+let oscFeedbackAggregate: { count: number; windowStart: number } = { count: 0, windowStart: 0 }
+/** IPC coalesce window: don't fire more than one renderer event per source per
+ *  this many milliseconds. The internal accept rate stays high (so rate-limit
+ *  buckets see real packet volume) but the renderer only renders at ~25 Hz. */
+const OSC_FEEDBACK_IPC_THROTTLE_MS = 40
+const oscFeedbackLastEmit: Map<string, number> = new Map()
 
 /**
  * Apply per-source rate limit + device cap. Returns true if packet should be
@@ -697,6 +965,8 @@ function closeOscFeedbackSocket(): void {
     oscFeedbackSocket = null
   }
   oscFeedbackRateMap.clear()
+  oscFeedbackLastEmit.clear()
+  oscFeedbackAggregate = { count: 0, windowStart: 0 }
   if (oscFeedbackPruneInterval) {
     clearInterval(oscFeedbackPruneInterval)
     oscFeedbackPruneInterval = null
@@ -737,9 +1007,25 @@ function ensureOscFeedbackSocket(port: number, bindAddress: '127.0.0.1' | '0.0.0
       try {
         const sourceId = `${rinfo.address}:${rinfo.port}`
         const now = Date.now()
+        // Per-source rate limit (200 pps). v0.5.3 F3 nit fix:
+        // Also enforce an AGGREGATE cap (1000 pps across all sources) so 32
+        // cooperating senders cannot collectively flood the parser.
         if (shouldDropForRateLimit(sourceId, now)) return
+        if (now - oscFeedbackAggregate.windowStart >= 1000) {
+          oscFeedbackAggregate = { count: 0, windowStart: now }
+        }
+        oscFeedbackAggregate.count++
+        if (oscFeedbackAggregate.count > OSC_FEEDBACK_MAX_PPS_AGGREGATE) return
         const tc = parseOscTcAck(msg)
         if (!tc) return
+        // IPC coalesce: at most one renderer event per source per
+        // OSC_FEEDBACK_IPC_THROTTLE_MS. The parser still runs on every
+        // accepted packet (so the rate-limit buckets reflect real volume);
+        // we just don't dump an event-loop wave of useless updates onto
+        // the renderer when a downstream device fires every ms.
+        const last = oscFeedbackLastEmit.get(sourceId) ?? 0
+        if (now - last < OSC_FEEDBACK_IPC_THROTTLE_MS) return
+        oscFeedbackLastEmit.set(sourceId, now)
         // Minimal payload — no raw bytes, no fields beyond what UI needs.
         broadcastOscFeedback('osc-feedback-tc', {
           sourceId,
@@ -1584,6 +1870,18 @@ app.whenReady().then(() => {
 
   ipcMain.handle('get-app-version', () => app.getVersion())
   ipcMain.handle('check-for-updates', () => checkForUpdates(false))
+  // Cancel the active downloadUpdate() — `update-cancelled` event then fires
+  // and dismisses the overlay + shows the toast.
+  ipcMain.handle('update-cancel', () => {
+    if (!updateCancellationToken) return { ok: false as const, reason: 'no-active-download' as const }
+    try {
+      updateCancellationToken.cancel()
+      updateCancellationToken = null
+      return { ok: true as const }
+    } catch (e) {
+      return { ok: false as const, reason: String(e) }
+    }
+  })
 
   // ── Window controls (custom title bar) ──
   ipcMain.handle('window:minimize', () => { BrowserWindow.getFocusedWindow()?.minimize() })

@@ -46,11 +46,14 @@ function LabelInput({ value, onChange, placeholder }: {
 
 export function StructurePanel({ onSeek }: Props): React.JSX.Element {
   const {
-    lang, filePath, currentTime, duration,
+    lang, filePath, currentTime, duration, setlist,
     markers, addMarker, removeMarker, updateMarker
   } = useStore()
 
-  const fileMarkers: WaveformMarker[] = filePath ? (markers[filePath] ?? []) : []
+  // v8 storage: markers keyed by setlist-item id, not filePath. Resolve the
+  // current file's item id; if file isn't in the setlist, no markers (Q-A).
+  const itemId = filePath ? (setlist.find(it => it.path === filePath)?.id ?? null) : null
+  const fileMarkers: WaveformMarker[] = itemId ? (markers[itemId] ?? []) : []
   const sorted = [...fileMarkers].sort((a, b) => a.time - b.time)
 
   const handleAdd = (): void => {

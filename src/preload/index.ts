@@ -121,6 +121,25 @@ contextBridge.exposeInMainWorld('api', {
     return () => { ipcRenderer.removeListener('artnet-socket-failed', handler) }
   },
 
+  // Auto-updater progress (in-app overlay, v0.5.4 sprint A)
+  onUpdateProgress: (callback: (data: { percent: number; transferred: number; total: number; bytesPerSecond: number }) => void) => {
+    const handler = (_event: unknown, data: { percent: number; transferred: number; total: number; bytesPerSecond: number }): void => callback(data)
+    ipcRenderer.on('update-progress', handler)
+    return () => { ipcRenderer.removeListener('update-progress', handler) }
+  },
+  onUpdateProgressDismiss: (callback: () => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('update-progress-dismiss', handler)
+    return () => { ipcRenderer.removeListener('update-progress-dismiss', handler) }
+  },
+  onUpdateCancelledToast: (callback: () => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('update-cancelled-toast', handler)
+    return () => { ipcRenderer.removeListener('update-cancelled-toast', handler) }
+  },
+  updateCancel: () =>
+    ipcRenderer.invoke('update-cancel') as Promise<{ ok: true } | { ok: false; reason: string }>,
+
   // Window controls (custom title bar)
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
   windowMaximize: () => ipcRenderer.invoke('window:maximize'),
