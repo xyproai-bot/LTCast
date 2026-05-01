@@ -2010,7 +2010,18 @@ app.whenReady().then(() => {
   // ── License IPC ──
   ipcMain.handle('license-activate', async (_event, key: string) => lemonSqueezyRequest('activate', key))
   ipcMain.handle('license-deactivate', async (_event, key: string) => lemonSqueezyRequest('deactivate', key))
-  ipcMain.handle('license-validate', async (_event, key: string) => lemonSqueezyRequest('validate', key))
+  ipcMain.handle('license-validate', async (_event, key: string) => {
+    // Promo keys are not in LemonSqueezy — validate via Worker /license/check instead.
+    if (key.startsWith('PROMO-')) {
+      const result = await checkLicenseStatus(key)
+      if (result.status === 'active') return { valid: true, status: 'active' }
+      if (result.status === 'expired') return { valid: false, error: 'expired' }
+      if (result.status === 'refunded' || result.status === 'revoked') return { valid: false, error: 'invalid' }
+      // 'unknown' (worker unreachable) → trust local state, treat as valid
+      return { valid: true, status: 'unknown' }
+    }
+    return lemonSqueezyRequest('validate', key)
+  })
   ipcMain.handle('license-status', async (_event, key: string) => checkLicenseStatus(key))
   // Authoritative Pro check — encrypted safeStorage, tamper-resistant
   ipcMain.handle('is-pro', () => computeIsPro())
@@ -2068,7 +2079,18 @@ app.whenReady().then(() => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, email, fingerprint })
       })
-      return await resp.json()
+      const result = await resp.json()
+      // Persist Pro state on successful redemption so it survives app restart.
+      if (result.ok && result.licenseKey) {
+        saveProState({
+          licenseKey: result.licenseKey,
+          validatedAt: Date.now(),
+          status: 'active',
+          expiresAt: result.expiresAt || undefined,
+          fingerprint
+        })
+      }
+      return result
     } catch {
       return { error: 'Network error' }
     }
