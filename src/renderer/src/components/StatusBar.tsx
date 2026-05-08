@@ -6,7 +6,7 @@ import { PreShowCheck } from './PreShowCheck'
 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
 const mod = isMac ? '⌘' : 'Ctrl'
 
-const SHORTCUTS: Array<{ key: string; label: (lang: 'en' | 'zh' | 'ja') => string }> = [
+const SHORTCUTS_BASE: Array<{ key: string; label: (lang: 'en' | 'zh' | 'ja') => string }> = [
   { key: 'Space',           label: (l) => t(l, 'scSpace') },
   { key: 'Esc',             label: (l) => t(l, 'scEsc') },
   { key: 'F11',             label: (l) => t(l, 'scF11') },
@@ -18,7 +18,14 @@ const SHORTCUTS: Array<{ key: string; label: (lang: 'en' | 'zh' | 'ja') => strin
   { key: `${mod}+Z`,        label: (l) => t(l, 'scCtrlZ') },
   { key: `${mod}+←`,        label: (l) => t(l, 'scCtrlLeft') },
   { key: `${mod}+→`,        label: (l) => t(l, 'scCtrlRight') },
-  { key: '1-9',              label: (l) => t(l, 'scNumKeys') },
+  // Sprint A — F4 marker navigation
+  { key: 'J',               label: (l) => t(l, 'scKeyJ') },
+  { key: 'K',               label: (l) => t(l, 'scKeyK') },
+  // Sprint A — F3 beat-aligned offset
+  { key: 'Shift+,',         label: (l) => t(l, 'scShiftComma') },
+  { key: 'Shift+.',         label: (l) => t(l, 'scShiftPeriod') },
+  { key: `${mod}+,`,        label: (l) => t(l, 'scCtrlComma') },
+  { key: `${mod}+.`,        label: (l) => t(l, 'scCtrlPeriod') },
 ]
 
 interface Props {
@@ -121,7 +128,7 @@ export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator }: 
             <h3>{t(lang, 'shortcutsTitle')}</h3>
             <table className="shortcuts-table">
               <tbody>
-                {SHORTCUTS.map((s) => (
+                {SHORTCUTS_BASE.map((s) => (
                   <tr key={s.key}>
                     <td className="shortcuts-key"><kbd>{s.key}</kbd></td>
                     <td className="shortcuts-desc">{s.label(lang)}</td>

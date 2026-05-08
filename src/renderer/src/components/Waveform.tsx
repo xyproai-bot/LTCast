@@ -3,6 +3,7 @@ import WaveSurfer from 'wavesurfer.js'
 import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline.esm.js'
 import MinimapPlugin from 'wavesurfer.js/dist/plugins/minimap.esm.js'
 import { useStore, WaveformMarker, MARKER_TYPE_COLORS, MARKER_TYPES, MarkerType } from '../store'
+import { MARKER_TYPE_ABBREV, resolveMarkerTypeColor } from './StructurePanel'
 import { t } from '../i18n'
 
 interface Props {
@@ -36,7 +37,8 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     videoWaveform, videoDuration, videoOffsetSeconds,
     videoStartTimecode, videoFileName, videoLoading,
     loopA, loopB,
-    markers, addMarker, removeMarker, updateMarker
+    markers, addMarker, removeMarker, updateMarker,
+    markerTypeColorOverrides
   } = useStore()
 
   // Stable refs for canvas drawing
@@ -230,6 +232,42 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     const scrollLeft = scrollContainer ? scrollContainer.scrollLeft : 0
     const pxPerSec = totalWidth / dur
 
+    // Draw right-drag loop preview region (F2, AC-2.1)
+    const rd = rightDragRef.current
+    if (rd && rd.isDragging) {
+      const rdStartX = rd.startTime * pxPerSec - scrollLeft
+      const rdEndX   = rd.currentTime * pxPerSec - scrollLeft
+      const previewStart = Math.min(rdStartX, rdEndX)
+      const previewEnd   = Math.max(rdStartX, rdEndX)
+      ctx.fillStyle = 'rgba(255, 165, 0, 0.18)'
+      ctx.fillRect(previewStart, 0, previewEnd - previewStart, cssH)
+      ctx.strokeStyle = 'rgba(255, 165, 0, 0.8)'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([3, 3])
+      ctx.beginPath(); ctx.moveTo(rdStartX, 0); ctx.lineTo(rdStartX, cssH); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(rdEndX, 0); ctx.lineTo(rdEndX, cssH); ctx.stroke()
+      ctx.setLineDash([])
+
+      // Floating label (AC-2.7) — show if showLoopDragLabel is true
+      if (useStore.getState().showLoopDragLabel) {
+        const durationSec = Math.abs(rd.currentTime - rd.startTime)
+        const bpm = useStore.getState().tappedBpm ?? useStore.getState().detectedBpm
+        let labelText = `${durationSec.toFixed(2)}s`
+        if (bpm && bpm > 0) {
+          const beats = (durationSec / 60) * bpm
+          labelText += ` (${beats.toFixed(1)} beats)`
+        }
+        const midX = (previewStart + previewEnd) / 2
+        const midY = cssH / 2
+        ctx.font = 'bold 11px sans-serif'
+        const tw = ctx.measureText(labelText).width
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'
+        ctx.fillRect(midX - tw / 2 - 4, midY - 12, tw + 8, 16)
+        ctx.fillStyle = '#ffcc44'
+        ctx.fillText(labelText, midX - tw / 2, midY)
+      }
+    }
+
     // Draw A-B loop region (scroll-aware)
     const la = loopARef.current, lb = loopBRef.current
     if (la !== null && lb !== null) {
@@ -268,7 +306,7 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       if (x < -10 || x > cssW + 10) continue
 
       const mType = marker.type ?? 'custom'
-      const color = marker.color ?? MARKER_TYPE_COLORS[mType]
+      const color = marker.color ?? resolveMarkerTypeColor(mType, markerTypeColorOverrides)
       const isSongTitle = mType === 'song-title'
 
       // Vertical line (thicker for song-title)
@@ -289,11 +327,24 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       ctx.closePath()
       ctx.fill()
 
+      // Type abbreviation badge (AC-1.2) — small colored box with single letter
+      const abbrev = MARKER_TYPE_ABBREV[mType] ?? '·'
+      const badgeSize = isSongTitle ? 12 : 10
+      const badgeX = Math.min(x + 4, cssW - 30)
+      const badgeY = isSongTitle ? 12 : 10
+      // Draw badge background
+      ctx.fillStyle = color
+      ctx.fillRect(badgeX, badgeY - badgeSize + 2, badgeSize, badgeSize)
+      // Draw abbreviation letter
+      ctx.font = `bold ${badgeSize - 2}px sans-serif`
+      ctx.fillStyle = '#fff'
+      ctx.fillText(abbrev, badgeX + 1, badgeY)
+
       // Label
       if (marker.label) {
         ctx.font = isSongTitle ? 'bold 12px sans-serif' : '10px sans-serif'
         ctx.fillStyle = color
-        const labelX = Math.min(x + 4, cssW - 80)
+        const labelX = Math.min(x + 4 + badgeSize + 2, cssW - 80)
         ctx.fillText(marker.label, labelX, isSongTitle ? 22 : 20)
       }
     }
@@ -373,8 +424,20 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     drawMarkers()
   }, [drawMarkers])
 
-  // Right-click → rename / delete nearest marker
+  // Right-click → rename / delete nearest marker (only when NOT a right-drag)
   const handleMarkerContextMenu = useCallback((e: React.MouseEvent): void => {
+    // If the right-click was part of a drag gesture (isDragging=true) we suppress
+    // the context menu entirely (AC-2.4). The onMouseUp handler already committed
+    // the loop; rightDragRef is null by the time contextmenu fires.
+    // We detect by checking if the gesture moved > 5px (isDragging flag).
+    // rightDragRef will be null at this point (cleared in onMouseUp), so we check
+    // if any drag was committed by a small heuristic: if rightDragRef was non-null
+    // and isDragging was true, we set a flag via the preventContextMenuRef.
+    if (preventContextMenuRef.current) {
+      preventContextMenuRef.current = false
+      e.preventDefault()
+      return
+    }
     const fp = filePathRef.current
     if (!fp) return
     const closest = findNearestMarker(e)
@@ -410,8 +473,13 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     isDragging: boolean     // true once mouse moved > 5px from startX
   } | null>(null)
 
-  // Mousedown capture on parent div — if near a marker, prepare for potential drag
+  // Set to true when a right-drag committed, so the subsequent contextmenu
+  // event is suppressed (AC-2.4). Cleared after first use.
+  const preventContextMenuRef = useRef(false)
+
+  // Mousedown capture on parent div — if near a marker, prepare for potential drag (left button only)
   const handleWrapMouseDown = useCallback((e: React.MouseEvent): void => {
+    if (e.button !== 0) return  // only arm marker drag for left button (AC-2.6)
     const closest = findNearestMarker(e)
     const fp = filePathRef.current
     if (closest && fp) {
@@ -485,6 +553,85 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     }
   }, [drawMarkers])
 
+
+  // ── Right-click drag to set Loop A/B (F2) ──────────────────────────────
+  // Tracks state for a right-click drag gesture. During drag a translucent
+  // preview is drawn on the marker canvas; on mouseup we commit setLoopA/B.
+  const rightDragRef = useRef<{
+    startX: number         // mousedown screen X
+    startTime: number      // time at mousedown
+    currentTime: number    // time at current mouse position
+    isDragging: boolean    // true once moved > 5px
+  } | null>(null)
+
+  // Handle right-mousedown on the music waveform wrap
+  const handleWrapRightMouseDown = useCallback((e: React.MouseEvent): void => {
+    if (e.button !== 2) return
+    const time = getTimeFromMouseEvent(e)
+    if (time === null) return
+    // Prevent WaveSurfer from seeking on right-click (AC-2.4)
+    e.stopPropagation()
+    rightDragRef.current = {
+      startX: e.clientX,
+      startTime: time,
+      currentTime: time,
+      isDragging: false
+    }
+  }, []) // getTimeFromMouseEvent is stable (reads refs only)
+
+  // Global right-click drag handlers
+  useEffect(() => {
+    const DRAG_THRESHOLD = 5
+
+    const onMouseMove = (e: MouseEvent): void => {
+      if (!rightDragRef.current) return
+      const dx = Math.abs(e.clientX - rightDragRef.current.startX)
+
+      if (!rightDragRef.current.isDragging) {
+        if (dx < DRAG_THRESHOLD) return
+        rightDragRef.current.isDragging = true
+      }
+
+      // Calculate time from mouse position
+      const m = getWsMetrics()
+      const wrap = musicWrapRef.current
+      if (!m || !wrap) return
+      const rect = wrap.getBoundingClientRect()
+      const clickX = e.clientX - rect.left + m.scrollLeft
+      const time = Math.max(0, Math.min(durationRef.current, clickX / m.pxPerSec))
+      rightDragRef.current.currentTime = time
+
+      // Redraw marker canvas to show preview region
+      drawMarkersRef.current()
+    }
+
+    const onMouseUp = (e: MouseEvent): void => {
+      if (!rightDragRef.current) return
+      if (e.button !== 2) { rightDragRef.current = null; return }
+      const { startTime, currentTime: endTime, isDragging } = rightDragRef.current
+      rightDragRef.current = null
+
+      if (isDragging) {
+        // Commit loop A/B (auto-sort for reverse drag) — AC-2.2
+        const loopStart = Math.min(startTime, endTime)
+        const loopEnd   = Math.max(startTime, endTime)
+        useStore.getState().setLoopA(loopStart)
+        useStore.getState().setLoopB(loopEnd)
+        // Suppress the contextmenu event that will follow this mouseup (AC-2.4)
+        preventContextMenuRef.current = true
+      }
+      // If not dragging (distance ≤ 5px), the contextmenu event will fire normally
+      // and handleMarkerContextMenu will handle it (AC-2.3).
+      drawMarkersRef.current()
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [drawMarkers])
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  LTC waveform — simple canvas
@@ -867,7 +1014,10 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
         <div
           ref={musicWrapRef}
           className="waveform-music-wrap"
-          onMouseDownCapture={handleWrapMouseDown}
+          onMouseDownCapture={(e) => {
+            if (e.button === 2) handleWrapRightMouseDown(e)
+            else handleWrapMouseDown(e)
+          }}
           onDoubleClickCapture={handleMarkerDblClick}
           onContextMenuCapture={handleMarkerContextMenu}
         >

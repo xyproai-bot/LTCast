@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tcToFrames, framesToTc, tcToString } from '../timecodeConvert'
+import { tcToFrames, framesToTc, tcToString, framesPerBeat, nudgeOffsetByBeats, findNthMarker, findAdjacentMarker } from '../timecodeConvert'
 
 // ════════════════════════════════════════════════════════════════════
 //  Helper
@@ -276,5 +276,166 @@ describe('edge cases', () => {
         expect(tc.f).toBeGreaterThanOrEqual(2)
       }
     }
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════
+//  F3 — framesPerBeat
+// ════════════════════════════════════════════════════════════════════
+
+describe('framesPerBeat', () => {
+  it('120 BPM @ 25 fps = round(12.5) = 13', () => {
+    expect(framesPerBeat(120, 25)).toBe(13)
+  })
+
+  it('120 BPM @ 30 fps = round(15) = 15', () => {
+    expect(framesPerBeat(120, 30)).toBe(15)
+  })
+
+  it('120 BPM @ 29.97 fps = round(14.985) = 15', () => {
+    expect(framesPerBeat(120, 29.97)).toBe(15)
+  })
+
+  it('60 BPM @ 25 fps = round(25) = 25', () => {
+    expect(framesPerBeat(60, 25)).toBe(25)
+  })
+
+  it('60 BPM @ 30 fps = round(30) = 30', () => {
+    expect(framesPerBeat(60, 30)).toBe(30)
+  })
+
+  it('140 BPM @ 25 fps = round(10.71) = 11', () => {
+    expect(framesPerBeat(140, 25)).toBe(11)
+  })
+
+  it('bpm=0 returns 0', () => {
+    expect(framesPerBeat(0, 25)).toBe(0)
+  })
+
+  it('fps=0 returns 0', () => {
+    expect(framesPerBeat(120, 0)).toBe(0)
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════
+//  F3 — nudgeOffsetByBeats
+// ════════════════════════════════════════════════════════════════════
+
+describe('nudgeOffsetByBeats', () => {
+  it('+1 beat at 120 BPM / 25 fps adds 13 frames', () => {
+    // (60/120)*25 = 12.5 → round(12.5) = 13 but nudge uses raw float internally
+    // 0 + 1 * 12.5 = 12.5 → round = 13
+    expect(nudgeOffsetByBeats(0, 1, 120, 25)).toBe(13)
+  })
+
+  it('-1 beat at 120 BPM / 25 fps subtracts 13 frames', () => {
+    expect(nudgeOffsetByBeats(0, -1, 120, 25)).toBe(-13)
+  })
+
+  it('+0.5 beat at 120 BPM / 30 fps adds round(7.5)=8 frames', () => {
+    // (60/120)*30=15 * 0.5 = 7.5 → round = 8
+    expect(nudgeOffsetByBeats(0, 0.5, 120, 30)).toBe(8)
+  })
+
+  it('-0.5 beat at 120 BPM / 30 fps subtracts 8 frames', () => {
+    expect(nudgeOffsetByBeats(0, -0.5, 120, 30)).toBe(-8)
+  })
+
+  it('bpm=null returns currentFrames unchanged', () => {
+    expect(nudgeOffsetByBeats(42, 1, null, 25)).toBe(42)
+  })
+
+  it('bpm=0 returns currentFrames unchanged', () => {
+    expect(nudgeOffsetByBeats(42, 1, 0, 25)).toBe(42)
+  })
+
+  it('accumulates correctly from non-zero start', () => {
+    expect(nudgeOffsetByBeats(10, 1, 60, 30)).toBe(40)
+  })
+
+  it('handles 29.97 DF: result is integer', () => {
+    const result = nudgeOffsetByBeats(0, 1, 120, 29.97)
+    expect(Number.isInteger(result)).toBe(true)
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════
+//  F4 — findNthMarker
+// ════════════════════════════════════════════════════════════════════
+
+describe('findNthMarker', () => {
+  const markers = [
+    { id: 'b', time: 20 },
+    { id: 'a', time: 5 },
+    { id: 'c', time: 45 },
+  ]
+
+  it('finds 1st marker (sorted by time)', () => {
+    expect(findNthMarker(markers, 1)?.id).toBe('a')
+  })
+
+  it('finds 2nd marker', () => {
+    expect(findNthMarker(markers, 2)?.id).toBe('b')
+  })
+
+  it('finds 3rd marker', () => {
+    expect(findNthMarker(markers, 3)?.id).toBe('c')
+  })
+
+  it('returns null when n > markers.length', () => {
+    expect(findNthMarker(markers, 4)).toBeNull()
+  })
+
+  it('returns null when n < 1', () => {
+    expect(findNthMarker(markers, 0)).toBeNull()
+  })
+
+  it('returns null for empty array', () => {
+    expect(findNthMarker([], 1)).toBeNull()
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════
+//  F4 — findAdjacentMarker
+// ════════════════════════════════════════════════════════════════════
+
+describe('findAdjacentMarker', () => {
+  const markers = [
+    { id: 'a', time: 5 },
+    { id: 'b', time: 20 },
+    { id: 'c', time: 45 },
+  ]
+
+  it('prev: returns closest marker before currentTime - threshold', () => {
+    // currentTime=21, threshold=0.5 → cutoff=20.5 → markers <20.5: a(5), b(20) → return b
+    expect(findAdjacentMarker(markers, 21, 'prev')?.id).toBe('b')
+  })
+
+  it('next: returns closest marker after currentTime + threshold', () => {
+    // currentTime=19, threshold=0.5 → cutoff=19.5 → markers >19.5: b(20), c(45) → return b
+    expect(findAdjacentMarker(markers, 19, 'next')?.id).toBe('b')
+  })
+
+  it('prev: returns null when no marker before threshold', () => {
+    expect(findAdjacentMarker(markers, 5.3, 'prev')).toBeNull()
+  })
+
+  it('next: returns null when no marker after threshold', () => {
+    expect(findAdjacentMarker(markers, 44.6, 'next')).toBeNull()
+  })
+
+  it('prev: respects 0.5s threshold (marker exactly 0.5s before = excluded)', () => {
+    // currentTime = 5.5, threshold = 0.5 → must be < 5.0 → marker at 5.0 excluded
+    expect(findAdjacentMarker(markers, 5.5, 'prev', 0.5)).toBeNull()
+  })
+
+  it('prev: marker at exactly threshold distance is excluded', () => {
+    // currentTime=20.5, threshold=0.5 → cutoff=20.0 → b(20) excluded (not strictly <)
+    // → only a(5) qualifies → return a
+    expect(findAdjacentMarker(markers, 20.5, 'prev', 0.5)?.id).toBe('a')
+  })
+
+  it('returns null for empty markers', () => {
+    expect(findAdjacentMarker([], 10, 'next')).toBeNull()
   })
 })

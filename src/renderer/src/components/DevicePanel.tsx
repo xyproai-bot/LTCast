@@ -52,6 +52,9 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
     midiClockSource, setMidiClockSource,
     midiClockManualBpm, setMidiClockManualBpm,
     tappedBpm, detectedBpm,
+    // Sprint A settings
+    numericKeyAction, setNumericKeyAction,
+    showLoopDragLabel, setShowLoopDragLabel,
     lang
   } = useStore()
 
@@ -532,6 +535,31 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
             )}
           </div>
         )}
+      </div>
+
+      {/* Sprint A — per-install settings */}
+      <div className="device-row">
+        <span className="device-label">{t(lang, 'numericKeyActionLabel')}</span>
+        <select
+          className="device-select"
+          value={numericKeyAction}
+          onChange={(e) => setNumericKeyAction(e.target.value as 'goto-song' | 'goto-marker')}
+          style={{ width: 'auto', minWidth: '180px' }}
+        >
+          <option value="goto-song">{t(lang, 'numericKeyActionGotoSong')}</option>
+          <option value="goto-marker">{t(lang, 'numericKeyActionGotoMarker')}</option>
+        </select>
+      </div>
+
+      <div className="device-row">
+        <label className="artnet-toggle" style={{ gap: 8, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={showLoopDragLabel}
+            onChange={(e) => setShowLoopDragLabel(e.target.checked)}
+          />
+          <span className="device-label" style={{ cursor: 'pointer' }}>{t(lang, 'showLoopDragLabel')}</span>
+        </label>
       </div>
 
       {/* Help text */}

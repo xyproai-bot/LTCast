@@ -156,6 +156,8 @@ export interface PresetData {
   midiClockManualBpm?: number
   // UI Lock (show mode)
   showLocked?: boolean
+  // Sprint A — AC-1.4: per-preset marker type color overrides
+  markerTypeColorOverrides?: Partial<Record<MarkerType, string>>
   version?: number
 }
 
@@ -182,7 +184,7 @@ function ensureSetlistIds(data: PresetData): PresetData {
   return data
 }
 
-const CURRENT_PRESET_VERSION = 8
+const CURRENT_PRESET_VERSION = 9
 
 /** Warn once if a preset was created by a newer version of the app. */
 function warnIfNewerVersion(data: PresetData): void {
@@ -252,6 +254,10 @@ function migratePreset(data: PresetData): PresetData {
     }
     delete (data as { markers?: unknown }).markers
   }
+  // version 8 → 9: add per-preset marker type color overrides
+  if (version < 9) {
+    data.markerTypeColorOverrides = data.markerTypeColorOverrides ?? {}
+  }
   data.version = CURRENT_PRESET_VERSION
   return data
 }
@@ -266,7 +272,7 @@ function buildPresetData(s: Pick<AppState,
   'artnetEnabled' | 'artnetTargetIp' | 'mtcMode' | 'autoAdvance' | 'autoAdvanceGap' |
   'selectedCueMidiPort' | 'midiInputPort' | 'midiMappings' |
   'oscEnabled' | 'oscTargetIp' | 'oscTargetPort' | 'oscTemplate' | 'markers' | 'showLocked' |
-  'midiClockEnabled' | 'midiClockSource' | 'midiClockManualBpm'>): PresetData {
+  'midiClockEnabled' | 'midiClockSource' | 'midiClockManualBpm' | 'markerTypeColorOverrides'>): PresetData {
   // Stamp markers onto each item before serialisation. The empty-array case
   // is omitted to keep .ltcast files compact.
   const setlistWithMarkers = s.setlist.map(item => {
@@ -292,7 +298,8 @@ function buildPresetData(s: Pick<AppState,
     showLocked: s.showLocked,
     midiClockEnabled: s.midiClockEnabled,
     midiClockSource: s.midiClockSource,
-    midiClockManualBpm: s.midiClockManualBpm
+    midiClockManualBpm: s.midiClockManualBpm,
+    markerTypeColorOverrides: Object.keys(s.markerTypeColorOverrides).length > 0 ? s.markerTypeColorOverrides : undefined
   }
 }
 
@@ -424,6 +431,27 @@ export interface AppState {
   markers: Record<string, WaveformMarker[]>
   markerUndoStack: Record<string, WaveformMarker[]>[]
 
+  // Sprint A — per-install settings
+  // F1: active type filter for StructurePanel (empty = show all)
+  markerTypeFilter: MarkerType[]
+  // F2: show/hide floating label during right-click drag to set loop region
+  showLoopDragLabel: boolean
+  // F4: behavior of number keys 1-9
+  numericKeyAction: 'goto-song' | 'goto-marker'
+
+  // Sprint B — F7: last session (per-install, for resume on launch)
+  lastSession: {
+    filePath: string
+    fileName: string
+    positionSeconds: number
+    setlistIndex: number | null
+    savedAt: number
+  } | null
+  disableResumePrompt: boolean
+
+  // Sprint A — AC-1.4: per-preset marker type color overrides (saved in preset)
+  markerTypeColorOverrides: Partial<Record<MarkerType, string>>
+
   // Waveform zoom memory (per-file pxPerSec)
   waveformZoom: Record<string, number>
 
@@ -517,6 +545,23 @@ export interface AppState {
   setSetlistItemOffset: (index: number, offsetFrames: number | undefined) => void
   setSetlistItemNotes: (index: number, notes: string | undefined) => void
   setSetlistItemMidiCues: (index: number, cues: MidiCuePoint[]) => void
+  // Sprint B — F5: replace audio with alignment
+  setSetlistItemPath: (index: number, path: string, name: string) => void
+  replaceSetlistItemAudio: (
+    index: number,
+    newPath: string,
+    newName: string,
+    shiftedMarkers: WaveformMarker[],
+    shiftedMidiCues: MidiCuePoint[],
+    oldPath: string,
+    oldName: string,
+    oldMarkers: WaveformMarker[],
+    oldMidiCues: MidiCuePoint[]
+  ) => void
+  // Sprint B — F7: last session
+  saveLastSession: (filePath: string, fileName: string, positionSeconds: number, setlistIndex: number | null) => void
+  clearLastSession: () => void
+  setDisableResumePrompt: (disabled: boolean) => void
   setRightTab: (tab: 'devices' | 'setlist' | 'cues' | 'structure' | 'calc' | 'log' | 'timer') => void
   // F4 Show Timer actions
   addShowTimer: (name: string, durationMs: number) => void
@@ -537,6 +582,13 @@ export interface AppState {
   updateMarker: (filePath: string, markerId: string, updates: Partial<WaveformMarker>) => void
   undoMarker: () => void
   setWaveformZoom: (filePath: string, pxPerSec: number) => void
+
+  // Sprint A — per-install actions
+  setMarkerTypeFilter: (filter: MarkerType[]) => void
+  setShowLoopDragLabel: (show: boolean) => void
+  setNumericKeyAction: (action: 'goto-song' | 'goto-marker') => void
+  // Sprint A — AC-1.4: per-preset marker type color override action
+  setMarkerTypeColorOverride: (markerType: MarkerType, color: string | null) => void
   // License
   setLicenseKey: (key: string | null) => void
   setLicenseStatus: (status: 'none' | 'valid' | 'expired' | 'invalid') => void
@@ -654,6 +706,19 @@ export const useStore = create<AppState>()(persist((set) => ({
   markers: {},
   markerUndoStack: [],
   waveformZoom: {},
+
+  // Sprint A — per-install settings defaults
+  markerTypeFilter: [],          // empty = all types shown
+  showLoopDragLabel: true,       // show label by default (Q2.1)
+  numericKeyAction: 'goto-song', // backward-compatible default (Q4.1)
+
+  // Sprint B — F7: last session defaults
+  lastSession: null,
+  disableResumePrompt: false,
+
+  // Sprint A — AC-1.4: per-preset marker type color overrides
+  markerTypeColorOverrides: {},
+
   // F4 — Independent Show Timer. Default empty per Q-A.
   showTimers: [],
   showLocked: false,
@@ -933,6 +998,64 @@ export const useStore = create<AppState>()(persist((set) => ({
     setlist[index] = { ...setlist[index], midiCues: cues }
     return { setlist, presetDirty: true }
   }),
+
+  // Sprint B — F5: replace setlist item audio path
+  setSetlistItemPath: (index, path, name) => set((s) => {
+    if (index < 0 || index >= s.setlist.length) return s
+    const setlist = [...s.setlist]
+    setlist[index] = { ...setlist[index], path, name }
+    return { setlist, presetDirty: true }
+  }),
+
+  // Sprint B — F5: atomic replace audio + markers + midi cues, with undo
+  replaceSetlistItemAudio: (index, newPath, newName, shiftedMarkers, shiftedMidiCues, oldPath, oldName, oldMarkers, oldMidiCues) => set((s) => {
+    if (index < 0 || index >= s.setlist.length) return s
+    const itemId = s.setlist[index].id
+
+    // Build snapshot of current markers for undo (includes old path info)
+    // We encode the path change into a special undo entry by stashing old path
+    // in the setlist snapshot inside markerUndoStack. We use a composite approach:
+    // push old markers map AND old setlist item info as a special undo entry.
+    const prevMarkers = { ...s.markers }
+    const prevSetlist = [...s.setlist]
+
+    const newSetlist = [...s.setlist]
+    newSetlist[index] = { ...newSetlist[index], path: newPath, name: newName, midiCues: shiftedMidiCues }
+
+    const newMarkers = {
+      ...s.markers,
+      [itemId]: shiftedMarkers
+    }
+
+    // Push a composite undo entry that includes both the old markers map and
+    // a special _setlistPatch key so undoMarker can also revert path+midiCues.
+    // We encode this as a special property on the markers snapshot object.
+    const undoEntry = {
+      ...prevMarkers,
+      _setlistPatch: [{
+        index,
+        path: oldPath,
+        name: oldName,
+        midiCues: oldMidiCues,
+        markersBefore: oldMarkers
+      }]
+    } as Record<string, WaveformMarker[]> & { _setlistPatch?: unknown }
+
+    return {
+      markerUndoStack: [...s.markerUndoStack.slice(-19), undoEntry as Record<string, WaveformMarker[]>],
+      markers: newMarkers,
+      setlist: newSetlist,
+      presetDirty: true
+    }
+  }),
+
+  // Sprint B — F7: last session management
+  saveLastSession: (filePath, fileName, positionSeconds, setlistIndex) => set({
+    lastSession: { filePath, fileName, positionSeconds, setlistIndex, savedAt: Date.now() }
+  }),
+  clearLastSession: () => set({ lastSession: null }),
+  setDisableResumePrompt: (disabled) => set({ disableResumePrompt: disabled }),
+
   setRightTab: (rightTab) => set({ rightTab }),
 
   // ── F4 Show Timer actions ──────────────────────────────────────────
@@ -1080,6 +1203,36 @@ export const useStore = create<AppState>()(persist((set) => ({
   undoMarker: () => set((s) => {
     if (s.markerUndoStack.length === 0) return s
     const prev = s.markerUndoStack[s.markerUndoStack.length - 1]
+    // Sprint B — F5: check for composite undo entry (audio swap)
+    const patch = (prev as Record<string, unknown>)._setlistPatch as Array<{
+      index: number; path: string; name: string; midiCues: MidiCuePoint[]; markersBefore: WaveformMarker[]
+    }> | undefined
+    if (patch) {
+      // Restore setlist item paths + midiCues + markers from before the swap
+      const setlist = [...s.setlist]
+      const cleanMarkers: Record<string, WaveformMarker[]> = {}
+      // Copy prev markers without _setlistPatch
+      for (const [k, v] of Object.entries(prev)) {
+        if (k !== '_setlistPatch') cleanMarkers[k] = v as WaveformMarker[]
+      }
+      for (const entry of patch) {
+        if (entry.index >= 0 && entry.index < setlist.length) {
+          const itemId = setlist[entry.index].id
+          setlist[entry.index] = { ...setlist[entry.index], path: entry.path, name: entry.name, midiCues: entry.midiCues }
+          if (entry.markersBefore.length > 0) {
+            cleanMarkers[itemId] = entry.markersBefore
+          } else {
+            delete cleanMarkers[itemId]
+          }
+        }
+      }
+      return {
+        markers: cleanMarkers,
+        setlist,
+        markerUndoStack: s.markerUndoStack.slice(0, -1),
+        presetDirty: true
+      }
+    }
     return {
       markers: prev,
       markerUndoStack: s.markerUndoStack.slice(0, -1),
@@ -1090,6 +1243,22 @@ export const useStore = create<AppState>()(persist((set) => ({
   setWaveformZoom: (filePath, pxPerSec) => set((s) => ({
     waveformZoom: { ...s.waveformZoom, [filePath]: pxPerSec }
   })),
+
+  // Sprint A — per-install actions
+  setMarkerTypeFilter: (markerTypeFilter) => set({ markerTypeFilter }),
+  setShowLoopDragLabel: (showLoopDragLabel) => set({ showLoopDragLabel }),
+  setNumericKeyAction: (numericKeyAction) => set({ numericKeyAction }),
+
+  // Sprint A — AC-1.4: per-preset marker type color override
+  setMarkerTypeColorOverride: (markerType, color) => set((s) => {
+    const overrides = { ...s.markerTypeColorOverrides }
+    if (color === null) {
+      delete overrides[markerType]
+    } else {
+      overrides[markerType] = color
+    }
+    return { markerTypeColorOverrides: overrides, presetDirty: true }
+  }),
 
   // License actions
   setLicenseKey: (licenseKey) => set({ licenseKey }),
@@ -1340,7 +1509,8 @@ export const useStore = create<AppState>()(persist((set) => ({
       selectedCueMidiPort: null, midiInputPort: null, midiMappings: [],
       oscEnabled: false, oscTargetIp: '127.0.0.1', oscTargetPort: 8000,
       midiClockEnabled: false, midiClockSource: 'detected', midiClockManualBpm: 120,
-      markers: {}
+      markers: {},
+      markerTypeColorOverrides: {}
     })
   },
 
@@ -1436,6 +1606,13 @@ export const useStore = create<AppState>()(persist((set) => ({
     midiClockManualBpm: state.midiClockManualBpm,
     markers: state.markers,
     waveformZoom: state.waveformZoom,
+    // Sprint A — per-install settings
+    markerTypeFilter: state.markerTypeFilter,
+    showLoopDragLabel: state.showLoopDragLabel,
+    numericKeyAction: state.numericKeyAction,
+    // Sprint B — F7: last session (per-install)
+    lastSession: state.lastSession,
+    disableResumePrompt: state.disableResumePrompt,
     // F4 — Show Timer: per-install, not per-preset (Q-E). On rehydrate we
     // force running=false in merge() so a ticking timer at quit comes back
     // stopped at its last snapshot (AC-8).

@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useStore, SortMode } from '../store'
-import { framesToTc, tcToString } from '../audio/timecodeConvert'
+import { useStore, SortMode, WaveformMarker, MidiCuePoint } from '../store'
+import { framesToTc, tcToString, tcToFrames } from '../audio/timecodeConvert'
+import { alignAudio } from '../audio/AudioAligner'
 import { t } from '../i18n'
 import { toast } from './Toast'
 import { buildCueSheetHtml } from '../utils/exportCueSheet'
 import { Tooltip } from './Tooltip'
+import { ProGate } from './ProGate'
 
 // F6: Long-press threshold before a setlist row becomes draggable.
 // Below this, mousedown+mouseup is treated as a normal click (standby toggle).
@@ -36,6 +38,16 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
   const [editingOffsetStr, setEditingOffsetStr] = useState('')
   const [editingNotesIdx, setEditingNotesIdx] = useState<number | null>(null)
   const [editingNotesStr, setEditingNotesStr] = useState('')
+  const [replacingAudioIdx, setReplacingAudioIdx] = useState<number | null>(null)
+  const [replaceAligning, setReplaceAligning] = useState(false)
+  // Low-confidence confirmation state
+  const [pendingReplacePayload, setPendingReplacePayload] = useState<{
+    index: number
+    newPath: string
+    confidence: number
+    offsetSec: number
+    newDuration: number
+  } | null>(null)
   // F6: which row (if any) has passed the LONG_PRESS_MS threshold and is now draggable.
   const [armedIdx, setArmedIdx] = useState<number | null>(null)
   const offsetInputRef = useRef<HTMLInputElement>(null)
@@ -413,7 +425,8 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
       presetName: s.presetName || 'Untitled',
       setlist,
       markers: s.markers,
-      fps
+      fps,
+      markerTypeColorOverrides: s.markerTypeColorOverrides
     })
     const defaultName = `${s.presetName || 'cuesheet'}.pdf`
     const savedPath = await window.api.printToPdf(html, defaultName)
@@ -512,6 +525,162 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     }
   }, [lang, addToSetlist])
 
+  /** Extract 6000-point peaks from an audio ArrayBuffer */
+  const extractPeaks = useCallback(async (arrayBuffer: ArrayBuffer): Promise<{ peaks: Float32Array; duration: number } | null> => {
+    try {
+      const decodeCtx = new AudioContext()
+      let decoded: AudioBuffer
+      try {
+        decoded = await decodeCtx.decodeAudioData(arrayBuffer)
+      } finally {
+        try { await decodeCtx.close() } catch { /* best effort */ }
+      }
+      const POINTS = 6000
+      const total = decoded.length
+      const peaks = new Float32Array(POINTS)
+      // Use channel 0 (music) for alignment
+      const ch = decoded.getChannelData(0)
+      for (let i = 0; i < POINTS; i++) {
+        const start = Math.floor((i / POINTS) * total)
+        const end = Math.floor(((i + 1) / POINTS) * total)
+        let max = 0
+        for (let j = start; j < end; j++) {
+          const a = Math.abs(ch[j]); if (a > max) max = a
+        }
+        peaks[i] = max
+      }
+      return { peaks, duration: decoded.duration }
+    } catch (e) {
+      console.error('Peak extraction failed', e)
+      return null
+    }
+  }, [])
+
+  /** Apply the audio swap with the computed offset */
+  const applyAudioReplace = useCallback((index: number, newPath: string, offsetSec: number, newDuration: number, confidence: number): void => {
+    const s = useStore.getState()
+    const item = s.setlist[index]
+    if (!item) return
+    const fps = (s.forceFps ?? s.detectedFps ?? 25)
+
+    // Get current markers for this item
+    const itemId = item.id
+    const currentMarkers: WaveformMarker[] = s.markers[itemId] ?? []
+    const currentMidiCues: MidiCuePoint[] = item.midiCues ?? []
+
+    // Shift markers
+    let clippedCount = 0
+    const shiftedMarkers: WaveformMarker[] = currentMarkers.map(m => {
+      const newTime = m.time + offsetSec
+      if (newTime > newDuration) { clippedCount++; return { ...m, time: Math.max(0, newDuration - 0.1) } }
+      return { ...m, time: Math.max(0, newTime) }
+    })
+
+    // Shift MIDI cues: parse HH:MM:SS:FF → add offset → re-format
+    const shiftedMidiCues: MidiCuePoint[] = currentMidiCues.map(cue => {
+      const frames = tcToFrames(cue.triggerTimecode, fps)
+      const offsetFrames = Math.round(offsetSec * fps)
+      const newFrames = Math.max(0, frames + offsetFrames)
+      const tc = framesToTc(newFrames, fps)
+      return { ...cue, triggerTimecode: tcToString(tc) }
+    })
+
+    // Push composite undo entry + apply
+    s.replaceSetlistItemAudio(
+      index, newPath, item.name,
+      shiftedMarkers, shiftedMidiCues,
+      item.path, item.name,
+      currentMarkers, currentMidiCues
+    )
+
+    // Success toast
+    const pct = Math.round(confidence * 100)
+    const offsetStr = offsetSec >= 0 ? `+${offsetSec.toFixed(3)}` : offsetSec.toFixed(3)
+    if (currentMarkers.length > 0 || currentMidiCues.length > 0) {
+      toast.success(t(lang, 'replaceAudioSuccess', {
+        n: String(currentMarkers.length + currentMidiCues.length),
+        offset: offsetStr,
+        pct: String(pct)
+      }))
+    } else {
+      toast.success(t(lang, 'replaceAudioNoMarkers'))
+    }
+    if (clippedCount > 0) {
+      toast.warning(t(lang, 'replaceAudioMarkersClipped', { n: String(clippedCount) }))
+    }
+  }, [lang])
+
+  const handleReplaceAudio = useCallback(async (index: number): Promise<void> => {
+    const s = useStore.getState()
+    const item = s.setlist[index]
+    if (!item) return
+
+    // Pick new file
+    const newPath = await window.api.openFileDialog()
+    if (!newPath) return
+
+    setReplacingAudioIdx(index)
+    setReplaceAligning(true)
+
+    try {
+      // Load both files
+      const [origBuffer, newBuffer] = await Promise.all([
+        window.api.readAudioFile(item.path),
+        window.api.readAudioFile(newPath)
+      ])
+
+      if (!origBuffer || !newBuffer) {
+        toast.error(t(lang, 'replaceAudioAlignError'))
+        setReplaceAligning(false)
+        setReplacingAudioIdx(null)
+        return
+      }
+
+      // Extract peaks from both
+      const [origResult, newResult] = await Promise.all([
+        extractPeaks(origBuffer),
+        extractPeaks(newBuffer)
+      ])
+
+      if (!origResult || !newResult) {
+        // Fallback: replace with offset 0
+        toast.warning(t(lang, 'replaceAudioAlignError'))
+        applyAudioReplace(index, newPath, 0, 0, 0)
+        setReplaceAligning(false)
+        setReplacingAudioIdx(null)
+        return
+      }
+
+      const result = alignAudio(origResult.peaks, newResult.peaks, origResult.duration, newResult.duration)
+      const { offset: offsetSec, confidence } = result
+
+      setReplaceAligning(false)
+      setReplacingAudioIdx(null)
+
+      if (confidence < 0.7) {
+        // Show low confidence warning, ask to proceed
+        setPendingReplacePayload({ index, newPath, confidence, offsetSec, newDuration: newResult.duration })
+        toast.action(
+          t(lang, 'replaceAudioLowConfidence', { pct: String(Math.round(confidence * 100)) }),
+          t(lang, 'replaceAudioApplyAnyway'),
+          () => {
+            const p = pendingReplacePayload ?? { index, newPath, confidence, offsetSec, newDuration: newResult.duration }
+            applyAudioReplace(p.index, p.newPath, p.offsetSec, p.newDuration, p.confidence)
+            setPendingReplacePayload(null)
+          },
+          'warning'
+        )
+      } else {
+        applyAudioReplace(index, newPath, offsetSec, newResult.duration, confidence)
+      }
+    } catch (e) {
+      console.error('Replace audio failed', e)
+      toast.error(t(lang, 'replaceAudioAlignError'))
+      setReplaceAligning(false)
+      setReplacingAudioIdx(null)
+    }
+  }, [lang, extractPeaks, applyAudioReplace, pendingReplacePayload])
+
   return (
     <div
       className="setlist-panel"
@@ -557,6 +726,12 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
           >↓</button>
         </div>
       </div>
+
+      {replaceAligning && (
+        <div className="setlist-aligning-overlay">
+          <span>{t(lang, 'aligningAudio')}</span>
+        </div>
+      )}
 
       {setlist.length === 0 ? (
         <div className="setlist-empty" onClick={onImportFiles}>
@@ -641,6 +816,20 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                         }}
                       >N</button>
                     </Tooltip>
+                    <ProGate>
+                      <Tooltip text={t(lang, 'replaceAudio')}>
+                        <button
+                          className="setlist-offset-btn"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleReplaceAudio(i)
+                          }}
+                          disabled={replacingAudioIdx === i && replaceAligning}
+                          title={t(lang, 'replaceAudio')}
+                        >⇄</button>
+                      </Tooltip>
+                    </ProGate>
                     <Tooltip text={t(lang, 'remove')}>
                       <button
                         className="setlist-remove"

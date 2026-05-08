@@ -1,10 +1,11 @@
-import { SetlistItem, WaveformMarker, MARKER_TYPE_COLORS } from '../store'
+import { SetlistItem, WaveformMarker, MARKER_TYPE_COLORS, MarkerType } from '../store'
 
 interface CueSheetOptions {
   presetName: string
   setlist: SetlistItem[]
   markers: Record<string, WaveformMarker[]>
   fps: number
+  markerTypeColorOverrides?: Partial<Record<MarkerType, string>>
 }
 
 function esc(s: string): string {
@@ -24,7 +25,7 @@ function formatTime(sec: number): string {
  * Returns the HTML string; caller passes it to main process via IPC.
  */
 export function buildCueSheetHtml(options: CueSheetOptions): string {
-  const { presetName, setlist, markers, fps } = options
+  const { presetName, setlist, markers, fps, markerTypeColorOverrides = {} } = options
   const date = new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString()
 
   let body = ''
@@ -42,9 +43,13 @@ export function buildCueSheetHtml(options: CueSheetOptions): string {
     if (songMarkers.length > 0) {
       body += `<div class="section-label">MARKERS</div><table>`
       for (const m of songMarkers) {
-        const color = MARKER_TYPE_COLORS[m.type ?? 'custom']
+        // Use per-marker color override → preset type override → global default (AC-1.4)
+        const mType = m.type ?? 'custom'
+        const color = m.color ?? markerTypeColorOverrides[mType] ?? MARKER_TYPE_COLORS[mType]
         const typeLabel = (m.type ?? 'custom').toUpperCase()
-        body += `<tr><td class="time">${formatTime(m.time)}</td><td style="color:${color}">${typeLabel}</td><td>${esc(m.label || '')}</td></tr>`
+        // Colored badge: background = color, white text (AC-1.1)
+        const badge = `<span style="background:${color};color:#fff;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;letter-spacing:0.03em">${typeLabel}</span>`
+        body += `<tr><td class="time">${formatTime(m.time)}</td><td>${badge}</td><td>${esc(m.label || '')}</td></tr>`
       }
       body += `</table>`
     }

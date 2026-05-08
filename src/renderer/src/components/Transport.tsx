@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
+import { nudgeOffsetByBeats } from '../audio/timecodeConvert'
 
 /* ── SVG icon helpers ─────────────────────────────────────── */
 const IconStop = (): React.JSX.Element => (
@@ -74,6 +75,9 @@ export function Transport({ onPlay, onPause, onStop, onSeek, onPanic }: Props): 
     playState, currentTime, duration, loop, setLoop,
     offsetFrames, setOffsetFrames,
     loopA, loopB, setLoopA, setLoopB, clearLoop,
+    tappedBpm, detectedBpm,
+    forceFps, detectedFps, generatorFps,
+    setlist, activeSetlistIndex,
     lang
   } = useStore()
 
@@ -113,6 +117,36 @@ export function Transport({ onPlay, onPause, onStop, onSeek, onPanic }: Props): 
     const val = parseInt(e.target.value, 10)
     if (!isNaN(val)) setOffsetFrames(Math.max(-999, Math.min(999, val)))
   }
+
+  // F3 — Beat-aligned offset nudge (AC-3.1 to AC-3.4)
+  // BPM source: tappedBpm ?? detectedBpm (AC-3.2)
+  const activeBpm = tappedBpm ?? detectedBpm
+  // fps: forceFps ?? detectedFps ?? generatorFps ?? 25 (AC-3.3)
+  const activeFps = forceFps ?? detectedFps ?? generatorFps ?? 25
+
+  // AC-3.4: if active setlist item has per-song offsetFrames, act on that; else global
+  const activeSongOffset = activeSetlistIndex !== null
+    ? setlist[activeSetlistIndex]?.offsetFrames
+    : undefined
+  const hasSongOffset = activeSongOffset !== undefined
+
+  const nudgeBeat = (beats: number): void => {
+    const bpmSnapshot = activeBpm  // snapshot at moment of press (Q3.1)
+    if (bpmSnapshot === null) return
+    if (hasSongOffset && activeSetlistIndex !== null) {
+      const current = setlist[activeSetlistIndex].offsetFrames ?? 0
+      const newVal = nudgeOffsetByBeats(current, beats, bpmSnapshot, activeFps)
+      useStore.getState().setSetlistItemOffset(activeSetlistIndex, newVal)
+    } else {
+      const newVal = nudgeOffsetByBeats(offsetFrames, beats, bpmSnapshot, activeFps)
+      setOffsetFrames(newVal)
+    }
+  }
+
+  const beatNudgeDisabled = activeBpm === null || activeBpm === undefined
+  const beatTooltip = activeBpm
+    ? t(lang, 'beatNudgeUsing', { bpm: String(activeBpm.toFixed(1)) })
+    : t(lang, 'beatNudgeNoBpm')
 
   // F2: Wheel-to-offset nudging on the whole `.transport-offset` wrapper
   // (covers +/- buttons, slider, and number input).
@@ -211,6 +245,34 @@ export function Transport({ onPlay, onPause, onStop, onSeek, onPanic }: Props): 
           />
           <button className="btn-offset" onClick={() => setOffsetFrames(Math.min(999, offsetFrames + 1))}>+</button>
           <span className="offset-unit">{t(lang, 'frames')}</span>
+
+          {/* F3 — Beat-aligned nudge buttons (AC-3.1) */}
+          <div className="beat-nudge-group" title={beatTooltip}>
+            <button
+              className="btn-beat-nudge"
+              disabled={beatNudgeDisabled || !duration}
+              onClick={() => nudgeBeat(-1)}
+              title={beatTooltip}
+            >−1♩</button>
+            <button
+              className="btn-beat-nudge"
+              disabled={beatNudgeDisabled || !duration}
+              onClick={() => nudgeBeat(-0.5)}
+              title={beatTooltip}
+            >−½</button>
+            <button
+              className="btn-beat-nudge"
+              disabled={beatNudgeDisabled || !duration}
+              onClick={() => nudgeBeat(0.5)}
+              title={beatTooltip}
+            >+½</button>
+            <button
+              className="btn-beat-nudge"
+              disabled={beatNudgeDisabled || !duration}
+              onClick={() => nudgeBeat(1)}
+              title={beatTooltip}
+            >+1♩</button>
+          </div>
         </div>
 
         {/* Center: playback buttons */}

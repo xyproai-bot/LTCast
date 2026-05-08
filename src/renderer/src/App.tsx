@@ -24,7 +24,7 @@ import { useStore, TimecodeFrame } from './store'
 import { useShallow } from 'zustand/react/shallow'
 import { alignAudio } from './audio/AudioAligner'
 import { getTimecodeAtTime, formatTimecode } from './audio/LtcDecoder'
-import { tcToFrames } from './audio/timecodeConvert'
+import { tcToFrames, nudgeOffsetByBeats, findNthMarker, findAdjacentMarker } from './audio/timecodeConvert'
 import { detectBpmAt } from './audio/BpmDetector'
 import { t } from './i18n'
 import { toast } from './components/Toast'
@@ -68,6 +68,12 @@ export default function App(): React.JSX.Element {
   const midiActivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [lastFiredCueId, setLastFiredCueId] = useState<string | null>(null)
   const cueFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // F7 — Resume last session
+  const [resumeToastId, setResumeToastId] = useState<number | null>(null)
+  const lastSessionSaveThrottle = useRef<ReturnType<typeof setInterval> | null>(null)
+  const resumePayloadRef = useRef<{ positionSeconds: number; setlistIndex: number | null } | null>(null)
+  const [showResumeDialog, setShowResumeDialog] = useState(false)
+  const [resumeDialogData, setResumeDialogData] = useState<{ filePath: string; fileName: string; positionSeconds: number; setlistIndex: number | null } | null>(null)
 
   // Pre-buffer state (F1). Tracks the currently in-flight / completed
   // prebuffer so openFile() can grab it when the user finally fires Space.
@@ -176,6 +182,27 @@ export default function App(): React.JSX.Element {
       toast.error(t(useStore.getState().lang, 'artnetSocketError'))
     })
     return cleanup
+  }, [])
+
+  // F7 — Resume Last Session: check on app launch
+  useEffect(() => {
+    const s = useStore.getState()
+    const session = s.lastSession
+    if (!session || s.disableResumePrompt) return
+    // Check 24-hour threshold (AC-7.2)
+    if (Date.now() - session.savedAt >= 24 * 60 * 60 * 1000) return
+    // Check file existence asynchronously
+    window.api.fileExists(session.filePath).then((exists: boolean) => {
+      if (!exists) return  // silently skip (AC-7.4)
+      setResumeDialogData({
+        filePath: session.filePath,
+        fileName: session.fileName,
+        positionSeconds: session.positionSeconds,
+        setlistIndex: session.setlistIndex
+      })
+      setShowResumeDialog(true)
+    }).catch(() => {/* file check failed, skip */ })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Validate license + check trial on startup
@@ -560,6 +587,58 @@ export default function App(): React.JSX.Element {
       setLtcWaveform(null)
     }
   }, [filePath])
+
+  // F7 — Resume Last Session: save lastSession throttled every 5s during playback
+  useEffect(() => {
+    if (lastSessionSaveThrottle.current) {
+      clearInterval(lastSessionSaveThrottle.current)
+      lastSessionSaveThrottle.current = null
+    }
+    const { saveLastSession } = useStore.getState()
+    if (!filePath || !fileName) return
+
+    // Save immediately when play state changes
+    const s = useStore.getState()
+    saveLastSession(filePath, fileName, s.currentTime, s.activeSetlistIndex)
+
+    // During playback, throttle updates every 5 seconds
+    lastSessionSaveThrottle.current = setInterval(() => {
+      const cur = useStore.getState()
+      if (cur.playState === 'playing' && cur.filePath && cur.fileName) {
+        cur.saveLastSession(cur.filePath, cur.fileName, cur.currentTime, cur.activeSetlistIndex)
+      }
+    }, 5000)
+
+    return () => {
+      if (lastSessionSaveThrottle.current) {
+        clearInterval(lastSessionSaveThrottle.current)
+        lastSessionSaveThrottle.current = null
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filePath, fileName])
+
+  // F7 — Save lastSession on every playState transition (especially pause/stop)
+  // and on app close, so we always capture the most recent position even
+  // outside the 5s playback throttle window.
+  const playStateForSave = useStore(s => s.playState)
+  useEffect(() => {
+    const cur = useStore.getState()
+    if (cur.filePath && cur.fileName) {
+      cur.saveLastSession(cur.filePath, cur.fileName, cur.currentTime, cur.activeSetlistIndex)
+    }
+  }, [playStateForSave])
+
+  useEffect(() => {
+    const onBeforeUnload = (): void => {
+      const cur = useStore.getState()
+      if (cur.filePath && cur.fileName) {
+        cur.saveLastSession(cur.filePath, cur.fileName, cur.currentTime, cur.activeSetlistIndex)
+      }
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [])
 
   // Re-apply offset when it changes
   useEffect(() => {
@@ -952,16 +1031,73 @@ export default function App(): React.JSX.Element {
           }
         }
       }
-      // Number keys 1-9: quick jump to setlist song
+
+      // F4 — J: previous marker, K: next marker (AC-4.1, AC-4.2)
+      if ((e.code === 'KeyJ' || e.code === 'KeyK') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const state = useStore.getState()
+        if (!state.filePath || state.duration <= 0) return
+        const itemId = state.setlist.find(it => it.path === state.filePath)?.id
+        const fileMarkers = itemId ? (state.markers[itemId] ?? []) : []
+        if (fileMarkers.length === 0) return
+        const ct = state.currentTime
+        const dir = e.code === 'KeyJ' ? 'prev' : 'next'
+        const target = findAdjacentMarker(fileMarkers, ct, dir, 0.5)
+        if (target) {
+          e.preventDefault()
+          handleSeek(target.time)
+        }
+      }
+
+      // Number keys 1-9: behavior depends on numericKeyAction setting (Q4.1)
       if (e.code >= 'Digit1' && e.code <= 'Digit9' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const state = useStore.getState()
-        if (state.setlist.length === 0) return
-        const idx = parseInt(e.code.charAt(5)) - 1 // Digit1 → 0, Digit9 → 8
-        if (idx < state.setlist.length) {
-          e.preventDefault()
-          state.setActiveSetlistIndex(idx)
-          const item = state.setlist[idx]
-          openFile(item.path, item.offsetFrames)
+        const n = parseInt(e.code.charAt(5)) // Digit1→1, Digit9→9
+
+        if (state.numericKeyAction === 'goto-marker') {
+          // Jump to Nth marker of current song sorted by time (AC-4.3)
+          if (!state.filePath || state.duration <= 0) return
+          const itemId = state.setlist.find(it => it.path === state.filePath)?.id
+          const fileMarkers = itemId ? (state.markers[itemId] ?? []) : []
+          if (fileMarkers.length === 0) return
+          const target = findNthMarker(fileMarkers, n)
+          if (target) {
+            e.preventDefault()
+            handleSeek(target.time)
+          }
+        } else {
+          // Default: goto-song (backward-compatible behavior)
+          if (state.setlist.length === 0) return
+          const idx = n - 1 // Digit1 → 0, Digit9 → 8
+          if (idx < state.setlist.length) {
+            e.preventDefault()
+            state.setActiveSetlistIndex(idx)
+            const item = state.setlist[idx]
+            openFile(item.path, item.offsetFrames)
+          }
+        }
+      }
+
+      // F3 — Beat-aligned offset: Shift+,/. = ±½ beat, Ctrl+,/. = ±1 beat (AC-3.5)
+      const isComma  = e.code === 'Comma'
+      const isPeriod = e.code === 'Period'
+      if ((isComma || isPeriod) && (e.shiftKey || e.ctrlKey || e.metaKey) && !(e.shiftKey && (e.ctrlKey || e.metaKey))) {
+        const state = useStore.getState()
+        if (state.duration <= 0) return
+        const bpmSnapshot = state.tappedBpm ?? state.detectedBpm
+        if (!bpmSnapshot) return
+        const fps = state.forceFps ?? state.detectedFps ?? state.generatorFps ?? 25
+        const beats = (e.shiftKey ? 0.5 : 1) * (isComma ? -1 : 1)
+        e.preventDefault()
+
+        // AC-3.4: act on active song's offsetFrames if present, else global
+        const aIdx = state.activeSetlistIndex
+        const songOffset = aIdx !== null ? state.setlist[aIdx]?.offsetFrames : undefined
+        if (songOffset !== undefined && aIdx !== null) {
+          const newVal = nudgeOffsetByBeats(songOffset, beats, bpmSnapshot, fps)
+          state.setSetlistItemOffset(aIdx, newVal)
+        } else {
+          const newVal = nudgeOffsetByBeats(state.offsetFrames, beats, bpmSnapshot, fps)
+          state.setOffsetFrames(newVal)
         }
       }
     }
@@ -1387,6 +1523,29 @@ export default function App(): React.JSX.Element {
     osc.current?.sendTimecode(zeroTc)
   }
 
+  // F7 — Resume handler
+  const handleResume = async (data: { filePath: string; fileName: string; positionSeconds: number; setlistIndex: number | null }): Promise<void> => {
+    setShowResumeDialog(false)
+    setResumeDialogData(null)
+    const cur = useStore.getState()
+    cur.setAudioLoading(true, data.fileName)
+    try {
+      const ab = await window.api.readAudioFile(data.filePath)
+      if (!ab) { toast.error(t(cur.lang, 'resumeFileMissing')); return }
+      await engine.current?.loadFile(ab)
+      const name = data.filePath.split(/[/\\]/).pop() ?? data.fileName
+      cur.setFilePath(data.filePath, name, engine.current?.getDuration() ?? 0)
+      if (data.setlistIndex !== null && data.setlistIndex < cur.setlist.length) {
+        cur.setActiveSetlistIndex(data.setlistIndex)
+      }
+      if (data.positionSeconds > 0) await engine.current?.seek(data.positionSeconds)
+    } catch {
+      toast.error(t(useStore.getState().lang, 'loadFailed'))
+    } finally {
+      cur.setAudioLoading(false)
+    }
+  }
+
   const handleSeek = async (time: number): Promise<void> => {
     const wasPlaying = await engine.current?.seek(time)
     if (wasPlaying) setPlayState('playing')
@@ -1733,6 +1892,43 @@ export default function App(): React.JSX.Element {
       )}
       {showLicenseDialog && (
         <LicenseDialog onClose={() => setShowLicenseDialog(false)} />
+      )}
+      {/* F7 — Resume last session dialog */}
+      {showResumeDialog && resumeDialogData && (
+        <div className="shortcuts-overlay" onClick={() => setShowResumeDialog(false)}>
+          <div className="shortcuts-dialog" style={{ minWidth: '340px' }} onClick={(e) => e.stopPropagation()}>
+            <h3>{t(lang, 'resumeTitle')}</h3>
+            <p style={{ margin: '0 0 16px', color: '#ccc', fontSize: '13px', lineHeight: '1.5' }}>
+              {t(lang, 'resumePrompt', {
+                time: new Date(resumeDialogData.positionSeconds * 1000).toISOString().substr(11, 8),
+                name: resumeDialogData.fileName
+              })}
+            </p>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                className="btn-sm btn-sm--primary"
+                onClick={() => handleResume(resumeDialogData)}
+              >
+                {t(lang, 'resumeButton')}
+              </button>
+              <button
+                className="btn-sm"
+                onClick={() => setShowResumeDialog(false)}
+              >
+                {t(lang, 'resumeDismiss')}
+              </button>
+              <button
+                className="btn-sm"
+                onClick={() => {
+                  useStore.getState().setDisableResumePrompt(true)
+                  setShowResumeDialog(false)
+                }}
+              >
+                {t(lang, 'resumeDontAskAgain')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
