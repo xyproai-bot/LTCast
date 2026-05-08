@@ -2,6 +2,26 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useStore, MARKER_TYPES, MARKER_TYPE_COLORS, MarkerType, WaveformMarker } from '../store'
 import { t } from '../i18n'
 
+/** Returns the effective color for a marker type, applying preset overrides (AC-1.4). */
+export function resolveMarkerTypeColor(
+  mType: MarkerType,
+  overrides: Partial<Record<MarkerType, string>>
+): string {
+  return overrides[mType] ?? MARKER_TYPE_COLORS[mType]
+}
+
+// Single-letter abbreviations for each marker type (used in waveform badge)
+export const MARKER_TYPE_ABBREV: Record<MarkerType, string> = {
+  'intro':      'I',
+  'verse':      'V',
+  'chorus':     'C',
+  'bridge':     'B',
+  'outro':      'O',
+  'break':      'K',
+  'song-title': 'S',
+  'custom':     '·',
+}
+
 interface Props {
   onSeek: (time: number) => void
 }
@@ -47,8 +67,12 @@ function LabelInput({ value, onChange, placeholder }: {
 export function StructurePanel({ onSeek }: Props): React.JSX.Element {
   const {
     lang, filePath, currentTime, duration, setlist,
-    markers, addMarker, removeMarker, updateMarker
+    markers, addMarker, removeMarker, updateMarker,
+    markerTypeFilter, setMarkerTypeFilter,
+    markerTypeColorOverrides, setMarkerTypeColorOverride
   } = useStore()
+
+  const [showTypeColors, setShowTypeColors] = useState(false)
 
   // v8 storage: markers keyed by setlist-item id, not filePath. Resolve the
   // current file's item id; if file isn't in the setlist, no markers (Q-A).
@@ -93,6 +117,15 @@ export function StructurePanel({ onSeek }: Props): React.JSX.Element {
     removeMarker(filePath, id)
   }
 
+  // Toggle a type in the filter set
+  const toggleTypeFilter = (type: MarkerType): void => {
+    if (markerTypeFilter.includes(type)) {
+      setMarkerTypeFilter(markerTypeFilter.filter(t => t !== type))
+    } else {
+      setMarkerTypeFilter([...markerTypeFilter, type])
+    }
+  }
+
   if (!filePath) {
     return (
       <div className="structure-panel">
@@ -115,17 +148,94 @@ export function StructurePanel({ onSeek }: Props): React.JSX.Element {
         </button>
       </div>
 
+      {/* Type filter chips (AC-1.3) */}
+      <div className="structure-filter-chips">
+        {MARKER_TYPES.map((mt) => {
+          const isActive = markerTypeFilter.length === 0 || !markerTypeFilter.includes(mt)
+          const color = resolveMarkerTypeColor(mt, markerTypeColorOverrides)
+          return (
+            <button
+              key={mt}
+              className={`structure-chip${isActive ? ' active' : ''}`}
+              style={isActive ? { background: color, borderColor: color, color: '#fff' } : { borderColor: color, color: color }}
+              onClick={() => toggleTypeFilter(mt)}
+              title={t(lang, `markerType_${mt}`)}
+            >
+              {MARKER_TYPE_ABBREV[mt]}
+            </button>
+          )
+        })}
+        {markerTypeFilter.length > 0 && (
+          <button
+            className="structure-chip structure-chip-clear"
+            onClick={() => setMarkerTypeFilter([])}
+            title={t(lang, 'markerFilterClearAll')}
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
+      {/* AC-1.4: Per-preset type color overrides */}
+      <div className="structure-type-colors-section">
+        <button
+          className="structure-type-colors-toggle"
+          onClick={() => setShowTypeColors(v => !v)}
+          title={t(lang, 'markerTypeColorsTitle')}
+        >
+          {showTypeColors ? '▾' : '▸'} {t(lang, 'markerTypeColorsTitle')}
+          {Object.keys(markerTypeColorOverrides).length > 0 && (
+            <span className="structure-type-colors-badge">{Object.keys(markerTypeColorOverrides).length}</span>
+          )}
+        </button>
+        {showTypeColors && (
+          <div className="structure-type-colors-grid">
+            {MARKER_TYPES.map((mt) => {
+              const effectiveColor = resolveMarkerTypeColor(mt, markerTypeColorOverrides)
+              const hasOverride = !!markerTypeColorOverrides[mt]
+              return (
+                <div key={mt} className="structure-type-color-row">
+                  <input
+                    type="color"
+                    className="structure-color"
+                    value={effectiveColor}
+                    title={t(lang, `markerType_${mt}`)}
+                    onChange={(e) => setMarkerTypeColorOverride(mt, e.target.value)}
+                  />
+                  <span className="structure-type-color-label" style={{ color: effectiveColor }}>
+                    {MARKER_TYPE_ABBREV[mt]} {t(lang, `markerType_${mt}`)}
+                  </span>
+                  {hasOverride && (
+                    <button
+                      className="structure-type-color-reset"
+                      onClick={() => setMarkerTypeColorOverride(mt, null)}
+                      title={t(lang, 'markerTypeColorReset')}
+                    >
+                      ↺
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       {sorted.length === 0 ? (
         <div className="structure-panel-empty">{t(lang, 'noMarkers')}</div>
       ) : (
         <div className="structure-list">
           {sorted.map((marker) => {
             const mType = marker.type ?? 'custom'
-            const color = marker.color ?? MARKER_TYPE_COLORS[mType]
+            // Per-marker color override → preset type override → global default
+            const color = marker.color ?? resolveMarkerTypeColor(mType, markerTypeColorOverrides)
+            // Fade out if this type is in the filter (hidden)
+            const isFiltered = markerTypeFilter.length > 0 && markerTypeFilter.includes(mType)
             return (
               <div
                 key={marker.id}
                 className="structure-item"
+                style={isFiltered ? { opacity: 0.3 } : undefined}
                 onClick={() => onSeek(marker.time)}
                 title={t(lang, 'clickToSeek')}
               >

@@ -1416,6 +1416,8 @@ html, body, #root {
   margin-left: 4px;
 }
 .btn-sm:hover { background: #1e1e1e; color: #e0e0e0; }
+.btn-sm--primary { background: #0077cc; color: #fff; border-color: #0077cc; }
+.btn-sm--primary:hover { background: #0088ee; color: #fff; border-color: #0088ee; }
 
 .status-version {
   font-size: 10px;
@@ -2841,6 +2843,91 @@ html, body, #root {
   flex-shrink: 0;
 }
 .structure-delete:hover { color: #ff4444; }
+
+/* ── Structure Panel — Filter Chips (AC-1.3) ──────────────── */
+.structure-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 0;
+}
+.structure-chip {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid #444;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  line-height: 1.6;
+  transition: background 0.1s, color 0.1s;
+}
+.structure-chip.active { color: #fff; }
+.structure-chip-clear {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid #555;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  line-height: 1.6;
+}
+.structure-chip-clear:hover { color: #fff; border-color: #999; }
+
+/* ── Structure Panel — Type Color Overrides (AC-1.4) ────────── */
+.structure-type-colors-section {
+  border-top: 1px solid #1e1e1e;
+  padding-top: 4px;
+}
+.structure-type-colors-toggle {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 10px;
+  cursor: pointer;
+  padding: 2px 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+}
+.structure-type-colors-toggle:hover { color: #aaa; }
+.structure-type-colors-badge {
+  background: #333;
+  color: #aaa;
+  font-size: 9px;
+  border-radius: 8px;
+  padding: 0 4px;
+  line-height: 1.4;
+}
+.structure-type-colors-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 2px;
+}
+.structure-type-color-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.structure-type-color-label {
+  font-size: 10px;
+  flex: 1;
+}
+.structure-type-color-reset {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+.structure-type-color-reset:hover { color: #aaa; }
 
 /* ── License Dialog ──────────────────────────────────────── */
 .license-overlay {
