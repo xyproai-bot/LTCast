@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, session, Menu, screen, nativeTheme } from 'electron'
 import { join, basename, dirname } from 'path'
-import { readFileSync, readFile, existsSync, unlinkSync, mkdirSync, writeFileSync, readdirSync, copyFileSync, statSync } from 'fs'
+import { readFileSync, readFile, existsSync, unlinkSync, mkdirSync, writeFileSync, readdirSync, copyFileSync, statSync, createWriteStream } from 'fs'
 import { tmpdir } from 'os'
 import { is } from '@electron-toolkit/utils'
 import ffmpeg from 'fluent-ffmpeg'
@@ -1644,6 +1644,193 @@ app.whenReady().then(() => {
         presetFilePath
       }
     } catch { return null }
+  })
+
+  // IPC: share project as .ltcastproject zip
+  ipcMain.handle('share-project-zip', async (_event, presetName: string, presetData: unknown, audioPaths: string[]) => {
+    // Compute total audio size for warning
+    let totalBytes = 0
+    for (const p of audioPaths) {
+      try {
+        if (existsSync(p)) totalBytes += statSync(p).size
+      } catch { /* ignore */ }
+    }
+    const SIZE_WARN_BYTES = 500 * 1024 * 1024 // 500MB
+    if (totalBytes > SIZE_WARN_BYTES) {
+      const sizeMb = Math.round(totalBytes / 1024 / 1024)
+      const proceed = await dialog.showMessageBox({
+        type: 'warning',
+        title: 'Large Project',
+        message: `Project total audio is approximately ${sizeMb} MB. This may take a while to zip. Continue?`,
+        buttons: ['Continue', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1
+      })
+      if (proceed.response !== 0) return null
+    }
+
+    // Save dialog for the output zip
+    const safeName = presetName.replace(/[<>:"/\\|?*]/g, '_')
+    const result = await dialog.showSaveDialog({
+      title: 'Share Project As',
+      defaultPath: safeName + '.ltcastproject',
+      filters: [
+        { name: 'LTCast Project', extensions: ['ltcastproject'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+    if (result.canceled || !result.filePath) return null
+    const destPath = result.filePath
+
+    // Write preset to a temp file
+    const tmpDir = join(tmpdir(), `ltcast-share-${Date.now()}`)
+    mkdirSync(tmpDir, { recursive: true })
+
+    const presetFilePath = join(tmpDir, safeName + '.ltcast')
+    const content = JSON.stringify({
+      name: presetName,
+      data: presetData,
+      updatedAt: new Date().toISOString()
+    }, null, 2)
+    writeFileSync(presetFilePath, content, 'utf-8')
+
+    // README
+    const readmePath = join(tmpDir, 'README.txt')
+    writeFileSync(readmePath,
+      `LTCast Project: ${presetName}\n` +
+      `Exported: ${new Date().toISOString()}\n\n` +
+      `This archive contains:\n` +
+      `  ${safeName}.ltcast  — Preset file (open in LTCast)\n` +
+      `  Audio/              — Audio files referenced by the preset\n\n` +
+      `To open: File → Open Project (or drag .ltcast onto LTCast)\n`,
+      'utf-8'
+    )
+
+    // Build zip using archiver
+    try {
+      const archiver = require('archiver')
+      const output = createWriteStream(destPath)
+      const archive = archiver('zip', { zlib: { level: 0 } }) // store-only for audio (already compressed)
+
+      await new Promise<void>((resolve, reject) => {
+        output.on('close', resolve)
+        archive.on('error', reject)
+        archive.pipe(output)
+
+        // Add preset + readme at root
+        archive.file(presetFilePath, { name: safeName + '.ltcast' })
+        archive.file(readmePath, { name: 'README.txt' })
+
+        // Add audio files under Audio/
+        const copiedNames = new Set<string>()
+        for (const srcPath of audioPaths) {
+          if (!existsSync(srcPath)) continue
+          let fileName = basename(srcPath)
+          // Handle duplicate filenames in the archive
+          let counter = 1
+          while (copiedNames.has(fileName.toLowerCase())) {
+            const ext = fileName.includes('.') ? '.' + fileName.split('.').pop() : ''
+            const base = ext ? fileName.slice(0, -ext.length) : fileName
+            fileName = `${base} (${counter})${ext}`
+            counter++
+          }
+          copiedNames.add(fileName.toLowerCase())
+          archive.file(srcPath, { name: 'Audio/' + fileName })
+        }
+
+        archive.finalize()
+      })
+
+      // Cleanup temp files
+      try { unlinkSync(presetFilePath) } catch { /* ignore */ }
+      try { unlinkSync(readmePath) } catch { /* ignore */ }
+      try {
+        const { rmdirSync } = require('fs')
+        rmdirSync(tmpDir)
+      } catch { /* ignore */ }
+
+      return destPath
+    } catch (err) {
+      console.error('share-project-zip failed:', err)
+      return null
+    }
+  })
+
+  // IPC: import .ltcastproject zip file
+  ipcMain.handle('import-ltcastproject', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Import LTCast Project',
+      filters: [
+        { name: 'LTCast Project', extensions: ['ltcastproject'] },
+        { name: 'LTCast Preset', extensions: ['ltcast'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+
+    const filePath = result.filePaths[0]
+
+    // If it's a .ltcast file, use existing import-project logic
+    if (filePath.toLowerCase().endsWith('.ltcast')) {
+      try {
+        const raw = readFileSync(filePath, 'utf-8')
+        const preset = JSON.parse(raw)
+        const projectDir = dirname(filePath)
+        const audioDir = join(projectDir, 'Audio')
+        let audioPaths: string[] = []
+        if (existsSync(audioDir)) {
+          audioPaths = readdirSync(audioDir)
+            .map(f => join(audioDir, f))
+            .filter(p => { try { return statSync(p).isFile() } catch { return false } })
+        }
+        return {
+          preset: { name: preset.name, data: preset.data, updatedAt: preset.updatedAt ?? '' },
+          audioPaths,
+          projectDir,
+          presetFilePath: filePath
+        }
+      } catch { return null }
+    }
+
+    // It's a .ltcastproject zip — extract to Documents/LTCast/Projects/<name>/
+    try {
+      const extractZip = require('extract-zip')
+      const { homedir } = require('os')
+      const docsDir = join(homedir(), 'Documents', 'LTCast', 'Projects')
+      const baseName = basename(filePath, '.ltcastproject')
+      const extractDir = join(docsDir, baseName)
+      mkdirSync(extractDir, { recursive: true })
+
+      await extractZip(filePath, { dir: extractDir })
+
+      // Find the .ltcast file in the extracted dir
+      const files = readdirSync(extractDir)
+      const ltcastFile = files.find(f => f.endsWith('.ltcast'))
+      if (!ltcastFile) return null
+
+      const presetFilePath = join(extractDir, ltcastFile)
+      const raw = readFileSync(presetFilePath, 'utf-8')
+      const preset = JSON.parse(raw)
+
+      const audioDir = join(extractDir, 'Audio')
+      let audioPaths: string[] = []
+      if (existsSync(audioDir)) {
+        audioPaths = readdirSync(audioDir)
+          .map(f => join(audioDir, f))
+          .filter(p => { try { return statSync(p).isFile() } catch { return false } })
+      }
+
+      return {
+        preset: { name: preset.name, data: preset.data, updatedAt: preset.updatedAt ?? '' },
+        audioPaths,
+        projectDir: extractDir,
+        presetFilePath
+      }
+    } catch (err) {
+      console.error('import-ltcastproject failed:', err)
+      return null
+    }
   })
 
   // IPC: save CSV file via save dialog

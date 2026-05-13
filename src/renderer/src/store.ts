@@ -617,6 +617,8 @@ export interface AppState {
   refreshPresets: () => Promise<void>
   packageProject: () => Promise<string | null>
   importProject: () => Promise<boolean>
+  shareProjectZip: () => Promise<string | null>
+  importLtcastProject: () => Promise<boolean>
 }
 
 export const useStore = create<AppState>()(persist((set) => ({
@@ -1526,6 +1528,54 @@ export const useStore = create<AppState>()(persist((set) => ({
     const audioPaths = s.setlist.map(item => item.path)
     if (s.filePath) audioPaths.unshift(s.filePath)
     return window.api.packageProject(name, data, [...new Set(audioPaths)])
+  },
+
+  shareProjectZip: async () => {
+    const s = useStore.getState()
+    const name = s.presetName ?? 'Untitled'
+    const data = buildPresetData(s)
+    const audioPaths = s.setlist.map(item => item.path)
+    if (s.filePath) audioPaths.unshift(s.filePath)
+    return window.api.shareProjectZip(name, data, [...new Set(audioPaths)])
+  },
+
+  importLtcastProject: async () => {
+    const result = await window.api.importLtcastProject()
+    if (!result) return false
+    const { preset } = result
+    const presets = await loadPresetsFromDisk()
+    warnIfNewerVersion(preset.data as PresetData)
+    const presetData = ensureSetlistIds(migratePreset(preset.data as PresetData))
+    // Update setlist paths to point to extracted audio files
+    if (presetData.setlist && result.audioPaths.length > 0) {
+      presetData.setlist = presetData.setlist.map((item: { path: string; name: string }) => {
+        const nameLower = item.name.toLowerCase()
+        const basenameOldLower = item.path.split(/[/\\]/).pop()!.toLowerCase()
+        const extracted = result.audioPaths.find((p: string) => {
+          const pLower = p.toLowerCase()
+          return pLower.endsWith(nameLower) || pLower.endsWith(basenameOldLower)
+        })
+        return extracted ? { ...item, path: extracted } : item
+      })
+    }
+    set({
+      ...presetData,
+      loopA: presetData.loopA ?? null, loopB: presetData.loopB ?? null,
+      previousSetlist: null,
+      activeSetlistIndex: null,
+      savedPresets: presets,
+      presetName: preset.name,
+      presetPath: result.presetFilePath ?? null,
+      presetDirty: false,
+      filePath: null, fileName: null, duration: 0,
+      playState: 'stopped', currentTime: 0,
+      timecode: null, detectedFps: null,
+      tappedBpm: null, detectedBpm: null, timecodeLookup: [],
+      videoFileName: null, videoWaveform: null, videoDuration: 0,
+      videoOffsetSeconds: 0, videoStartTimecode: null, videoLoading: false,
+      tcGeneratorMode: false, ltcConfidence: 0, ltcSignalOk: false, detectedLtcChannel: null
+    })
+    return true
   },
 
   importProject: async () => {

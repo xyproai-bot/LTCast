@@ -4,7 +4,7 @@ import { framesToTc, tcToString, tcToFrames } from '../audio/timecodeConvert'
 import { alignAudio } from '../audio/AudioAligner'
 import { t } from '../i18n'
 import { toast } from './Toast'
-import { buildCueSheetHtml } from '../utils/exportCueSheet'
+import { buildCueSheetHtml, CueSheetLayout } from '../utils/exportCueSheet'
 import { Tooltip } from './Tooltip'
 import { ProGate } from './ProGate'
 
@@ -40,14 +40,22 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
   const [editingNotesStr, setEditingNotesStr] = useState('')
   const [replacingAudioIdx, setReplacingAudioIdx] = useState<number | null>(null)
   const [replaceAligning, setReplaceAligning] = useState(false)
-  // Low-confidence confirmation state
-  const [pendingReplacePayload, setPendingReplacePayload] = useState<{
+  // Replace audio preview modal state
+  const [replacePreview, setReplacePreview] = useState<{
     index: number
     newPath: string
-    confidence: number
-    offsetSec: number
+    newName: string
     newDuration: number
+    oldDuration: number
+    offsetSec: number
+    confidence: number
+    markerPreview: Array<{ id: string; label: string; oldTime: number; newTime: number; clipped: boolean }>
+    cuePreview: Array<{ id: string; label: string; oldTc: string; newTc: string }>
   } | null>(null)
+  // PDF layout choice (compact vs detailed)
+  const [pdfLayout, setPdfLayout] = useState<CueSheetLayout>('detailed')
+  const [showPdfLayoutMenu, setShowPdfLayoutMenu] = useState(false)
+  const pdfMenuRef = useRef<HTMLDivElement>(null)
   // F6: which row (if any) has passed the LONG_PRESS_MS threshold and is now draggable.
   const [armedIdx, setArmedIdx] = useState<number | null>(null)
   const offsetInputRef = useRef<HTMLInputElement>(null)
@@ -145,6 +153,18 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     document.addEventListener('mousedown', onClick)
     return () => document.removeEventListener('mousedown', onClick)
   }, [showSortMenu])
+
+  // Close PDF layout menu when clicking outside
+  useEffect(() => {
+    if (!showPdfLayoutMenu) return
+    const onClick = (e: MouseEvent): void => {
+      if (pdfMenuRef.current && !pdfMenuRef.current.contains(e.target as Node)) {
+        setShowPdfLayoutMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [showPdfLayoutMenu])
 
   const dragIdx = useRef<number | null>(null)
   const dragOverIdx = useRef<number | null>(null)
@@ -417,21 +437,33 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     }
   }, [setlist, lang])
 
-  const handleExportPdf = useCallback(async (): Promise<void> => {
+  const handleExportPdf = useCallback(async (layout: CueSheetLayout): Promise<void> => {
     if (setlist.length === 0) return
     const s = useStore.getState()
     const fps = s.forceFps ?? s.detectedFps ?? 25
+    // Get durations for title page
+    const paths = setlist.map(item => item.path)
+    let durMap: Record<string, number | null> = {}
+    try {
+      durMap = await window.api.getAudioDurations(paths)
+    } catch { /* best-effort */ }
+    const appVersion = await window.api.getAppVersion().catch(() => '')
     const html = buildCueSheetHtml({
       presetName: s.presetName || 'Untitled',
       setlist,
       markers: s.markers,
       fps,
-      markerTypeColorOverrides: s.markerTypeColorOverrides
+      layout,
+      durations: durMap,
+      markerTypeColorOverrides: s.markerTypeColorOverrides,
+      appVersion,
+      generatorStartTC: s.tcGeneratorMode ? (s.generatorStartTC ?? '') : ''
     })
     const defaultName = `${s.presetName || 'cuesheet'}.pdf`
     const savedPath = await window.api.printToPdf(html, defaultName)
-    if (savedPath) toast.success('PDF exported')
-  }, [setlist])
+    if (savedPath) toast.success(t(lang, 'exportPdfSuccess'))
+    setShowPdfLayoutMenu(false)
+  }, [setlist, lang])
 
   const handleImportCsv = useCallback(async (): Promise<void> => {
     try {
@@ -657,29 +689,56 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
       setReplaceAligning(false)
       setReplacingAudioIdx(null)
 
-      if (confidence < 0.7) {
-        // Show low confidence warning, ask to proceed
-        setPendingReplacePayload({ index, newPath, confidence, offsetSec, newDuration: newResult.duration })
-        toast.action(
-          t(lang, 'replaceAudioLowConfidence', { pct: String(Math.round(confidence * 100)) }),
-          t(lang, 'replaceAudioApplyAnyway'),
-          () => {
-            const p = pendingReplacePayload ?? { index, newPath, confidence, offsetSec, newDuration: newResult.duration }
-            applyAudioReplace(p.index, p.newPath, p.offsetSec, p.newDuration, p.confidence)
-            setPendingReplacePayload(null)
-          },
-          'warning'
-        )
-      } else {
-        applyAudioReplace(index, newPath, offsetSec, newResult.duration, confidence)
-      }
+      // Build preview lists so user can see exactly what will change
+      const fps = (s.forceFps ?? s.detectedFps ?? 25)
+      const offsetFrames = Math.round(offsetSec * fps)
+      const itemMarkers = s.markers[item.id] ?? []
+      const itemCues = item.midiCues ?? []
+
+      const markerPreview = itemMarkers.map(m => {
+        const newTime = m.time + offsetSec
+        const clipped = newTime > newResult.duration
+        return {
+          id: m.id,
+          label: m.label || m.type || '—',
+          oldTime: m.time,
+          newTime: clipped ? Math.max(0, newResult.duration - 0.1) : Math.max(0, newTime),
+          clipped
+        }
+      })
+
+      const cuePreview = itemCues.map(cue => {
+        const oldFrames = tcToFrames(cue.triggerTimecode, fps)
+        const newFrames = Math.max(0, oldFrames + offsetFrames)
+        const newTc = tcToString(framesToTc(newFrames, fps))
+        return {
+          id: cue.id,
+          label: cue.label || cue.messageType,
+          oldTc: cue.triggerTimecode,
+          newTc
+        }
+      })
+
+      const newName = newPath.split(/[/\\]/).pop() ?? newPath
+
+      setReplacePreview({
+        index,
+        newPath,
+        newName,
+        newDuration: newResult.duration,
+        oldDuration: origResult.duration,
+        offsetSec,
+        confidence,
+        markerPreview,
+        cuePreview
+      })
     } catch (e) {
       console.error('Replace audio failed', e)
       toast.error(t(lang, 'replaceAudioAlignError'))
       setReplaceAligning(false)
       setReplacingAudioIdx(null)
     }
-  }, [lang, extractPeaks, applyAudioReplace, pendingReplacePayload])
+  }, [lang, extractPeaks])
 
   return (
     <div
@@ -713,12 +772,22 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
             title={t(lang, 'exportCsv')}
             disabled={setlist.length === 0}
           >↑</button>
-          <button
-            className="setlist-hdr-btn"
-            onClick={handleExportPdf}
-            title="Export PDF Cue Sheet"
-            disabled={setlist.length === 0}
-          >PDF</button>
+          <ProGate>
+            <div className="setlist-sort-wrapper" ref={pdfMenuRef}>
+              <button
+                className="setlist-hdr-btn"
+                onClick={() => setShowPdfLayoutMenu(!showPdfLayoutMenu)}
+                title={t(lang, 'exportPdf')}
+                disabled={setlist.length === 0}
+              >PDF</button>
+              {showPdfLayoutMenu && (
+                <div className="setlist-sort-menu--down">
+                  <button onClick={() => handleExportPdf('detailed')}>{t(lang, 'exportPdfDetailed')}</button>
+                  <button onClick={() => handleExportPdf('compact')}>{t(lang, 'exportPdfCompact')}</button>
+                </div>
+              )}
+            </div>
+          </ProGate>
           <button
             className="setlist-hdr-btn"
             onClick={handleImportCsv}
@@ -962,6 +1031,122 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
           </button>
         </>
       )}
+
+      {/* Replace audio preview modal */}
+      {replacePreview && (() => {
+        const p = replacePreview
+        const item = setlist[p.index]
+        if (!item) return null
+        const durDiff = p.newDuration - p.oldDuration
+        const durDiffStr = durDiff >= 0 ? `+${durDiff.toFixed(2)}s` : `${durDiff.toFixed(2)}s`
+        const offsetStr = p.offsetSec >= 0 ? `+${p.offsetSec.toFixed(3)}s` : `${p.offsetSec.toFixed(3)}s`
+        const pct = Math.round(p.confidence * 100)
+        const lowConf = p.confidence < 0.7
+        const fmt = (sec: number): string => {
+          const m = Math.floor(sec / 60)
+          const s = Math.floor(sec % 60)
+          const ms = Math.round((sec - Math.floor(sec)) * 1000)
+          return `${m}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`
+        }
+        return (
+          <div className="ltc-wav-dialog-overlay" onClick={(e) => { if (e.target === e.currentTarget) setReplacePreview(null) }}>
+            <div className="ltc-wav-dialog" style={{ width: '600px', maxWidth: '90vw' }}>
+              <div className="ltc-wav-dialog-header">
+                <div>
+                  <div className="ltc-wav-dialog-title">{t(lang, 'replaceAudioPreviewTitle')}</div>
+                  <div className="ltc-wav-dialog-sub">{item.name} → {p.newName}</div>
+                </div>
+                <button className="ltc-wav-dialog-close" onClick={() => setReplacePreview(null)}>×</button>
+              </div>
+
+              <div style={{ padding: '12px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* Summary */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', fontSize: '12px' }}>
+                  <div style={{ background: '#1a1a1a', padding: '8px', borderRadius: '4px' }}>
+                    <div style={{ color: '#888', fontSize: '10px' }}>{t(lang, 'replaceAudioOldDuration')}</div>
+                    <div style={{ fontFamily: 'Consolas, monospace' }}>{fmt(p.oldDuration)}</div>
+                  </div>
+                  <div style={{ background: '#1a1a1a', padding: '8px', borderRadius: '4px' }}>
+                    <div style={{ color: '#888', fontSize: '10px' }}>{t(lang, 'replaceAudioNewDuration')}</div>
+                    <div style={{ fontFamily: 'Consolas, monospace' }}>{fmt(p.newDuration)} <span style={{ color: durDiff >= 0 ? '#4caf50' : '#ff9800', fontSize: '11px' }}>({durDiffStr})</span></div>
+                  </div>
+                  <div style={{ background: '#1a1a1a', padding: '8px', borderRadius: '4px' }}>
+                    <div style={{ color: '#888', fontSize: '10px' }}>{t(lang, 'replaceAudioOffset')} ({pct}%)</div>
+                    <div style={{ fontFamily: 'Consolas, monospace', color: lowConf ? '#ff9800' : '#4caf50' }}>{offsetStr}</div>
+                  </div>
+                </div>
+
+                {lowConf && (
+                  <div style={{ background: 'rgba(255, 152, 0, 0.12)', border: '1px solid #ff9800', borderRadius: '4px', padding: '8px 10px', fontSize: '11px', color: '#ffb74d' }}>
+                    ⚠ {t(lang, 'replaceAudioLowConfWarn')}
+                  </div>
+                )}
+
+                {/* Marker preview */}
+                {p.markerPreview.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#aaa', marginBottom: '4px' }}>
+                      {t(lang, 'replaceAudioMarkers')} ({p.markerPreview.length})
+                    </div>
+                    <div style={{ maxHeight: '140px', overflowY: 'auto', background: '#0d0d0d', borderRadius: '4px', border: '1px solid #2a2a2a' }}>
+                      {p.markerPreview.map(m => (
+                        <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '6px', alignItems: 'center', padding: '4px 8px', fontSize: '11px', borderBottom: '1px solid #1a1a1a' }}>
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.label}</div>
+                          <div style={{ fontFamily: 'Consolas, monospace', color: '#888' }}>{fmt(m.oldTime)}</div>
+                          <div style={{ color: '#666' }}>→</div>
+                          <div style={{ fontFamily: 'Consolas, monospace', color: m.clipped ? '#ff9800' : '#4caf50' }}>
+                            {fmt(m.newTime)}{m.clipped ? ' ⚠' : ''}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* MIDI cue preview */}
+                {p.cuePreview.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#aaa', marginBottom: '4px' }}>
+                      {t(lang, 'replaceAudioMidiCues')} ({p.cuePreview.length})
+                    </div>
+                    <div style={{ maxHeight: '120px', overflowY: 'auto', background: '#0d0d0d', borderRadius: '4px', border: '1px solid #2a2a2a' }}>
+                      {p.cuePreview.map(c => (
+                        <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '6px', alignItems: 'center', padding: '4px 8px', fontSize: '11px', borderBottom: '1px solid #1a1a1a' }}>
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.label}</div>
+                          <div style={{ fontFamily: 'Consolas, monospace', color: '#888' }}>{c.oldTc}</div>
+                          <div style={{ color: '#666' }}>→</div>
+                          <div style={{ fontFamily: 'Consolas, monospace', color: '#4caf50' }}>{c.newTc}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {p.markerPreview.length === 0 && p.cuePreview.length === 0 && (
+                  <div style={{ color: '#888', fontSize: '11px', fontStyle: 'italic', padding: '8px 0' }}>
+                    {t(lang, 'replaceAudioNoMarkers')}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ padding: '12px 18px', borderTop: '1px solid #2a2a2a', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button className="ltc-wav-btn" onClick={() => setReplacePreview(null)}>
+                  {t(lang, 'cancel')}
+                </button>
+                <button
+                  className="ltc-wav-btn ltc-wav-btn--primary"
+                  onClick={() => {
+                    applyAudioReplace(p.index, p.newPath, p.offsetSec, p.newDuration, p.confidence)
+                    setReplacePreview(null)
+                  }}
+                >
+                  {t(lang, 'replaceAudioApply')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
