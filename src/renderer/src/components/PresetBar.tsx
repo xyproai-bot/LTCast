@@ -2,13 +2,15 @@ import React, { useCallback, useEffect, useRef } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import { toast } from './Toast'
+import { ProGate } from './ProGate'
 
 export function PresetBar(): React.JSX.Element {
   const {
     presetName, presetDirty, savedPresets, lang,
     newPreset, savePreset, savePresetAs, loadPreset, deletePreset,
     openProject, openRecentFile,
-    packageProject, importProject
+    packageProject, importProject,
+    shareProjectZip, importLtcastProject
   } = useStore()
 
   const handleNew = useCallback((): void => {
@@ -46,6 +48,20 @@ export function PresetBar(): React.JSX.Element {
     }
   }, [importProject, lang])
 
+  const handleShareProjectZip = useCallback(async (): Promise<void> => {
+    const path = await shareProjectZip()
+    if (path) {
+      toast.success(t(lang, 'shareAsZipSuccess'))
+    }
+  }, [shareProjectZip, lang])
+
+  const handleImportLtcastProject = useCallback(async (): Promise<void> => {
+    const ok = await importLtcastProject()
+    if (ok) {
+      toast.success(t(lang, 'projectImported'))
+    }
+  }, [importLtcastProject, lang])
+
   // Use ref for openRecentFile to avoid re-registering the listener
   const openRecentRef = useRef(openRecentFile)
   openRecentRef.current = openRecentFile
@@ -63,10 +79,12 @@ export function PresetBar(): React.JSX.Element {
       window.api.onMenuCommand('menu-import-preset', handleOpen),
       window.api.onMenuCommand('menu-package-project', handlePackageProject),
       window.api.onMenuCommand('menu-import-project', handleImportProject),
+      window.api.onMenuCommand('menu-share-project', handleShareProjectZip),
+      window.api.onMenuCommand('menu-import-ltcastproject', handleImportLtcastProject),
       window.api.onMenuCommand('menu-open-recent', handleOpenRecent)
     ]
     return () => unsubs.forEach(fn => fn())
-  }, [handleNew, handleSave, handleSaveAs, handleOpen, handlePackageProject, handleImportProject])
+  }, [handleNew, handleSave, handleSaveAs, handleOpen, handlePackageProject, handleImportProject, handleShareProjectZip, handleImportLtcastProject])
 
   return (
     <div className="preset-bar">
@@ -98,6 +116,24 @@ export function PresetBar(): React.JSX.Element {
           {t(lang, 'delete')}
         </button>
       )}
+
+      <ProGate>
+        <button
+          className="btn-preset"
+          onClick={handleShareProjectZip}
+          title={t(lang, 'shareAsZip')}
+        >
+          {t(lang, 'shareAsZip')}
+        </button>
+      </ProGate>
+
+      <button
+        className="btn-preset"
+        onClick={handleImportLtcastProject}
+        title={t(lang, 'importLtcastProject')}
+      >
+        {t(lang, 'importLtcastProject')}
+      </button>
     </div>
   )
 }

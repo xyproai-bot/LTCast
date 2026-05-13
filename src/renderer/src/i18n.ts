@@ -342,6 +342,15 @@ export const strings = {
     replaceAudioCancel: 'Cancel',
     replaceAudioAlignError: 'Alignment failed — audio replaced at offset 0',
     replaceAudioMarkersClipped: '{n} markers shifted past end of new file — clamped to end',
+    replaceAudioPreviewTitle: 'Preview Audio Replacement',
+    replaceAudioOldDuration: 'Old',
+    replaceAudioNewDuration: 'New',
+    replaceAudioOffset: 'Offset',
+    replaceAudioMarkers: 'Markers',
+    replaceAudioMidiCues: 'MIDI Cues',
+    replaceAudioApply: 'Apply Replacement',
+    replaceAudioLowConfWarn: 'Auto-alignment confidence is low. Review the marker positions below carefully before applying.',
+    cancel: 'Cancel',
     // Sprint B — F6: pre-show check
     checkLtcSignal: 'LTC Signal',
     checkLtcSignalOk: 'Signal OK',
@@ -370,7 +379,18 @@ export const strings = {
     resumeButton: 'Resume',
     resumeDismiss: 'Dismiss',
     resumeDontAskAgain: "Don't ask again",
-    resumeFileMissing: 'File moved or missing — cannot resume'
+    resumeFileMissing: 'File moved or missing — cannot resume',
+    // Sprint C — F8: PDF cue sheet
+    exportPdf: 'Export PDF Cue Sheet',
+    exportPdfDetailed: 'Detailed (one page per song)',
+    exportPdfCompact: 'Compact (table overview)',
+    exportPdfSuccess: 'PDF exported',
+    // Sprint C — F9: project share
+    shareAsZip: 'Share Project (.ltcastproject)',
+    shareAsZipSuccess: 'Project exported as .ltcastproject',
+    shareInProgress: 'Creating project zip…',
+    projectSizeWarning: 'Large project ({size}). Continue?',
+    importLtcastProject: 'Import .ltcastproject'
   },
   zh: {
     appTitle: 'LTCast',
@@ -712,6 +732,15 @@ export const strings = {
     replaceAudioCancel: '取消',
     replaceAudioAlignError: '對齊失敗 — 以偏移 0 替換音訊',
     replaceAudioMarkersClipped: '{n} 個標記超出新檔案長度 — 已截斷到結尾',
+    replaceAudioPreviewTitle: '替換音訊預覽',
+    replaceAudioOldDuration: '舊版',
+    replaceAudioNewDuration: '新版',
+    replaceAudioOffset: '偏移',
+    replaceAudioMarkers: '標記',
+    replaceAudioMidiCues: 'MIDI Cue',
+    replaceAudioApply: '套用替換',
+    replaceAudioLowConfWarn: '自動對齊信心度偏低，套用前請仔細檢查下方標記位置。',
+    cancel: '取消',
     // Sprint B — F6: pre-show check
     checkLtcSignal: 'LTC 信號',
     checkLtcSignalOk: '信號正常',
@@ -740,7 +769,18 @@ export const strings = {
     resumeButton: '繼續',
     resumeDismiss: '略過',
     resumeDontAskAgain: '不再提示',
-    resumeFileMissing: '檔案已移動或遺失，無法繼續'
+    resumeFileMissing: '檔案已移動或遺失，無法繼續',
+    // Sprint C — F8: PDF cue sheet
+    exportPdf: '匯出 PDF Cue Sheet',
+    exportPdfDetailed: '詳細版（每首一頁）',
+    exportPdfCompact: '精簡版（總覽表格）',
+    exportPdfSuccess: 'PDF 已匯出',
+    // Sprint C — F9: project share
+    shareAsZip: '分享專案（.ltcastproject）',
+    shareAsZipSuccess: '專案已匯出為 .ltcastproject',
+    shareInProgress: '正在建立專案壓縮檔…',
+    projectSizeWarning: '專案較大（{size}），確定繼續？',
+    importLtcastProject: '匯入 .ltcastproject'
   },
   ja: {
     appTitle: 'LTCast',
@@ -1082,6 +1122,15 @@ export const strings = {
     replaceAudioCancel: 'キャンセル',
     replaceAudioAlignError: '整列失敗 — オフセット 0 で差し替えました',
     replaceAudioMarkersClipped: '{n} 個のマーカーが新ファイルの末尾を超えました — 末尾に固定',
+    replaceAudioPreviewTitle: '音声差し替えプレビュー',
+    replaceAudioOldDuration: '旧',
+    replaceAudioNewDuration: '新',
+    replaceAudioOffset: 'オフセット',
+    replaceAudioMarkers: 'マーカー',
+    replaceAudioMidiCues: 'MIDI キュー',
+    replaceAudioApply: '差し替えを適用',
+    replaceAudioLowConfWarn: '自動整列の信頼度が低めです。適用前にマーカー位置をよく確認してください。',
+    cancel: 'キャンセル',
     // Sprint B — F6: pre-show check
     checkLtcSignal: 'LTC 信号',
     checkLtcSignalOk: '信号正常',
@@ -1110,7 +1159,18 @@ export const strings = {
     resumeButton: '再開',
     resumeDismiss: '閉じる',
     resumeDontAskAgain: '今後は表示しない',
-    resumeFileMissing: 'ファイルが見つかりません — 再開できません'
+    resumeFileMissing: 'ファイルが見つかりません — 再開できません',
+    // Sprint C — F8: PDF cue sheet
+    exportPdf: 'PDF キューシートをエクスポート',
+    exportPdfDetailed: '詳細（1曲1ページ）',
+    exportPdfCompact: 'コンパクト（一覧表）',
+    exportPdfSuccess: 'PDF をエクスポートしました',
+    // Sprint C — F9: project share
+    shareAsZip: 'プロジェクトを共有（.ltcastproject）',
+    shareAsZipSuccess: '.ltcastproject としてエクスポートしました',
+    shareInProgress: 'プロジェクト ZIP を作成中…',
+    projectSizeWarning: 'プロジェクトが大きいです（{size}）。続けますか？',
+    importLtcastProject: '.ltcastproject を読み込む'
   }
 }
 

@@ -36,6 +36,8 @@ interface Window {
     getRecentFiles(): Promise<Array<{ path: string; name: string }>>
     packageProject(name: string, data: unknown, audioPaths: string[]): Promise<string | null>
     importProject(): Promise<{ preset: { name: string; data: unknown; updatedAt: string }; audioPaths: string[]; projectDir: string; presetFilePath: string } | null>
+    shareProjectZip(name: string, data: unknown, audioPaths: string[]): Promise<string | null>
+    importLtcastProject(): Promise<{ preset: { name: string; data: unknown; updatedAt: string }; audioPaths: string[]; projectDir: string; presetFilePath: string } | null>
 
     // Export helpers
     saveCsvDialog(csvContent: string, defaultName: string): Promise<string | null>

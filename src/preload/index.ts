@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld('api', {
   packageProject: (name: string, data: unknown, audioPaths: string[]) =>
     ipcRenderer.invoke('package-project', name, data, audioPaths),
   importProject: () => ipcRenderer.invoke('import-project'),
+  shareProjectZip: (name: string, data: unknown, audioPaths: string[]) =>
+    ipcRenderer.invoke('share-project-zip', name, data, audioPaths),
+  importLtcastProject: () => ipcRenderer.invoke('import-ltcastproject'),
 
   // Export: save CSV (setlist) via save dialog
   saveCsvDialog: (csvContent: string, defaultName: string) =>
