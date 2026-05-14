@@ -20,7 +20,7 @@ import { StatusBar } from './components/StatusBar'
 import { LtcWavExportDialog } from './components/LtcWavExportDialog'
 import { LicenseDialog } from './components/LicenseDialog'
 import { ProGate } from './components/ProGate'
-import { useStore, TimecodeFrame } from './store'
+import { useStore, TimecodeFrame, buildPresetData } from './store'
 import { useShallow } from 'zustand/react/shallow'
 import { alignAudio } from './audio/AudioAligner'
 import { getTimecodeAtTime, formatTimecode } from './audio/LtcDecoder'
@@ -71,6 +71,8 @@ export default function App(): React.JSX.Element {
   // F7 — Resume last session
   const [resumeToastId, setResumeToastId] = useState<number | null>(null)
   const lastSessionSaveThrottle = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Sprint D — F11: Auto backup timer ref
+  const autoBackupTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const resumePayloadRef = useRef<{ positionSeconds: number; setlistIndex: number | null } | null>(null)
   const [showResumeDialog, setShowResumeDialog] = useState(false)
   const [resumeDialogData, setResumeDialogData] = useState<{ filePath: string; fileName: string; positionSeconds: number; setlistIndex: number | null } | null>(null)
@@ -97,6 +99,22 @@ export default function App(): React.JSX.Element {
     if (autoAdvanceIntervalRef.current) { clearInterval(autoAdvanceIntervalRef.current); autoAdvanceIntervalRef.current = null }
     setAutoAdvanceCountdown(null)
   }, [])
+
+  // F10 — when active setlist variant changes, hard-stop the audio engine so
+  // we don't leave audio + outputs running while the UI shows the new variant.
+  // (store.switchSetlistVariant flips playState to 'stopped' but can't reach
+  // engine.current — that ref lives only in App.)
+  const activeVariantId = useStore(s => s.activeSetlistVariantId)
+  const prevVariantId = useRef(activeVariantId)
+  useEffect(() => {
+    if (prevVariantId.current === activeVariantId) return
+    prevVariantId.current = activeVariantId
+    cancelAutoAdvance()
+    engine.current?.pause()
+    engine.current?.seek(0)
+    triggeredCueIds.current = new Set()
+    osc.current?.sendTransport('stop')
+  }, [activeVariantId, cancelAutoAdvance])
 
   // NARROW SELECTOR with useShallow — prevents App from re-rendering on every
   // setCurrentTime (30Hz) and setTimecode (30Hz). Previously App subscribed to
@@ -638,6 +656,55 @@ export default function App(): React.JSX.Element {
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [])
+
+  // Sprint D — F11: Auto-backup interval timer
+  // Runs every autoBackupIntervalMin minutes and writes a snapshot if there
+  // is an active named preset. Also registers window.__ltcast_quitBackup so
+  // the main-process before-quit handler can call it synchronously.
+  useEffect(() => {
+    // Register the quit-time backup hook for main process
+    ;(window as unknown as Record<string, unknown>)['__ltcast_quitBackup'] = async () => {
+      const s = useStore.getState()
+      if (!s.presetName) return
+      const data = buildPresetData(s)
+      try {
+        await window.api.backupSnapshot(s.presetName, data)
+        await window.api.pruneBackups(s.presetName, s.autoBackupKeepCount)
+      } catch (e) {
+        console.error('[AutoBackup] quit-time backup failed', e)
+      }
+    }
+
+    // Rebuild interval whenever settings change
+    if (autoBackupTimerRef.current) {
+      clearInterval(autoBackupTimerRef.current)
+      autoBackupTimerRef.current = null
+    }
+
+    const s0 = useStore.getState()
+    if (!s0.autoBackupEnabled) return
+
+    const intervalMs = s0.autoBackupIntervalMin * 60 * 1000
+    autoBackupTimerRef.current = setInterval(async () => {
+      const cur = useStore.getState()
+      if (!cur.autoBackupEnabled || !cur.presetName) return
+      try {
+        await window.api.backupSnapshot(cur.presetName, buildPresetData(cur))
+        await window.api.pruneBackups(cur.presetName, cur.autoBackupKeepCount)
+      } catch (e) {
+        console.error('[AutoBackup] snapshot failed', e)
+      }
+    }, intervalMs)
+
+    return () => {
+      if (autoBackupTimerRef.current) {
+        clearInterval(autoBackupTimerRef.current)
+        autoBackupTimerRef.current = null
+      }
+    }
+  // Re-run when auto-backup settings change (reads from store on each tick)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Re-apply offset when it changes

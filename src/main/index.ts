@@ -2372,6 +2372,170 @@ app.whenReady().then(() => {
     return result.response === 1
   })
 
+  // ── Sprint D — F11: Auto Backup IPC handlers ─────────────────────────
+  const backupsDir = join(ltcastDir, 'Backups')
+  if (!existsSync(backupsDir)) mkdirSync(backupsDir, { recursive: true })
+
+  /** Sanitize preset name for use as a directory name. */
+  function safePresetName(name: string): string {
+    return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80) || 'Unnamed'
+  }
+
+  /** Build a backup file path: ~/Documents/LTCast/Backups/<preset>/<timestamp>.ltcast */
+  function backupFilePath(presetName: string, date: Date): string {
+    const safeName = safePresetName(presetName)
+    const ts = date.toISOString()
+      .replace(/T/, '_').replace(/:/g, '-').replace(/\..+/, '')
+    const presetBackupDir = join(backupsDir, safeName)
+    if (!existsSync(presetBackupDir)) mkdirSync(presetBackupDir, { recursive: true })
+    return join(presetBackupDir, `${ts}.ltcast`)
+  }
+
+  /** Keep only the N most recent backups for a preset; delete older ones. */
+  function pruneBackupFiles(presetName: string, keepN: number): void {
+    try {
+      const safeName = safePresetName(presetName)
+      const presetBackupDir = join(backupsDir, safeName)
+      if (!existsSync(presetBackupDir)) return
+      const files = readdirSync(presetBackupDir)
+        .filter(f => f.endsWith('.ltcast'))
+        .map(f => ({ name: f, path: join(presetBackupDir, f) }))
+        .sort((a, b) => b.name.localeCompare(a.name)) // newest first (ISO timestamps sort lexicographically)
+      if (files.length <= keepN) return
+      for (const f of files.slice(keepN)) {
+        try { unlinkSync(f.path) } catch { /* best effort */ }
+      }
+    } catch { /* best effort */ }
+  }
+
+  // IPC: backup-snapshot — write a preset snapshot to the backup folder
+  ipcMain.handle('backup-snapshot', (_event, presetName: string, presetData: unknown) => {
+    try {
+      const filePath = backupFilePath(presetName, new Date())
+      const content = JSON.stringify({ name: presetName, data: presetData, backedUpAt: new Date().toISOString() }, null, 2)
+      writeFileSync(filePath, content, 'utf-8')
+      return { ok: true, path: filePath }
+    } catch (e) {
+      console.error('[backup] snapshot failed', e)
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // IPC: list-backups — list all backups for a preset sorted newest first
+  ipcMain.handle('list-backups', (_event, presetName: string) => {
+    try {
+      const safeName = safePresetName(presetName)
+      const presetBackupDir = join(backupsDir, safeName)
+      if (!existsSync(presetBackupDir)) return []
+      const files = readdirSync(presetBackupDir)
+        .filter(f => f.endsWith('.ltcast'))
+        .map(f => {
+          const filePath = join(presetBackupDir, f)
+          const stat = statSync(filePath)
+          // Parse ISO timestamp from filename: YYYY-MM-DD_HH-mm-ss.ltcast
+          const ts = f.replace('.ltcast', '').replace('_', 'T').replace(/-(\d{2})-(\d{2})$/, ':$1:$2')
+          return { path: filePath, timestamp: ts, sizeBytes: stat.size }
+        })
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+      return files
+    } catch (e) {
+      console.error('[backup] list failed', e)
+      return []
+    }
+  })
+
+  // IPC: restore-backup — read a backup file and return its preset data
+  ipcMain.handle('restore-backup', (_event, backupPath: string) => {
+    try {
+      if (!existsSync(backupPath)) return null
+      const raw = readFileSync(backupPath, 'utf-8')
+      const parsed = JSON.parse(raw)
+      return { name: parsed.name, data: parsed.data }
+    } catch (e) {
+      console.error('[backup] restore failed', e)
+      return null
+    }
+  })
+
+  // IPC: delete-backup — delete a single backup file
+  ipcMain.handle('delete-backup', (_event, backupPath: string) => {
+    try {
+      if (existsSync(backupPath)) unlinkSync(backupPath)
+      return { ok: true }
+    } catch (e) {
+      console.error('[backup] delete failed', e)
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // IPC: prune-backups — keep only the N most recent backups
+  ipcMain.handle('prune-backups', (_event, presetName: string, keepN: number) => {
+    try {
+      pruneBackupFiles(presetName, keepN)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // IPC: open-backup-folder — open the backup folder for a preset in the OS file manager
+  ipcMain.handle('open-backup-folder', (_event, presetName: string) => {
+    try {
+      const safeName = safePresetName(presetName)
+      const presetBackupDir = join(backupsDir, safeName)
+      if (!existsSync(presetBackupDir)) mkdirSync(presetBackupDir, { recursive: true })
+      shell.openPath(presetBackupDir)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // ── Sprint D — F11: before-quit backup (AC-11.6) ──────────────────────
+  // A reference to the pending quit-time backup promise is stored here so
+  // the before-quit handler can await it with a 200ms timeout.
+  let quitBackupPending = false
+
+  app.on('before-quit', (event) => {
+    // Belt-and-braces: ensure OSC inbound listener is closed (previously in outer before-quit).
+    closeOscFeedbackSocket()
+
+    // If already in a quit sequence, let it proceed
+    if (quitBackupPending) return
+    // Check if renderer can provide a backup snapshot synchronously.
+    // We use event.preventDefault() + async write + app.quit().
+    const allWindows = BrowserWindow.getAllWindows()
+    if (allWindows.length === 0) return
+    const mainWin = allWindows[0]
+    if (mainWin.isDestroyed()) return
+
+    // Ask renderer for quit-time backup data synchronously via executeJavaScript
+    event.preventDefault()
+    quitBackupPending = true
+
+    const timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), 200))
+    const backup = mainWin.webContents.executeJavaScript('window.__ltcast_quitBackup && window.__ltcast_quitBackup()')
+      .then((result: unknown) => result)
+      .catch(() => null)
+
+    Promise.race([backup, timeout]).then((result) => {
+      if (result && typeof result === 'object' && 'presetName' in (result as object)) {
+        const r = result as { presetName: string; presetData: unknown }
+        if (r.presetName && r.presetData) {
+          try {
+            const filePath = backupFilePath(r.presetName, new Date())
+            const content = JSON.stringify({ name: r.presetName, data: r.presetData, backedUpAt: new Date().toISOString() }, null, 2)
+            writeFileSync(filePath, content, 'utf-8')
+            pruneBackupFiles(r.presetName, 10)
+          } catch { /* best effort */ }
+        }
+      }
+      app.quit()
+    }).catch(() => {
+      app.quit()
+    })
+  })
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       const newWin = createWindow()
@@ -2393,8 +2557,4 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => {
-  // Belt-and-braces: ensure inbound listener is closed even on macOS where
-  // window-all-closed does not always fire before quit (dock-quit path).
-  closeOscFeedbackSocket()
-})
+// Note: before-quit OSC cleanup is now handled inside the backup before-quit handler above.

@@ -55,6 +55,10 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
     // Sprint A settings
     numericKeyAction, setNumericKeyAction,
     showLoopDragLabel, setShowLoopDragLabel,
+    // Sprint D — F11: Auto Backup settings
+    autoBackupEnabled, setAutoBackupEnabled,
+    autoBackupIntervalMin, setAutoBackupIntervalMin,
+    autoBackupKeepCount, setAutoBackupKeepCount,
     lang
   } = useStore()
 
@@ -561,6 +565,53 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
           <span className="device-label" style={{ cursor: 'pointer' }}>{t(lang, 'showLoopDragLabel')}</span>
         </label>
       </div>
+
+      {/* Sprint D — F11: Auto Backup settings */}
+      <div className="device-row" style={{ alignItems: 'center' }}>
+        <label className="artnet-toggle" style={{ gap: 8, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={autoBackupEnabled}
+            onChange={(e) => setAutoBackupEnabled(e.target.checked)}
+          />
+          <span className="device-label" style={{ cursor: 'pointer' }}>{t(lang, 'autoBackupEnabled')}</span>
+        </label>
+      </div>
+
+      {autoBackupEnabled && (
+        <>
+          <div className="device-row">
+            <span className="device-label">{t(lang, 'backupIntervalMin')}</span>
+            <input
+              type="number"
+              className="device-select"
+              style={{ width: 70 }}
+              min={1}
+              max={60}
+              value={autoBackupIntervalMin}
+              onChange={(e) => {
+                const v = Math.max(1, Math.min(60, parseInt(e.target.value, 10) || 1))
+                setAutoBackupIntervalMin(v)
+              }}
+            />
+          </div>
+          <div className="device-row">
+            <span className="device-label">{t(lang, 'backupKeepCount')}</span>
+            <input
+              type="number"
+              className="device-select"
+              style={{ width: 70 }}
+              min={1}
+              max={50}
+              value={autoBackupKeepCount}
+              onChange={(e) => {
+                const v = Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 1))
+                setAutoBackupKeepCount(v)
+              }}
+            />
+          </div>
+        </>
+      )}
 
       {/* Help text */}
       <div className="help-text">

@@ -1,6 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
+// Pure stage-display helpers live in utils/stageDisplay.ts so they can be
+// unit-tested without JSX. Re-export them from here for backward compat.
+export { formatNextRow, computeStatusPills } from '../utils/stageDisplay'
+export type { StatusPill } from '../utils/stageDisplay'
+import { formatNextRow, computeStatusPills } from '../utils/stageDisplay'
 
 function pad2(n: number): string { return String(Math.floor(n)).padStart(2, '0') }
 
@@ -28,12 +33,15 @@ export function TimecodeDisplay({ fullscreen, onSeekToTimecode }: Props): React.
     tcGeneratorMode, setTcGeneratorMode,
     generatorStartTC, setGeneratorStartTC,
     generatorFps, setGeneratorFps,
-    ltcSignalOk, playState,
+    ltcSignalOk, ltcConfidence, playState,
     currentTime, duration,
     ltcStartTime,
-    autoAdvance, setlist, activeSetlistIndex,
+    autoAdvance, autoAdvanceGap, setlist, activeSetlistIndex,
     offsetFrames, setOffsetFrames, showLocked,
-    fileName
+    fileName,
+    selectedCueMidiPort, midiOutputs,
+    oscEnabled, oscTargetIp, oscFeedbackDevices,
+    midiClockEnabled, tappedBpm, detectedBpm, midiClockManualBpm, midiClockSource
   } = useStore()
 
   // Toggle elapsed vs remaining time (click to switch, like Arena)
@@ -213,6 +221,38 @@ export function TimecodeDisplay({ fullscreen, onSeekToTimecode }: Props): React.
     return <div className="tc-next-song">NEXT: {setlist[nextIdx].name}</div>
   })()
 
+  // F13 — Fullscreen-only zones
+  const remaining = Math.max(0, duration - currentTime)
+
+  // Stage note for current setlist item (fullscreen only)
+  const stageNote: string | null = (() => {
+    if (activeSetlistIndex === null || activeSetlistIndex < 0 || activeSetlistIndex >= setlist.length) return null
+    return setlist[activeSetlistIndex].stageNote || null
+  })()
+
+  // Next song row (always visible in fullscreen, not just last-15s)
+  const nextRowText: string | null = formatNextRow(setlist, activeSetlistIndex, remaining, autoAdvance, autoAdvanceGap ?? 2, lang)
+
+  // Status pills
+  const statusPills = computeStatusPills({
+    tcGeneratorMode,
+    playState,
+    ltcSignalOk,
+    ltcConfidence,
+    selectedCueMidiPort: selectedCueMidiPort ?? null,
+    midiOutputs,
+    setlist,
+    oscEnabled,
+    oscTargetIp: oscTargetIp ?? '',
+    oscFeedbackDevices,
+    midiClockEnabled,
+    tappedBpm: tappedBpm ?? null,
+    detectedBpm: detectedBpm ?? null,
+    midiClockManualBpm,
+    midiClockSource,
+    lang
+  })
+
   const signalLostBanner = (
     <div className={`tc-signal-lost-banner${signalLost ? '' : ' tc-banner--hidden'}`}>
       {t(lang, 'ltcSignalLost')}
@@ -224,8 +264,11 @@ export function TimecodeDisplay({ fullscreen, onSeekToTimecode }: Props): React.
     //   1. Song name (hidden when null; no empty bar — AC-2)
     //   2. Giant TC digits + fps badge
     //   3. Remaining + total time row
-    //   4. NEXT chip
-    //   5. Signal-lost banner (always reserves space — AC-6)
+    //   4. Stage note (F13: operator note, shown when non-empty)
+    //   5. Next song row (F13: always visible, not just last-15s)
+    //   6. Status pill row (F13: LTC/MIDI/OSC indicators)
+    //   7. NEXT chip (legacy: last-15s chip, kept for normal mode parity)
+    //   8. Signal-lost banner (always reserves space — AC-6)
     // All sizing lives in globals.css under .tc-display--fullscreen using
     // clamp() values from Q-6 so the layout scales linearly 720p → 1440p.
     return (
@@ -238,6 +281,32 @@ export function TimecodeDisplay({ fullscreen, onSeekToTimecode }: Props): React.
         {tcDigitsBlock}
         {fpsBlock}
         {timerBlock}
+
+        {/* F13: Stage note zone (between timer and next row) */}
+        {stageNote && (
+          <div className="stage-display-note" title={stageNote}>
+            {stageNote}
+          </div>
+        )}
+
+        {/* F13: Next song row (always visible) */}
+        {nextRowText && (
+          <div className="stage-display-next-row">
+            {nextRowText}
+          </div>
+        )}
+
+        {/* F13: Status pill row (hidden when no pills active) */}
+        {statusPills.length > 0 && (
+          <div className="stage-display-status-row">
+            {statusPills.map(pill => (
+              <span key={pill.id} className={`stage-status-pill stage-status-pill--${pill.level}`}>
+                {pill.label}
+              </span>
+            ))}
+          </div>
+        )}
+
         {nextChipBlock}
         {signalLostBanner}
       </div>

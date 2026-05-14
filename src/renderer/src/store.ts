@@ -36,6 +36,17 @@ export interface FeedbackDevice {
 let _setlistIdCounter = Date.now()
 export function nextSetlistId(): string { return `sl-${++_setlistIdCounter}` }
 
+// F10 — Setlist Variants
+let _variantIdCounter = Date.now()
+export function nextVariantId(): string { return `v-${++_variantIdCounter}` }
+
+export interface SetlistVariant {
+  id: string
+  name: string
+  setlist: SetlistItem[]
+  activeSetlistIndex: number | null
+}
+
 export interface MidiCuePoint {
   id: string
   triggerTimecode: string          // HH:MM:SS:FF absolute timecode
@@ -64,7 +75,8 @@ export interface SetlistItem {
   path: string
   name: string
   offsetFrames?: number  // per-song offset override; undefined = use global
-  notes?: string         // user notes (e.g. "間奏有換場")
+  notes?: string         // user notes (e.g. "間奏有換場") — used for cue sheet PDF
+  stageNote?: string     // F13: single-line operator note for fullscreen stage display (≤200 chars)
   midiCues?: MidiCuePoint[]  // per-song MIDI cue points
   markers?: WaveformMarker[]  // per-song structure markers (intro/verse/etc); v8+
 }
@@ -158,6 +170,9 @@ export interface PresetData {
   showLocked?: boolean
   // Sprint A — AC-1.4: per-preset marker type color overrides
   markerTypeColorOverrides?: Partial<Record<MarkerType, string>>
+  // Sprint D — F10: Setlist Variants
+  setlistVariants?: SetlistVariant[]
+  activeSetlistVariantId?: string
   version?: number
 }
 
@@ -184,7 +199,7 @@ function ensureSetlistIds(data: PresetData): PresetData {
   return data
 }
 
-const CURRENT_PRESET_VERSION = 9
+const CURRENT_PRESET_VERSION = 10
 
 /** Warn once if a preset was created by a newer version of the app. */
 function warnIfNewerVersion(data: PresetData): void {
@@ -258,6 +273,21 @@ function migratePreset(data: PresetData): PresetData {
   if (version < 9) {
     data.markerTypeColorOverrides = data.markerTypeColorOverrides ?? {}
   }
+  // version 9 → 10: wrap setlist in a default "Main" variant
+  if (version < 10) {
+    if (!data.setlistVariants || data.setlistVariants.length === 0) {
+      data.setlistVariants = [{
+        id: 'main',
+        name: 'Main',
+        setlist: data.setlist ?? [],
+        activeSetlistIndex: null
+      }]
+    }
+    if (!data.activeSetlistVariantId) {
+      data.activeSetlistVariantId = data.setlistVariants[0].id
+    }
+    // Keep data.setlist as mirror (unchanged)
+  }
   data.version = CURRENT_PRESET_VERSION
   return data
 }
@@ -265,20 +295,33 @@ function migratePreset(data: PresetData): PresetData {
 /** Build a PresetData snapshot from the current store state.
  *  Stamps each setlist item with its markers from the in-memory id-keyed
  *  state.markers map (v8 storage). Top-level `markers` field is gone. */
-function buildPresetData(s: Pick<AppState,
+export function buildPresetData(s: Pick<AppState,
   'lang' | 'rightTab' | 'offsetFrames' | 'loop' | 'loopA' | 'loopB' | 'musicOutputDeviceId' |
   'ltcOutputDeviceId' | 'ltcGain' | 'selectedMidiPort' | 'forceFps' |
-  'ltcChannel' | 'setlist' | 'generatorStartTC' | 'generatorFps' | 'tcGeneratorMode' |
+  'ltcChannel' | 'setlist' | 'activeSetlistIndex' | 'generatorStartTC' | 'generatorFps' | 'tcGeneratorMode' |
   'artnetEnabled' | 'artnetTargetIp' | 'mtcMode' | 'autoAdvance' | 'autoAdvanceGap' |
   'selectedCueMidiPort' | 'midiInputPort' | 'midiMappings' |
   'oscEnabled' | 'oscTargetIp' | 'oscTargetPort' | 'oscTemplate' | 'markers' | 'showLocked' |
-  'midiClockEnabled' | 'midiClockSource' | 'midiClockManualBpm' | 'markerTypeColorOverrides'>): PresetData {
+  'midiClockEnabled' | 'midiClockSource' | 'midiClockManualBpm' | 'markerTypeColorOverrides' |
+  'setlistVariants' | 'activeSetlistVariantId'>): PresetData {
   // Stamp markers onto each item before serialisation. The empty-array case
   // is omitted to keep .ltcast files compact.
-  const setlistWithMarkers = s.setlist.map(item => {
-    const arr = s.markers[item.id]
-    return arr && arr.length > 0 ? { ...item, markers: arr } : { ...item, markers: undefined }
-  })
+  const stampMarkers = (items: SetlistItem[]): SetlistItem[] =>
+    items.map(item => {
+      const arr = s.markers[item.id]
+      return arr && arr.length > 0 ? { ...item, markers: arr } : { ...item, markers: undefined }
+    })
+
+  const setlistWithMarkers = stampMarkers(s.setlist)
+
+  // Write the current top-level setlist + activeSetlistIndex back into the active variant
+  // so the saved file reflects the latest edits.
+  const updatedVariants: SetlistVariant[] = s.setlistVariants.map(v =>
+    v.id === s.activeSetlistVariantId
+      ? { ...v, setlist: setlistWithMarkers, activeSetlistIndex: s.activeSetlistIndex }
+      : { ...v, setlist: stampMarkers(v.setlist) }
+  )
+
   return {
     version: CURRENT_PRESET_VERSION,
     lang: s.lang, rightTab: s.rightTab, offsetFrames: s.offsetFrames,
@@ -299,7 +342,9 @@ function buildPresetData(s: Pick<AppState,
     midiClockEnabled: s.midiClockEnabled,
     midiClockSource: s.midiClockSource,
     midiClockManualBpm: s.midiClockManualBpm,
-    markerTypeColorOverrides: Object.keys(s.markerTypeColorOverrides).length > 0 ? s.markerTypeColorOverrides : undefined
+    markerTypeColorOverrides: Object.keys(s.markerTypeColorOverrides).length > 0 ? s.markerTypeColorOverrides : undefined,
+    setlistVariants: updatedVariants,
+    activeSetlistVariantId: s.activeSetlistVariantId
   }
 }
 
@@ -310,6 +355,40 @@ function deriveMarkersFromSetlist(setlist: SetlistItem[]): Record<string, Wavefo
   for (const item of setlist) {
     if (item.markers && item.markers.length > 0) {
       out[item.id] = item.markers
+    }
+  }
+  return out
+}
+
+/** Ensure setlist items in all variants have unique ids */
+function ensureVariantSetlistIds(variants: SetlistVariant[]): SetlistVariant[] {
+  return variants.map(v => ({
+    ...v,
+    setlist: v.setlist.map(item => item.id ? item : { ...item, id: nextSetlistId() })
+  }))
+}
+
+/** Extract variants and active variant id from preset, with safe defaults */
+function resolveVariantsFromPreset(presetData: PresetData): { setlistVariants: SetlistVariant[], activeSetlistVariantId: string } {
+  const defaultVariant: SetlistVariant = { id: 'main', name: 'Main', setlist: presetData.setlist ?? [], activeSetlistIndex: null }
+  const rawVariants = presetData.setlistVariants && presetData.setlistVariants.length > 0
+    ? presetData.setlistVariants
+    : [defaultVariant]
+  const variants = ensureVariantSetlistIds(rawVariants)
+  const activeId = presetData.activeSetlistVariantId && variants.some(v => v.id === presetData.activeSetlistVariantId)
+    ? presetData.activeSetlistVariantId
+    : variants[0].id
+  return { setlistVariants: variants, activeSetlistVariantId: activeId }
+}
+
+/** Build the full markers map from all variants (used when loading a preset) */
+function deriveMarkersFromAllVariants(variants: SetlistVariant[]): Record<string, WaveformMarker[]> {
+  const out: Record<string, WaveformMarker[]> = {}
+  for (const v of variants) {
+    for (const item of v.setlist) {
+      if (item.markers && item.markers.length > 0) {
+        out[item.id] = item.markers
+      }
     }
   }
   return out
@@ -410,6 +489,9 @@ export interface AppState {
   // Setlist
   setlist: SetlistItem[]
   activeSetlistIndex: number | null
+  // Sprint D — F10: Setlist Variants
+  setlistVariants: SetlistVariant[]
+  activeSetlistVariantId: string
   standbySetlistIndex: number | null  // cued but not yet loaded (Standby/GO workflow)
   // Index currently being pre-buffered in the background (null = idle).
   // Transient — not persisted, does not mark preset dirty. UI may render
@@ -448,6 +530,11 @@ export interface AppState {
     savedAt: number
   } | null
   disableResumePrompt: boolean
+
+  // Sprint D — F11: auto backup per-install settings
+  autoBackupEnabled: boolean       // default true
+  autoBackupIntervalMin: number    // default 5, min 1, max 60
+  autoBackupKeepCount: number      // default 10, min 1, max 100
 
   // Sprint A — AC-1.4: per-preset marker type color overrides (saved in preset)
   markerTypeColorOverrides: Partial<Record<MarkerType, string>>
@@ -544,6 +631,7 @@ export interface AppState {
   batchUpdateSetlistPaths: (updates: Array<{ index: number; newPath: string }>) => void
   setSetlistItemOffset: (index: number, offsetFrames: number | undefined) => void
   setSetlistItemNotes: (index: number, notes: string | undefined) => void
+  setSetlistItemStageNote: (index: number, stageNote: string | undefined) => void
   setSetlistItemMidiCues: (index: number, cues: MidiCuePoint[]) => void
   // Sprint B — F5: replace audio with alignment
   setSetlistItemPath: (index: number, path: string, name: string) => void
@@ -558,10 +646,22 @@ export interface AppState {
     oldMarkers: WaveformMarker[],
     oldMidiCues: MidiCuePoint[]
   ) => void
+  // Sprint D — F10: Setlist Variants
+  addSetlistVariant: (name: string) => string
+  renameSetlistVariant: (id: string, newName: string) => void
+  deleteSetlistVariant: (id: string) => void
+  duplicateSetlistVariant: (id: string, newName: string) => string
+  switchSetlistVariant: (id: string) => void
+
   // Sprint B — F7: last session
   saveLastSession: (filePath: string, fileName: string, positionSeconds: number, setlistIndex: number | null) => void
   clearLastSession: () => void
   setDisableResumePrompt: (disabled: boolean) => void
+
+  // Sprint D — F11: auto backup settings
+  setAutoBackupEnabled: (enabled: boolean) => void
+  setAutoBackupIntervalMin: (min: number) => void
+  setAutoBackupKeepCount: (count: number) => void
   setRightTab: (tab: 'devices' | 'setlist' | 'cues' | 'structure' | 'calc' | 'log' | 'timer') => void
   // F4 Show Timer actions
   addShowTimer: (name: string, durationMs: number) => void
@@ -694,6 +794,8 @@ export const useStore = create<AppState>()(persist((set) => ({
 
   setlist: [],
   activeSetlistIndex: null,
+  setlistVariants: [{ id: 'main', name: 'Main', setlist: [], activeSetlistIndex: null }],
+  activeSetlistVariantId: 'main',
   standbySetlistIndex: null,
   prebufferingIndex: null,
   previousSetlist: null,
@@ -717,6 +819,11 @@ export const useStore = create<AppState>()(persist((set) => ({
   // Sprint B — F7: last session defaults
   lastSession: null,
   disableResumePrompt: false,
+
+  // Sprint D — F11: auto backup defaults
+  autoBackupEnabled: true,
+  autoBackupIntervalMin: 5,
+  autoBackupKeepCount: 10,
 
   // Sprint A — AC-1.4: per-preset marker type color overrides
   markerTypeColorOverrides: {},
@@ -862,22 +969,124 @@ export const useStore = create<AppState>()(persist((set) => ({
     videoFileName: null, videoWaveform: null, videoDuration: 0,
     videoOffsetSeconds: 0, videoStartTimecode: null
   }),
-  addToSetlist: (items) => set((s) => ({
-    setlist: [...s.setlist, ...items
-      .filter(item => !s.setlist.some(existing => existing.path === item.path))
-      .map(item => ({ ...item, id: item.id || nextSetlistId() }))
-    ],
+  // ── F10 Variant helpers ──────────────────────────────────────────────
+  // Helper: apply updater to top-level setlist and mirror into active variant.
+  // Returns { setlist, setlistVariants } patch — caller spreads into set().
+
+  addSetlistVariant: (name) => {
+    const id = nextVariantId()
+    set((s) => ({
+      // Write current top-level setlist back into active variant first
+      setlistVariants: [
+        ...s.setlistVariants.map(v =>
+          v.id === s.activeSetlistVariantId ? { ...v, setlist: s.setlist, activeSetlistIndex: s.activeSetlistIndex } : v
+        ),
+        { id, name: name.trim() || 'Variant', setlist: [], activeSetlistIndex: null }
+      ],
+      // Switch to new empty variant
+      setlist: [],
+      activeSetlistIndex: null,
+      activeSetlistVariantId: id,
+      presetDirty: true
+    }))
+    return id
+  },
+
+  renameSetlistVariant: (id, newName) => set((s) => ({
+    setlistVariants: s.setlistVariants.map(v =>
+      v.id === id ? { ...v, name: newName.trim() || v.name } : v
+    ),
     presetDirty: true
   })),
+
+  deleteSetlistVariant: (id) => set((s) => {
+    if (s.setlistVariants.length <= 1) return s // can't delete last
+    const idx = s.setlistVariants.findIndex(v => v.id === id)
+    if (idx === -1) return s
+    const newVariants = s.setlistVariants.filter(v => v.id !== id)
+    if (s.activeSetlistVariantId !== id) {
+      return { setlistVariants: newVariants, presetDirty: true }
+    }
+    // Deleting active variant — switch to adjacent
+    const targetIdx = Math.max(0, idx - 1)
+    const target = newVariants[targetIdx]
+    return {
+      setlistVariants: newVariants,
+      activeSetlistVariantId: target.id,
+      setlist: target.setlist,
+      activeSetlistIndex: target.activeSetlistIndex,
+      presetDirty: true
+    }
+  }),
+
+  duplicateSetlistVariant: (id, newName) => {
+    const newId = nextVariantId()
+    set((s) => {
+      const source = s.setlistVariants.find(v => v.id === id)
+      if (!source) return s
+      const dup: SetlistVariant = {
+        id: newId,
+        name: newName.trim() || `${source.name} copy`,
+        setlist: source.setlist.map(item => ({ ...item, id: nextSetlistId() })),
+        activeSetlistIndex: null
+      }
+      // Write current setlist back if active variant is the source
+      const updatedVariants = s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist: s.setlist, activeSetlistIndex: s.activeSetlistIndex } : v
+      )
+      return {
+        setlistVariants: [...updatedVariants, dup],
+        presetDirty: true
+      }
+    })
+    return newId
+  },
+
+  switchSetlistVariant: (id) => set((s) => {
+    if (id === s.activeSetlistVariantId) return s
+    const target = s.setlistVariants.find(v => v.id === id)
+    if (!target) return s
+    // Write back current top-level setlist into active variant
+    const updatedVariants = s.setlistVariants.map(v =>
+      v.id === s.activeSetlistVariantId ? { ...v, setlist: s.setlist, activeSetlistIndex: s.activeSetlistIndex } : v
+    )
+    return {
+      setlistVariants: updatedVariants,
+      activeSetlistVariantId: id,
+      setlist: target.setlist,
+      activeSetlistIndex: target.activeSetlistIndex,
+      // If playing, stop playback (AC-10.6)
+      playState: 'stopped',
+      presetDirty: true
+    }
+  }),
+
+  addToSetlist: (items) => set((s) => {
+    const newSetlist = [...s.setlist, ...items
+      .filter(item => !s.setlist.some(existing => existing.path === item.path))
+      .map(item => ({ ...item, id: item.id || nextSetlistId() }))
+    ]
+    return {
+      setlist: newSetlist,
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist: newSetlist } : v
+      ),
+      presetDirty: true
+    }
+  }),
   removeFromSetlist: (index) => set((s) => {
     if (index < 0 || index >= s.setlist.length) return s
     const setlist = [...s.setlist]
     setlist.splice(index, 1)
     const shift = (i: number | null): number | null =>
       i === null ? null : i === index ? null : i > index ? i - 1 : i
+    const newActiveIndex = shift(s.activeSetlistIndex)
     return {
       setlist,
-      activeSetlistIndex: shift(s.activeSetlistIndex),
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist, activeSetlistIndex: newActiveIndex } : v
+      ),
+      activeSetlistIndex: newActiveIndex,
       standbySetlistIndex: shift(s.standbySetlistIndex),
       presetDirty: true
     }
@@ -902,9 +1111,13 @@ export const useStore = create<AppState>()(persist((set) => ({
       const i = setlist.findIndex(it => it.id === target.id)
       return i === -1 ? null : i
     }
+    const newActiveIndex = findId(activeItem)
     return {
       setlist,
-      activeSetlistIndex: findId(activeItem),
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist, activeSetlistIndex: newActiveIndex } : v
+      ),
+      activeSetlistIndex: newActiveIndex,
       standbySetlistIndex: findId(standbyItem),
       presetDirty: true
     }
@@ -922,6 +1135,9 @@ export const useStore = create<AppState>()(persist((set) => ({
       set({
         previousSetlist: { setlist: current.setlist, activeIndex: current.activeSetlistIndex },
         setlist: [],
+        setlistVariants: current.setlistVariants.map(v =>
+          v.id === current.activeSetlistVariantId ? { ...v, setlist: [], activeSetlistIndex: null } : v
+        ),
         activeSetlistIndex: null,
         standbySetlistIndex: null,
         presetDirty: true
@@ -930,9 +1146,14 @@ export const useStore = create<AppState>()(persist((set) => ({
   },
   undoClearSetlist: () => set((s) => {
     if (!s.previousSetlist) return s
+    const restoredSetlist = s.previousSetlist.setlist
+    const restoredIdx = s.previousSetlist.activeIndex
     return {
-      setlist: s.previousSetlist.setlist,
-      activeSetlistIndex: s.previousSetlist.activeIndex,
+      setlist: restoredSetlist,
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist: restoredSetlist, activeSetlistIndex: restoredIdx } : v
+      ),
+      activeSetlistIndex: restoredIdx,
       previousSetlist: null,
       presetDirty: true
     }
@@ -969,7 +1190,14 @@ export const useStore = create<AppState>()(persist((set) => ({
         if (activeSetlistIndex === -1) activeSetlistIndex = null
       }
     }
-    return { setlist: sorted, activeSetlistIndex, presetDirty: true }
+    return {
+      setlist: sorted,
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist: sorted, activeSetlistIndex } : v
+      ),
+      activeSetlistIndex,
+      presetDirty: true
+    }
   }),
   batchUpdateSetlistPaths: (updates: Array<{ index: number; newPath: string }>) => set((s) => {
     const setlist = [...s.setlist]
@@ -978,27 +1206,64 @@ export const useStore = create<AppState>()(persist((set) => ({
       const newName = newPath.split(/[/\\]/).pop() ?? setlist[index].name
       setlist[index] = { ...setlist[index], path: newPath, name: newName }
     }
-    return { setlist, presetDirty: true }
+    return {
+      setlist,
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist } : v
+      ),
+      presetDirty: true
+    }
   }),
   setSetlistItemOffset: (index: number, offsetFrames: number | undefined) => set((s) => {
     if (index < 0 || index >= s.setlist.length) return s
     const setlist = [...s.setlist]
     const clamped = offsetFrames !== undefined ? Math.max(-9999, Math.min(9999, offsetFrames)) : undefined
     setlist[index] = { ...setlist[index], offsetFrames: clamped }
-    return { setlist, presetDirty: true }
+    return {
+      setlist,
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist } : v
+      ),
+      presetDirty: true
+    }
   }),
   setSetlistItemNotes: (index: number, notes: string | undefined) => set((s) => {
     if (index < 0 || index >= s.setlist.length) return s
     const capped = notes ? notes.slice(0, 500) : undefined
     const setlist = [...s.setlist]
     setlist[index] = { ...setlist[index], notes: capped || undefined }
-    return { setlist, presetDirty: true }
+    return {
+      setlist,
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist } : v
+      ),
+      presetDirty: true
+    }
+  }),
+  setSetlistItemStageNote: (index: number, stageNote: string | undefined) => set((s) => {
+    if (index < 0 || index >= s.setlist.length) return s
+    const capped = stageNote ? stageNote.slice(0, 200) : undefined
+    const setlist = [...s.setlist]
+    setlist[index] = { ...setlist[index], stageNote: capped || undefined }
+    return {
+      setlist,
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist } : v
+      ),
+      presetDirty: true
+    }
   }),
   setSetlistItemMidiCues: (index: number, cues: MidiCuePoint[]) => set((s) => {
     if (index < 0 || index >= s.setlist.length) return s
     const setlist = [...s.setlist]
     setlist[index] = { ...setlist[index], midiCues: cues }
-    return { setlist, presetDirty: true }
+    return {
+      setlist,
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist } : v
+      ),
+      presetDirty: true
+    }
   }),
 
   // Sprint B — F5: replace setlist item audio path
@@ -1006,7 +1271,13 @@ export const useStore = create<AppState>()(persist((set) => ({
     if (index < 0 || index >= s.setlist.length) return s
     const setlist = [...s.setlist]
     setlist[index] = { ...setlist[index], path, name }
-    return { setlist, presetDirty: true }
+    return {
+      setlist,
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist } : v
+      ),
+      presetDirty: true
+    }
   }),
 
   // Sprint B — F5: atomic replace audio + markers + midi cues, with undo
@@ -1047,6 +1318,9 @@ export const useStore = create<AppState>()(persist((set) => ({
       markerUndoStack: [...s.markerUndoStack.slice(-19), undoEntry as Record<string, WaveformMarker[]>],
       markers: newMarkers,
       setlist: newSetlist,
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist: newSetlist } : v
+      ),
       presetDirty: true
     }
   }),
@@ -1057,6 +1331,11 @@ export const useStore = create<AppState>()(persist((set) => ({
   }),
   clearLastSession: () => set({ lastSession: null }),
   setDisableResumePrompt: (disabled) => set({ disableResumePrompt: disabled }),
+
+  // Sprint D — F11: auto backup settings actions
+  setAutoBackupEnabled: (enabled) => set({ autoBackupEnabled: enabled }),
+  setAutoBackupIntervalMin: (min) => set({ autoBackupIntervalMin: Math.max(1, Math.min(60, min)) }),
+  setAutoBackupKeepCount: (count) => set({ autoBackupKeepCount: Math.max(1, Math.min(100, count)) }),
 
   setRightTab: (rightTab) => set({ rightTab }),
 
@@ -1319,6 +1598,8 @@ export const useStore = create<AppState>()(persist((set) => ({
       forceFps: null,
       ltcChannel: 'auto',
       setlist: [],
+      setlistVariants: [{ id: 'main', name: 'Main', setlist: [], activeSetlistIndex: null }],
+      activeSetlistVariantId: 'main',
       activeSetlistIndex: null,
       previousSetlist: null,
       tcGeneratorMode: false,
@@ -1393,9 +1674,14 @@ export const useStore = create<AppState>()(persist((set) => ({
     const presets = await loadPresetsFromDisk()
     // Add to recent files
     useStore.getState().addRecentFile(result.path ?? '', result.name)
-    const markersFromItems = presetData.setlist ? deriveMarkersFromSetlist(presetData.setlist) : {}
+    const { setlistVariants, activeSetlistVariantId } = resolveVariantsFromPreset(presetData)
+    const activeVariant = setlistVariants.find(v => v.id === activeSetlistVariantId) ?? setlistVariants[0]
+    const markersFromItems = deriveMarkersFromAllVariants(setlistVariants)
     set({
       ...presetData,
+      setlist: activeVariant.setlist,
+      setlistVariants,
+      activeSetlistVariantId,
       markers: markersFromItems,
       markerUndoStack: [],
       loopA: presetData.loopA ?? null, loopB: presetData.loopB ?? null,
@@ -1423,11 +1709,16 @@ export const useStore = create<AppState>()(persist((set) => ({
       warnIfNewerVersion(result.data as PresetData)
       const presetData = ensureSetlistIds(migratePreset(result.data as PresetData))
       const presets = await loadPresetsFromDisk()
-      const markersFromItems = presetData.setlist ? deriveMarkersFromSetlist(presetData.setlist) : {}
+      const { setlistVariants, activeSetlistVariantId } = resolveVariantsFromPreset(presetData)
+      const activeVariant = setlistVariants.find(v => v.id === activeSetlistVariantId) ?? setlistVariants[0]
+      const markersFromItems = deriveMarkersFromAllVariants(setlistVariants)
       // Move to top of recent list and rebuild the native File > Open Recent menu
       useStore.getState().addRecentFile(path, result.name)
       set({
         ...presetData,
+        setlist: activeVariant.setlist,
+        setlistVariants,
+        activeSetlistVariantId,
         markers: markersFromItems,
         markerUndoStack: [],
         loopA: presetData.loopA ?? null, loopB: presetData.loopB ?? null,
@@ -1463,10 +1754,15 @@ export const useStore = create<AppState>()(persist((set) => ({
     if (!preset) return s
     warnIfNewerVersion(preset.data)
     const data = ensureSetlistIds(migratePreset(preset.data))
-    // v8: rebuild the runtime id-keyed markers map from item-stamped data.
-    const markers = data.setlist ? deriveMarkersFromSetlist(data.setlist) : {}
+    const { setlistVariants, activeSetlistVariantId } = resolveVariantsFromPreset(data)
+    const activeVariant = setlistVariants.find(v => v.id === activeSetlistVariantId) ?? setlistVariants[0]
+    const markers = deriveMarkersFromAllVariants(setlistVariants)
     return {
-      ...data, presetName: name, presetPath: null, presetDirty: false,
+      ...data,
+      setlist: activeVariant.setlist,
+      setlistVariants,
+      activeSetlistVariantId,
+      presetName: name, presetPath: null, presetDirty: false,
       markers,
       markerUndoStack: [],
       // Explicitly reset loop points in case old preset doesn't have them
@@ -1547,8 +1843,9 @@ export const useStore = create<AppState>()(persist((set) => ({
     warnIfNewerVersion(preset.data as PresetData)
     const presetData = ensureSetlistIds(migratePreset(preset.data as PresetData))
     // Update setlist paths to point to extracted audio files
-    if (presetData.setlist && result.audioPaths.length > 0) {
-      presetData.setlist = presetData.setlist.map((item: { path: string; name: string }) => {
+    const remapPaths = (items: SetlistItem[]): SetlistItem[] => {
+      if (!result.audioPaths.length) return items
+      return items.map((item: SetlistItem) => {
         const nameLower = item.name.toLowerCase()
         const basenameOldLower = item.path.split(/[/\\]/).pop()!.toLowerCase()
         const extracted = result.audioPaths.find((p: string) => {
@@ -1558,8 +1855,18 @@ export const useStore = create<AppState>()(persist((set) => ({
         return extracted ? { ...item, path: extracted } : item
       })
     }
+    if (presetData.setlist) presetData.setlist = remapPaths(presetData.setlist)
+    const { setlistVariants, activeSetlistVariantId } = resolveVariantsFromPreset(presetData)
+    const remappedVariants = setlistVariants.map(v => ({ ...v, setlist: remapPaths(v.setlist) }))
+    const activeVariant = remappedVariants.find(v => v.id === activeSetlistVariantId) ?? remappedVariants[0]
+    const markersFromItems = deriveMarkersFromAllVariants(remappedVariants)
     set({
       ...presetData,
+      setlist: activeVariant.setlist,
+      setlistVariants: remappedVariants,
+      activeSetlistVariantId,
+      markers: markersFromItems,
+      markerUndoStack: [],
       loopA: presetData.loopA ?? null, loopB: presetData.loopB ?? null,
       previousSetlist: null,
       activeSetlistIndex: null,
@@ -1586,8 +1893,9 @@ export const useStore = create<AppState>()(persist((set) => ({
     warnIfNewerVersion(preset.data as PresetData)
     const presetData = ensureSetlistIds(migratePreset(preset.data as PresetData))
     // Update setlist paths to point to extracted audio files
-    if (presetData.setlist && result.audioPaths.length > 0) {
-      presetData.setlist = presetData.setlist.map(item => {
+    const remapPaths2 = (items: SetlistItem[]): SetlistItem[] => {
+      if (!result.audioPaths.length) return items
+      return items.map(item => {
         const nameLower = item.name.toLowerCase()
         const basenameOldLower = item.path.split(/[/\\]/).pop()!.toLowerCase()
         const extracted = result.audioPaths.find(p => {
@@ -1597,8 +1905,18 @@ export const useStore = create<AppState>()(persist((set) => ({
         return extracted ? { ...item, path: extracted } : item
       })
     }
+    if (presetData.setlist) presetData.setlist = remapPaths2(presetData.setlist)
+    const { setlistVariants, activeSetlistVariantId } = resolveVariantsFromPreset(presetData)
+    const remappedVariants2 = setlistVariants.map(v => ({ ...v, setlist: remapPaths2(v.setlist) }))
+    const activeVariant2 = remappedVariants2.find(v => v.id === activeSetlistVariantId) ?? remappedVariants2[0]
+    const markersFromItems2 = deriveMarkersFromAllVariants(remappedVariants2)
     set({
       ...presetData,
+      setlist: activeVariant2.setlist,
+      setlistVariants: remappedVariants2,
+      activeSetlistVariantId,
+      markers: markersFromItems2,
+      markerUndoStack: [],
       loopA: presetData.loopA ?? null, loopB: presetData.loopB ?? null,
       previousSetlist: null,
       activeSetlistIndex: null,
@@ -1632,6 +1950,8 @@ export const useStore = create<AppState>()(persist((set) => ({
     forceFps: state.forceFps,
     ltcChannel: state.ltcChannel,
     setlist: state.setlist,
+    setlistVariants: state.setlistVariants,
+    activeSetlistVariantId: state.activeSetlistVariantId,
     generatorStartTC: state.generatorStartTC,
     generatorFps: state.generatorFps,
     mtcMode: state.mtcMode,
@@ -1663,6 +1983,10 @@ export const useStore = create<AppState>()(persist((set) => ({
     // Sprint B — F7: last session (per-install)
     lastSession: state.lastSession,
     disableResumePrompt: state.disableResumePrompt,
+    // Sprint D — F11: auto backup per-install settings
+    autoBackupEnabled: state.autoBackupEnabled,
+    autoBackupIntervalMin: state.autoBackupIntervalMin,
+    autoBackupKeepCount: state.autoBackupKeepCount,
     // F4 — Show Timer: per-install, not per-preset (Q-E). On rehydrate we
     // force running=false in merge() so a ticking timer at quit comes back
     // stopped at its last snapshot (AC-8).
@@ -1716,6 +2040,14 @@ export const useStore = create<AppState>()(persist((set) => ({
       }
     }
     if (typeof merged.waveformZoom !== 'object' || merged.waveformZoom === null) merged.waveformZoom = {}
+    // F10 — Validate setlistVariants
+    if (!Array.isArray(merged.setlistVariants) || merged.setlistVariants.length === 0) {
+      merged.setlistVariants = [{ id: 'main', name: 'Main', setlist: merged.setlist ?? [], activeSetlistIndex: null }]
+    }
+    if (typeof merged.activeSetlistVariantId !== 'string' ||
+        !merged.setlistVariants.some((v: SetlistVariant) => v.id === merged.activeSetlistVariantId)) {
+      merged.activeSetlistVariantId = (merged.setlistVariants[0] as SetlistVariant).id
+    }
     // Validate license expiry (prevent NaN display from corrupted data)
     if (merged.licenseExpiresAt && isNaN(new Date(merged.licenseExpiresAt).getTime())) merged.licenseExpiresAt = null
     // F3 — OSC Feedback. Validate persisted settings; reset to defaults on
