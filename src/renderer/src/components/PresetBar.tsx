@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import { toast } from './Toast'
 import { ProGate } from './ProGate'
+import { BackupDialog } from './BackupDialog'
 
 export function PresetBar(): React.JSX.Element {
   const {
@@ -12,6 +13,8 @@ export function PresetBar(): React.JSX.Element {
     packageProject, importProject,
     shareProjectZip, importLtcastProject
   } = useStore()
+
+  const [showBackupDialog, setShowBackupDialog] = useState(false)
 
   const handleNew = useCallback((): void => {
     newPreset()
@@ -87,6 +90,14 @@ export function PresetBar(): React.JSX.Element {
   }, [handleNew, handleSave, handleSaveAs, handleOpen, handlePackageProject, handleImportProject, handleShareProjectZip, handleImportLtcastProject])
 
   return (
+    <>
+    {showBackupDialog && presetName && (
+      <BackupDialog
+        presetName={presetName}
+        onClose={() => setShowBackupDialog(false)}
+        onRestored={() => setShowBackupDialog(false)}
+      />
+    )}
     <div className="preset-bar">
       <select
         className="preset-select"
@@ -134,6 +145,17 @@ export function PresetBar(): React.JSX.Element {
       >
         {t(lang, 'importLtcastProject')}
       </button>
+
+      {presetName && (
+        <button
+          className="btn-preset"
+          onClick={() => setShowBackupDialog(true)}
+          title={t(lang, 'backupsDialogTitle')}
+        >
+          {t(lang, 'backupsButton')}
+        </button>
+      )}
     </div>
+    </>
   )
 }

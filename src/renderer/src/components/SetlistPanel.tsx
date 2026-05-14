@@ -7,6 +7,7 @@ import { toast } from './Toast'
 import { buildCueSheetHtml, CueSheetLayout } from '../utils/exportCueSheet'
 import { Tooltip } from './Tooltip'
 import { ProGate } from './ProGate'
+import { WaveformCompare } from './WaveformCompare'
 
 // F6: Long-press threshold before a setlist row becomes draggable.
 // Below this, mousedown+mouseup is treated as a normal click (standby toggle).
@@ -28,7 +29,10 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     setlist, activeSetlistIndex, lang,
     addToSetlist, removeFromSetlist, reorderSetlist, clearSetlist,
     sortSetlist, setActiveSetlistIndex,
-    autoAdvance, autoAdvanceGap, setAutoAdvance, setAutoAdvanceGap
+    autoAdvance, autoAdvanceGap, setAutoAdvance, setAutoAdvanceGap,
+    setlistVariants, activeSetlistVariantId,
+    addSetlistVariant, renameSetlistVariant, deleteSetlistVariant,
+    duplicateSetlistVariant, switchSetlistVariant
   } = useStore()
 
   const [showSortMenu, setShowSortMenu] = useState(false)
@@ -38,6 +42,8 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
   const [editingOffsetStr, setEditingOffsetStr] = useState('')
   const [editingNotesIdx, setEditingNotesIdx] = useState<number | null>(null)
   const [editingNotesStr, setEditingNotesStr] = useState('')
+  const [editingStageNoteIdx, setEditingStageNoteIdx] = useState<number | null>(null)
+  const [editingStageNoteStr, setEditingStageNoteStr] = useState('')
   const [replacingAudioIdx, setReplacingAudioIdx] = useState<number | null>(null)
   const [replaceAligning, setReplaceAligning] = useState(false)
   // Replace audio preview modal state
@@ -49,9 +55,16 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     oldDuration: number
     offsetSec: number
     confidence: number
+    oldPeaks: Float32Array
+    newPeaks: Float32Array
     markerPreview: Array<{ id: string; label: string; oldTime: number; newTime: number; clipped: boolean }>
     cuePreview: Array<{ id: string; label: string; oldTc: string; newTc: string }>
   } | null>(null)
+
+  // F10: variant rename/context state
+  const [variantContextMenu, setVariantContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const [renamingVariantId, setRenamingVariantId] = useState<string | null>(null)
+  const [renamingVariantStr, setRenamingVariantStr] = useState('')
   // PDF layout choice (compact vs detailed)
   const [pdfLayout, setPdfLayout] = useState<CueSheetLayout>('detailed')
   const [showPdfLayoutMenu, setShowPdfLayoutMenu] = useState(false)
@@ -60,6 +73,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
   const [armedIdx, setArmedIdx] = useState<number | null>(null)
   const offsetInputRef = useRef<HTMLInputElement>(null)
   const notesInputRef = useRef<HTMLInputElement>(null)
+  const stageNoteInputRef = useRef<HTMLInputElement>(null)
   const sortRef = useRef<HTMLDivElement>(null)
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -83,6 +97,13 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
       notesInputRef.current?.focus()
     }
   }, [editingNotesIdx])
+
+  // Auto-focus stage note input when it appears
+  useEffect(() => {
+    if (editingStageNoteIdx !== null) {
+      stageNoteInputRef.current?.focus()
+    }
+  }, [editingStageNoteIdx])
 
   // Clear hold timer/interval on unmount (also F6 long-press timer)
   useEffect(() => {
@@ -642,6 +663,47 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     }
   }, [lang])
 
+  /** Recompute marker/cue preview lists given a new offsetSec value */
+  const computeMarkerCuePreviews = useCallback((
+    index: number,
+    offsetSec: number,
+    newDuration: number
+  ) => {
+    const s = useStore.getState()
+    const item = s.setlist[index]
+    if (!item) return { markerPreview: [], cuePreview: [] }
+    const fps = (s.forceFps ?? s.detectedFps ?? 25)
+    const offsetFrames = Math.round(offsetSec * fps)
+    const itemMarkers = s.markers[item.id] ?? []
+    const itemCues = item.midiCues ?? []
+
+    const markerPreview = itemMarkers.map(m => {
+      const newTime = m.time + offsetSec
+      const clipped = newTime > newDuration
+      return {
+        id: m.id,
+        label: m.label || m.type || '—',
+        oldTime: m.time,
+        newTime: clipped ? Math.max(0, newDuration - 0.1) : Math.max(0, newTime),
+        clipped
+      }
+    })
+
+    const cuePreview = itemCues.map(cue => {
+      const oldFrames = tcToFrames(cue.triggerTimecode, fps)
+      const newFrames = Math.max(0, oldFrames + offsetFrames)
+      const newTc = tcToString(framesToTc(newFrames, fps))
+      return {
+        id: cue.id,
+        label: cue.label || cue.messageType,
+        oldTc: cue.triggerTimecode,
+        newTc
+      }
+    })
+
+    return { markerPreview, cuePreview }
+  }, [])
+
   const handleReplaceAudio = useCallback(async (index: number): Promise<void> => {
     const s = useStore.getState()
     const item = s.setlist[index]
@@ -690,35 +752,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
       setReplacingAudioIdx(null)
 
       // Build preview lists so user can see exactly what will change
-      const fps = (s.forceFps ?? s.detectedFps ?? 25)
-      const offsetFrames = Math.round(offsetSec * fps)
-      const itemMarkers = s.markers[item.id] ?? []
-      const itemCues = item.midiCues ?? []
-
-      const markerPreview = itemMarkers.map(m => {
-        const newTime = m.time + offsetSec
-        const clipped = newTime > newResult.duration
-        return {
-          id: m.id,
-          label: m.label || m.type || '—',
-          oldTime: m.time,
-          newTime: clipped ? Math.max(0, newResult.duration - 0.1) : Math.max(0, newTime),
-          clipped
-        }
-      })
-
-      const cuePreview = itemCues.map(cue => {
-        const oldFrames = tcToFrames(cue.triggerTimecode, fps)
-        const newFrames = Math.max(0, oldFrames + offsetFrames)
-        const newTc = tcToString(framesToTc(newFrames, fps))
-        return {
-          id: cue.id,
-          label: cue.label || cue.messageType,
-          oldTc: cue.triggerTimecode,
-          newTc
-        }
-      })
-
+      const { markerPreview, cuePreview } = computeMarkerCuePreviews(index, offsetSec, newResult.duration)
       const newName = newPath.split(/[/\\]/).pop() ?? newPath
 
       setReplacePreview({
@@ -729,6 +763,8 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
         oldDuration: origResult.duration,
         offsetSec,
         confidence,
+        oldPeaks: origResult.peaks,
+        newPeaks: newResult.peaks,
         markerPreview,
         cuePreview
       })
@@ -796,6 +832,102 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
         </div>
       </div>
 
+      {/* F10: Variant tab strip */}
+      <div className="variant-tab-strip" onClick={() => setVariantContextMenu(null)}>
+        {setlistVariants.map(v => {
+          const isActive = v.id === activeSetlistVariantId
+          return (
+            <button
+              key={v.id}
+              className={`variant-tab${isActive ? ' variant-tab--active' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!isActive) switchSetlistVariant(v.id)
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setVariantContextMenu({ id: v.id, x: e.clientX, y: e.clientY })
+              }}
+              title={v.name}
+            >
+              {renamingVariantId === v.id ? (
+                <input
+                  autoFocus
+                  className="variant-tab-rename-input"
+                  value={renamingVariantStr}
+                  onChange={e => setRenamingVariantStr(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      renameSetlistVariant(v.id, renamingVariantStr)
+                      setRenamingVariantId(null)
+                    }
+                    if (e.key === 'Escape') {
+                      e.stopPropagation()
+                      setRenamingVariantId(null)
+                    }
+                  }}
+                  onBlur={() => {
+                    renameSetlistVariant(v.id, renamingVariantStr)
+                    setRenamingVariantId(null)
+                  }}
+                  onClick={e => e.stopPropagation()}
+                  style={{ width: Math.max(50, renamingVariantStr.length * 8 + 12) }}
+                />
+              ) : (
+                <span>{v.name}</span>
+              )}
+            </button>
+          )
+        })}
+        <button
+          className="variant-tab variant-tab--add"
+          title={t(lang, 'variantAdd')}
+          onClick={(e) => {
+            e.stopPropagation()
+            const name = window.prompt(t(lang, 'variantNamePlaceholder'), t(lang, 'defaultVariantName'))
+            if (name !== null) addSetlistVariant(name.trim() || t(lang, 'defaultVariantName'))
+          }}
+        >+</button>
+      </div>
+
+      {/* F10: variant context menu */}
+      {variantContextMenu && (() => {
+        const v = setlistVariants.find(vv => vv.id === variantContextMenu.id)
+        if (!v) return null
+        return (
+          <div
+            className="variant-context-menu"
+            style={{ position: 'fixed', top: variantContextMenu.y, left: variantContextMenu.x, zIndex: 9999 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button onClick={() => {
+              setRenamingVariantId(v.id)
+              setRenamingVariantStr(v.name)
+              setVariantContextMenu(null)
+            }}>{t(lang, 'variantRename')}</button>
+            <button onClick={() => {
+              const name = window.prompt(t(lang, 'variantNamePlaceholder'), `${v.name} copy`)
+              if (name !== null) duplicateSetlistVariant(v.id, name.trim() || `${v.name} copy`)
+              setVariantContextMenu(null)
+            }}>{t(lang, 'variantDuplicate')}</button>
+            <button
+              disabled={setlistVariants.length <= 1}
+              title={setlistVariants.length <= 1 ? t(lang, 'variantCannotDeleteLast') : ''}
+              onClick={() => {
+                if (setlistVariants.length <= 1) return
+                if (window.confirm(`Delete variant "${v.name}"?`)) {
+                  deleteSetlistVariant(v.id)
+                }
+                setVariantContextMenu(null)
+              }}
+              style={{ color: setlistVariants.length <= 1 ? '#444' : '#ef5350' }}
+            >{t(lang, 'variantDelete')}</button>
+          </div>
+        )
+      })()}
+
       {replaceAligning && (
         <div className="setlist-aligning-overlay">
           <span>{t(lang, 'aligningAudio')}</span>
@@ -862,6 +994,9 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                     {item.notes && (
                       <span className="setlist-notes-badge" title={item.notes}>N</span>
                     )}
+                    {item.stageNote && (
+                      <span className="setlist-notes-badge" title={item.stageNote} style={{ background: '#e8c97a22', color: '#e8c97a' }}>S</span>
+                    )}
                     <Tooltip text={t(lang, 'songOffset')}>
                       <button
                         className={`setlist-offset-btn${isEditingOffset ? ' active' : ''}`}
@@ -881,9 +1016,28 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                             setEditingNotesStr(item.notes ?? '')
                             setEditingNotesIdx(i)
                             setEditingOffsetIdx(null)
+                            setEditingStageNoteIdx(null)
                           }
                         }}
                       >N</button>
+                    </Tooltip>
+                    <Tooltip text={t(lang, 'stageNote')}>
+                      <button
+                        className={`setlist-offset-btn${editingStageNoteIdx === i ? ' active' : ''}`}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (editingStageNoteIdx === i) {
+                            setEditingStageNoteIdx(null)
+                          } else {
+                            setEditingStageNoteStr(item.stageNote ?? '')
+                            setEditingStageNoteIdx(i)
+                            setEditingNotesIdx(null)
+                            setEditingOffsetIdx(null)
+                          }
+                        }}
+                        style={{ color: item.stageNote ? '#e8c97a' : undefined }}
+                      >S</button>
                     </Tooltip>
                     <ProGate>
                       <Tooltip text={t(lang, 'replaceAudio')}>
@@ -983,6 +1137,32 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                       />
                     </div>
                   )}
+                  {editingStageNoteIdx === i && (
+                    <div className="setlist-notes-editor" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        ref={stageNoteInputRef}
+                        type="text"
+                        className="setlist-notes-input"
+                        value={editingStageNoteStr}
+                        placeholder={t(lang, 'stageNotePlaceholder')}
+                        maxLength={200}
+                        style={{ borderColor: '#e8c97a44' }}
+                        onChange={(e) => setEditingStageNoteStr(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            useStore.getState().setSetlistItemStageNote(i, editingStageNoteStr)
+                            setEditingStageNoteIdx(null)
+                          }
+                          if (e.key === 'Escape') { e.stopPropagation(); setEditingStageNoteIdx(null) }
+                        }}
+                        onBlur={() => {
+                          useStore.getState().setSetlistItemStageNote(i, editingStageNoteStr)
+                          setEditingStageNoteIdx(null)
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -1050,7 +1230,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
         }
         return (
           <div className="ltc-wav-dialog-overlay" onClick={(e) => { if (e.target === e.currentTarget) setReplacePreview(null) }}>
-            <div className="ltc-wav-dialog" style={{ width: '600px', maxWidth: '90vw' }}>
+            <div className="ltc-wav-dialog" style={{ width: '740px', maxWidth: '96vw' }}>
               <div className="ltc-wav-dialog-header">
                 <div>
                   <div className="ltc-wav-dialog-title">{t(lang, 'replaceAudioPreviewTitle')}</div>
@@ -1081,6 +1261,23 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                     ⚠ {t(lang, 'replaceAudioLowConfWarn')}
                   </div>
                 )}
+
+                {/* F12: Waveform Compare */}
+                <div style={{ background: '#111', borderRadius: 6, padding: '10px 12px', border: '1px solid #1e2e38' }}>
+                  <div style={{ fontSize: '11px', color: '#aaa', marginBottom: 8 }}>{t(lang, 'compareWaveforms')}</div>
+                  <WaveformCompare
+                    oldPeaks={p.oldPeaks}
+                    newPeaks={p.newPeaks}
+                    oldDuration={p.oldDuration}
+                    newDuration={p.newDuration}
+                    offsetSec={p.offsetSec}
+                    markers={useStore.getState().markers[item.id] ?? []}
+                    onOffsetChange={(newOffset) => {
+                      const { markerPreview, cuePreview } = computeMarkerCuePreviews(p.index, newOffset, p.newDuration)
+                      setReplacePreview(prev => prev ? { ...prev, offsetSec: newOffset, markerPreview, cuePreview } : prev)
+                    }}
+                  />
+                </div>
 
                 {/* Marker preview */}
                 {p.markerPreview.length > 0 && (

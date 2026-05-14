@@ -157,6 +157,20 @@ contextBridge.exposeInMainWorld('api', {
   // Clipboard
   copyToClipboard: (text: string) => ipcRenderer.invoke('clipboard-write', text),
 
+  // Sprint D — F11: Auto Backup
+  backupSnapshot: (presetName: string, presetData: unknown) =>
+    ipcRenderer.invoke('backup-snapshot', presetName, presetData) as Promise<{ ok: boolean; path?: string; error?: string }>,
+  listBackups: (presetName: string) =>
+    ipcRenderer.invoke('list-backups', presetName) as Promise<Array<{ path: string; timestamp: string; sizeBytes: number }>>,
+  restoreBackup: (backupPath: string) =>
+    ipcRenderer.invoke('restore-backup', backupPath) as Promise<{ name: string; data: unknown } | null>,
+  deleteBackup: (backupPath: string) =>
+    ipcRenderer.invoke('delete-backup', backupPath) as Promise<{ ok: boolean; error?: string }>,
+  pruneBackups: (presetName: string, keepN: number) =>
+    ipcRenderer.invoke('prune-backups', presetName, keepN) as Promise<{ ok: boolean; error?: string }>,
+  openBackupFolder: (presetName: string) =>
+    ipcRenderer.invoke('open-backup-folder', presetName) as Promise<{ ok: boolean; error?: string }>,
+
   // Platform detection (for platform-specific UI text)
   platform: process.platform
 })
