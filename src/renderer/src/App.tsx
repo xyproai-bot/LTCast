@@ -7,19 +7,17 @@ import { OscOutput } from './audio/OscOutput'
 import { TimecodeDisplay } from './components/TimecodeDisplay'
 import { Waveform } from './components/Waveform'
 import { Transport } from './components/Transport'
-import { DevicePanel } from './components/DevicePanel'
 import { SetlistPanel } from './components/SetlistPanel'
-import { MidiCuePanel } from './components/MidiCuePanel'
-import { StructurePanel } from './components/StructurePanel'
 import { TcCalcPanel } from './components/TcCalcPanel'
-import { ShowLogPanel } from './components/ShowLogPanel'
-import { ShowTimerPanel } from './components/ShowTimerPanel'
+import { CuesTab } from './components/CuesTab'
+import { ShowTab } from './components/ShowTab'
+import { SettingsModal, SettingsSection, gainToDb, panToDisplay } from './components/SettingsModal'
+import { FileMenu } from './components/FileMenu'
 import { PresetBar } from './components/PresetBar'
 import { TapBpm } from './components/TapBpm'
 import { StatusBar } from './components/StatusBar'
 import { LtcWavExportDialog } from './components/LtcWavExportDialog'
 import { LicenseDialog } from './components/LicenseDialog'
-import { ProGate } from './components/ProGate'
 import { useStore, TimecodeFrame, buildPresetData } from './store'
 import { useShallow } from 'zustand/react/shallow'
 import { alignAudio } from './audio/AudioAligner'
@@ -49,6 +47,13 @@ export default function App(): React.JSX.Element {
   const isResizingRightPanel = useRef(false)
   const [showLtcWavDialog, setShowLtcWavDialog] = useState(false)
   const [showLicenseDialog, setShowLicenseDialog] = useState(false)
+  // Sprint UI-Reorg — Settings modal (per-mount, not persisted)
+  const [showSettings, setShowSettings] = useState(false)
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('outputs')
+  const openSettings = useCallback((section: SettingsSection = 'outputs') => {
+    setSettingsSection(section)
+    setShowSettings(true)
+  }, [])
   const lastBpmUpdateTime = useRef(0)
   // Auto-advance: timer ref + countdown state
   const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -68,14 +73,8 @@ export default function App(): React.JSX.Element {
   const midiActivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [lastFiredCueId, setLastFiredCueId] = useState<string | null>(null)
   const cueFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // F7 — Resume last session
-  const [resumeToastId, setResumeToastId] = useState<number | null>(null)
-  const lastSessionSaveThrottle = useRef<ReturnType<typeof setInterval> | null>(null)
   // Sprint D — F11: Auto backup timer ref
   const autoBackupTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const resumePayloadRef = useRef<{ positionSeconds: number; setlistIndex: number | null } | null>(null)
-  const [showResumeDialog, setShowResumeDialog] = useState(false)
-  const [resumeDialogData, setResumeDialogData] = useState<{ filePath: string; fileName: string; positionSeconds: number; setlistIndex: number | null } | null>(null)
 
   // Pre-buffer state (F1). Tracks the currently in-flight / completed
   // prebuffer so openFile() can grab it when the user finally fires Space.
@@ -145,7 +144,8 @@ export default function App(): React.JSX.Element {
     trialDaysLeft, isPro, savePreset,
     audioLoading, loadingFileName, setAudioLoading,
     themeColor, uiSize,
-    musicVolume, musicPan
+    musicVolume, musicPan, setMusicVolume, setMusicPan,
+    shareProjectZip, importLtcastProject
   } = useStore(useShallow((s) => ({
     filePath: s.filePath, fileName: s.fileName, presetName: s.presetName,
     presetDirty: s.presetDirty, lang: s.lang, loop: s.loop,
@@ -171,7 +171,9 @@ export default function App(): React.JSX.Element {
     trialDaysLeft: s.trialDaysLeft, isPro: s.isPro, savePreset: s.savePreset,
     audioLoading: s.audioLoading, loadingFileName: s.loadingFileName, setAudioLoading: s.setAudioLoading,
     themeColor: s.themeColor, uiSize: s.uiSize,
-    musicVolume: s.musicVolume, musicPan: s.musicPan
+    musicVolume: s.musicVolume, musicPan: s.musicPan,
+    setMusicVolume: s.setMusicVolume, setMusicPan: s.setMusicPan,
+    shareProjectZip: s.shareProjectZip, importLtcastProject: s.importLtcastProject
   })))
 
   // Sync window title bar with preset name
@@ -204,27 +206,6 @@ export default function App(): React.JSX.Element {
       toast.error(t(useStore.getState().lang, 'artnetSocketError'))
     })
     return cleanup
-  }, [])
-
-  // F7 — Resume Last Session: check on app launch
-  useEffect(() => {
-    const s = useStore.getState()
-    const session = s.lastSession
-    if (!session || s.disableResumePrompt) return
-    // Check 24-hour threshold (AC-7.2)
-    if (Date.now() - session.savedAt >= 24 * 60 * 60 * 1000) return
-    // Check file existence asynchronously
-    window.api.fileExists(session.filePath).then((exists: boolean) => {
-      if (!exists) return  // silently skip (AC-7.4)
-      setResumeDialogData({
-        filePath: session.filePath,
-        fileName: session.fileName,
-        positionSeconds: session.positionSeconds,
-        setlistIndex: session.setlistIndex
-      })
-      setShowResumeDialog(true)
-    }).catch(() => {/* file check failed, skip */ })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Validate license + check trial on startup
@@ -612,47 +593,6 @@ export default function App(): React.JSX.Element {
     }
   }, [filePath])
 
-  // F7 — Resume Last Session: save lastSession throttled every 5s during playback
-  useEffect(() => {
-    if (lastSessionSaveThrottle.current) {
-      clearInterval(lastSessionSaveThrottle.current)
-      lastSessionSaveThrottle.current = null
-    }
-    const { saveLastSession } = useStore.getState()
-    if (!filePath || !fileName) return
-
-    // Save immediately when play state changes
-    const s = useStore.getState()
-    saveLastSession(filePath, fileName, s.currentTime, s.activeSetlistIndex)
-
-    // During playback, throttle updates every 5 seconds
-    lastSessionSaveThrottle.current = setInterval(() => {
-      const cur = useStore.getState()
-      if (cur.playState === 'playing' && cur.filePath && cur.fileName) {
-        cur.saveLastSession(cur.filePath, cur.fileName, cur.currentTime, cur.activeSetlistIndex)
-      }
-    }, 5000)
-
-    return () => {
-      if (lastSessionSaveThrottle.current) {
-        clearInterval(lastSessionSaveThrottle.current)
-        lastSessionSaveThrottle.current = null
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filePath, fileName])
-
-  // F7 — Save lastSession on every playState transition (especially pause/stop)
-  // and on app close, so we always capture the most recent position even
-  // outside the 5s playback throttle window.
-  const playStateForSave = useStore(s => s.playState)
-  useEffect(() => {
-    const cur = useStore.getState()
-    if (cur.filePath && cur.fileName) {
-      cur.saveLastSession(cur.filePath, cur.fileName, cur.currentTime, cur.activeSetlistIndex)
-    }
-  }, [playStateForSave])
-
   // UI size: apply via Electron's setZoomFactor so the layout reflows properly
   // (CSS `zoom` would overflow on scale-up / leave gaps on scale-down).
   useEffect(() => {
@@ -661,16 +601,6 @@ export default function App(): React.JSX.Element {
     window.api.windowSetZoom?.(factor)
   }, [uiSize])
 
-  useEffect(() => {
-    const onBeforeUnload = (): void => {
-      const cur = useStore.getState()
-      if (cur.filePath && cur.fileName) {
-        cur.saveLastSession(cur.filePath, cur.fileName, cur.currentTime, cur.activeSetlistIndex)
-      }
-    }
-    window.addEventListener('beforeunload', onBeforeUnload)
-    return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [])
 
   // Sprint D — F11: Auto-backup interval timer
   // Runs every autoBackupIntervalMin minutes and writes a snapshot if there
@@ -1432,6 +1362,19 @@ export default function App(): React.JSX.Element {
     }
   }
 
+  // FileMenu wrappers — mirror PresetBar's share/import handlers so the
+  // user gets the same toast feedback regardless of which entry point
+  // they used. The store actions themselves stay the source of truth.
+  const handleShareProject = useCallback(async (): Promise<void> => {
+    const path = await shareProjectZip()
+    if (path) toast.success(t(useStore.getState().lang, 'shareAsZipSuccess'))
+  }, [shareProjectZip])
+
+  const handleImportProject = useCallback(async (): Promise<void> => {
+    const ok = await importLtcastProject()
+    if (ok) toast.success(t(useStore.getState().lang, 'projectImported'))
+  }, [importLtcastProject])
+
   const openVideo = async (): Promise<void> => {
     if (!engine.current || !useStore.getState().duration) {
       toast.warning(t(useStore.getState().lang, 'noFile'))
@@ -1613,29 +1556,6 @@ export default function App(): React.JSX.Element {
     osc.current?.sendTimecode(zeroTc)
   }
 
-  // F7 — Resume handler
-  const handleResume = async (data: { filePath: string; fileName: string; positionSeconds: number; setlistIndex: number | null }): Promise<void> => {
-    setShowResumeDialog(false)
-    setResumeDialogData(null)
-    const cur = useStore.getState()
-    cur.setAudioLoading(true, data.fileName)
-    try {
-      const ab = await window.api.readAudioFile(data.filePath)
-      if (!ab) { toast.error(t(cur.lang, 'resumeFileMissing')); return }
-      await engine.current?.loadFile(ab)
-      const name = data.filePath.split(/[/\\]/).pop() ?? data.fileName
-      cur.setFilePath(data.filePath, name, engine.current?.getDuration() ?? 0)
-      if (data.setlistIndex !== null && data.setlistIndex < cur.setlist.length) {
-        cur.setActiveSetlistIndex(data.setlistIndex)
-      }
-      if (data.positionSeconds > 0) await engine.current?.seek(data.positionSeconds)
-    } catch {
-      toast.error(t(useStore.getState().lang, 'loadFailed'))
-    } finally {
-      cur.setAudioLoading(false)
-    }
-  }
-
   const handleSeek = async (time: number): Promise<void> => {
     const wasPlaying = await engine.current?.seek(time)
     if (wasPlaying) setPlayState('playing')
@@ -1681,33 +1601,21 @@ export default function App(): React.JSX.Element {
     >
       {/* Custom Title Bar */}
       <div className="title-bar">
-        {/* Left: logo + file ops */}
+        {/* Left: logo + file menu dropdown (Sprint UI-Reorg Follow-up).
+            The previous 3 inline buttons (Open File / Import Video /
+            Export LTC WAV) plus PresetBar's Share Project / Import
+            .ltcastproject buttons all now live inside <FileMenu>. */}
         <div className="title-bar-left">
           <span className="title-bar-logo">LTCast</span>
           <div className="title-bar-ops">
-            <button className="title-bar-btn" onClick={() => openFile()}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
-              </svg>
-              {t(lang, 'openFile')}
-            </button>
-            <button className="title-bar-btn" onClick={openVideo} disabled={!filePath}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
-                <line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/>
-                <line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/>
-                <line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/>
-                <line x1="17" y1="7" x2="22" y2="7"/>
-              </svg>
-              {t(lang, 'importVideo')}
-            </button>
-            <button className="title-bar-btn" onClick={() => setShowLtcWavDialog(true)}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              {t(lang, 'exportLtcWav')}
-            </button>
+            <FileMenu
+              filePath={filePath}
+              onOpenFile={() => openFile()}
+              onImportVideo={openVideo}
+              onExportLtcWav={() => setShowLtcWavDialog(true)}
+              onShareProject={handleShareProject}
+              onImportProject={handleImportProject}
+            />
           </div>
         </div>
 
@@ -1724,6 +1632,19 @@ export default function App(): React.JSX.Element {
               <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
             </svg>
             {t(lang, 'save')}{presetDirty ? ' *' : ''}
+          </button>
+          {/* Sprint UI-Reorg — Settings gear icon. Placed between Save and the
+              trial / PRO badge per Stitch design + AC-5.4. */}
+          <button
+            className="title-bar-btn title-bar-gear"
+            onClick={() => openSettings('outputs')}
+            title={t(lang, 'openSettings')}
+            aria-label={t(lang, 'openSettings')}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+            </svg>
           </button>
           {!isPro() && trialDaysLeft !== null && trialDaysLeft > 0 && (
             <button className="title-bar-trial" onClick={() => setShowLicenseDialog(true)}>
@@ -1858,6 +1779,50 @@ export default function App(): React.JSX.Element {
             </div>
           )}
 
+          {/* Music master strip — horizontal volume + pan above waveform (Stitch Variant 3) */}
+          <div className="music-mixer-strip">
+            <span className="mixer-master-label">Music Master</span>
+            <div className="mixer-divider" />
+            <div className="mixer-vol-section">
+              <span className="mixer-mini-label">VOL</span>
+              <div className="mixer-slider-wrap">
+                <input
+                  type="range"
+                  className="mixer-vol-slider"
+                  min={0} max={5.7} step={0.01}
+                  value={musicVolume}
+                  onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
+                  onDoubleClick={() => setMusicVolume(1.0)}
+                  onContextMenu={(e) => { e.preventDefault(); setMusicVolume(1.0) }}
+                  title={`${t(lang, 'musicVolume')} — Right-click / double-click: reset to 0 dB`}
+                />
+                <div className="mixer-scale mixer-scale--vol">
+                  <span>-∞</span><span>0</span><span>+15</span>
+                </div>
+              </div>
+              <span className={`mixer-db-value${musicVolume > 2.0 ? ' mixer-db-value--warn' : ''}`}>{gainToDb(musicVolume)}</span>
+            </div>
+            <div className="mixer-pan-section">
+              <span className="mixer-mini-label">PAN</span>
+              <div className="mixer-slider-wrap">
+                <input
+                  type="range"
+                  className="mixer-pan-slider"
+                  min={-1} max={1} step={0.01}
+                  value={musicPan}
+                  onChange={(e) => setMusicPan(parseFloat(e.target.value))}
+                  onDoubleClick={() => setMusicPan(0)}
+                  onContextMenu={(e) => { e.preventDefault(); setMusicPan(0) }}
+                  title={`${t(lang, 'musicPan')} — Right-click / double-click: center`}
+                />
+                <div className="mixer-scale mixer-scale--pan">
+                  <span>L</span><span>C</span><span>R</span>
+                </div>
+              </div>
+              <span className="mixer-pan-value">{panToDisplay(musicPan)}</span>
+            </div>
+          </div>
+
           <Waveform
             musicData={musicWaveform}
             ltcData={ltcWaveform}
@@ -1892,79 +1857,86 @@ export default function App(): React.JSX.Element {
         {/* Right: Device / Cue panel */}
         <div className="right-panel" style={{ width: rightPanelWidth }}>
           <div className="right-panel-resize-handle" onMouseDown={handleRightPanelResizeStart} />
-          {/* Tab switcher */}
+          {/* Tab switcher — Sprint UI-Reorg: 6 tabs collapsed to 3 (Cues / Show / Tools). */}
           <div className="right-panel-tabs">
-            <button
-              className={`right-tab-btn${rightTab === 'devices' ? ' active' : ''}`}
-              onClick={() => useStore.getState().setRightTab('devices')}
-            >{t(lang, 'devices')}</button>
             <button
               className={`right-tab-btn${rightTab === 'cues' ? ' active' : ''}`}
               onClick={() => useStore.getState().setRightTab('cues')}
             >
-              {t(lang, 'cues')}
+              {t(lang, 'tab_cues')}
               <span className={`midi-activity-dot${midiActivity ? ' active' : ''}`} />
             </button>
             <button
-              className={`right-tab-btn${rightTab === 'structure' ? ' active' : ''}`}
-              onClick={() => useStore.getState().setRightTab('structure')}
-            >{t(lang, 'structureTitle')}</button>
+              className={`right-tab-btn${rightTab === 'show' ? ' active' : ''}`}
+              onClick={() => useStore.getState().setRightTab('show')}
+            >{t(lang, 'tab_show')}</button>
             <button
-              className={`right-tab-btn${rightTab === 'calc' ? ' active' : ''}`}
-              onClick={() => useStore.getState().setRightTab('calc')}
-            >{t(lang, 'tabCalc')}</button>
-            <button
-              className={`right-tab-btn${rightTab === 'log' ? ' active' : ''}`}
-              onClick={() => useStore.getState().setRightTab('log')}
-            >{t(lang, 'tabLog')}</button>
-            <button
-              className={`right-tab-btn${rightTab === 'timer' ? ' active' : ''}`}
-              onClick={() => useStore.getState().setRightTab('timer')}
-            >{t(lang, 'tabTimer')}</button>
+              className={`right-tab-btn${rightTab === 'tools' ? ' active' : ''}`}
+              onClick={() => useStore.getState().setRightTab('tools')}
+            >{t(lang, 'tab_tools')}</button>
           </div>
 
-          {rightTab === 'devices' && (
-            <DevicePanel
-              onMidiPortChange={selectMidiPort}
-              onMusicDeviceChange={(id) => engine.current?.setMusicOutputDevice(id).catch(() => {})}
-              onLtcDeviceChange={(id) => engine.current?.setLtcOutputDevice(id).catch(() => {})}
-              onLtcGainChange={(gain) => engine.current?.setLtcGain(gain)}
-              onMusicVolumeChange={(v) => engine.current?.setMusicVolume(v)}
-              onMusicPanChange={(p) => engine.current?.setMusicPan(p)}
-              onMtcModeChange={(mode) => mtc.current?.setMode(mode)}
-              onLtcChannelChange={(ch) => { if (ch !== 'auto') engine.current?.setLtcChannel(ch) }}
+          {rightTab === 'cues' && (
+            <CuesTab
+              onSeek={handleSeek}
+              onUpgrade={() => setShowLicenseDialog(true)}
+              onCueMidiPortChange={selectCueMidiPort}
+              onMidiInputPortChange={selectMidiInputPort}
+              onStartLearn={handleStartLearn}
+              learningMappingId={learningMappingId}
+              lastFiredCueId={lastFiredCueId}
+              onAddMarker={() => {
+                // Defer to the marker-add flow already wired into the keyboard
+                // 'M' shortcut: drop a marker at the current playhead.
+                const s = useStore.getState()
+                const fp = s.filePath
+                if (!fp) {
+                  toast.info(t(s.lang, 'noFile'))
+                  return
+                }
+                const time = s.currentTime ?? 0
+                const id = `mk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+                s.addMarker(fp, { id, time, label: '', type: 'custom' })
+              }}
+              onAddMidiCue={() => {
+                // Mirror MidiCuePanel.handleAddCue: append a default cue + flip
+                // user to the cue list (already visible in CuesTab).
+                const s = useStore.getState()
+                const idx = s.activeSetlistIndex
+                if (idx === null || idx < 0 || idx >= s.setlist.length) {
+                  toast.info(t(s.lang, 'noFile'))
+                  return
+                }
+                const tc = s.timecode
+                const pad = (n: number): string => String(n).padStart(2, '0')
+                const triggerTimecode = tc
+                  ? `${pad(tc.hours)}:${pad(tc.minutes)}:${pad(tc.seconds)}:${pad(tc.frames)}`
+                  : '00:00:00:00'
+                const item = s.setlist[idx]
+                const cues = item.midiCues ?? []
+                const newCue = {
+                  id: `cue-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                  triggerTimecode,
+                  messageType: 'program-change' as const,
+                  channel: 1,
+                  data1: 0,
+                  enabled: true,
+                }
+                s.setSetlistItemMidiCues(idx, [...cues, newCue])
+              }}
             />
           )}
 
-          {rightTab === 'cues' && (
-            <ProGate onUpgrade={() => setShowLicenseDialog(true)}>
-              <MidiCuePanel
-                onCueMidiPortChange={selectCueMidiPort}
-                onMidiInputPortChange={selectMidiInputPort}
-                onStartLearn={handleStartLearn}
-                learningMappingId={learningMappingId}
-                lastFiredCueId={lastFiredCueId}
-              />
-            </ProGate>
-          )}
+          {rightTab === 'show' && <ShowTab />}
 
-          {rightTab === 'structure' && (
-            <ProGate onUpgrade={() => setShowLicenseDialog(true)}>
-              <StructurePanel onSeek={handleSeek} />
-            </ProGate>
-          )}
-
-          {rightTab === 'calc' && <TcCalcPanel />}
-
-          {rightTab === 'log' && <ShowLogPanel />}
-
-          {rightTab === 'timer' && <ShowTimerPanel />}
+          {rightTab === 'tools' && <TcCalcPanel />}
         </div>
       </div>
 
       <StatusBar
         version={version}
         onToggleFullscreen={() => setFullscreenTc(true)}
+        onOpenSettings={openSettings}
         onSwitchToGenerator={() => {
           const s = useStore.getState()
           const lastTc = s.timecode
@@ -1986,42 +1958,17 @@ export default function App(): React.JSX.Element {
       {showLicenseDialog && (
         <LicenseDialog onClose={() => setShowLicenseDialog(false)} />
       )}
-      {/* F7 — Resume last session dialog */}
-      {showResumeDialog && resumeDialogData && (
-        <div className="shortcuts-overlay" onClick={() => setShowResumeDialog(false)}>
-          <div className="shortcuts-dialog" style={{ minWidth: '340px' }} onClick={(e) => e.stopPropagation()}>
-            <h3>{t(lang, 'resumeTitle')}</h3>
-            <p style={{ margin: '0 0 16px', color: '#ccc', fontSize: '13px', lineHeight: '1.5' }}>
-              {t(lang, 'resumePrompt', {
-                time: new Date(resumeDialogData.positionSeconds * 1000).toISOString().substr(11, 8),
-                name: resumeDialogData.fileName
-              })}
-            </p>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button
-                className="btn-sm btn-sm--primary"
-                onClick={() => handleResume(resumeDialogData)}
-              >
-                {t(lang, 'resumeButton')}
-              </button>
-              <button
-                className="btn-sm"
-                onClick={() => setShowResumeDialog(false)}
-              >
-                {t(lang, 'resumeDismiss')}
-              </button>
-              <button
-                className="btn-sm"
-                onClick={() => {
-                  useStore.getState().setDisableResumePrompt(true)
-                  setShowResumeDialog(false)
-                }}
-              >
-                {t(lang, 'resumeDontAskAgain')}
-              </button>
-            </div>
-          </div>
-        </div>
+      {showSettings && (
+        <SettingsModal
+          initialSection={settingsSection}
+          onClose={() => setShowSettings(false)}
+          onMidiPortChange={selectMidiPort}
+          onMusicDeviceChange={(id) => engine.current?.setMusicOutputDevice(id).catch(() => {})}
+          onLtcDeviceChange={(id) => engine.current?.setLtcOutputDevice(id).catch(() => {})}
+          onLtcGainChange={(gain) => engine.current?.setLtcGain(gain)}
+          onMtcModeChange={(mode) => mtc.current?.setMode(mode)}
+          onLtcChannelChange={(ch) => { if (ch !== 'auto') engine.current?.setLtcChannel(ch) }}
+        />
       )}
     </div>
   )

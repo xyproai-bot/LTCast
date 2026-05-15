@@ -1,8 +1,8 @@
-import React, { useRef, useEffect, useCallback } from 'react'
+import React, { useRef, useEffect, useCallback, useState } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline.esm.js'
 import MinimapPlugin from 'wavesurfer.js/dist/plugins/minimap.esm.js'
-import { useStore, WaveformMarker, MARKER_TYPE_COLORS, MARKER_TYPES, MarkerType } from '../store'
+import { useStore, WaveformMarker, MARKER_TYPE_COLORS, MARKER_TYPES, MarkerType, getContrastLetterColor } from '../store'
 import { MARKER_TYPE_ABBREV, resolveMarkerTypeColor } from './StructurePanel'
 import { t } from '../i18n'
 
@@ -64,6 +64,15 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   const filePathRef = useRef(filePath)
   useEffect(() => { markersRef.current = markers }, [markers])
   useEffect(() => { filePathRef.current = filePath }, [filePath])
+
+  // Inline marker label edit (double-click on existing marker)
+  const [editingMarker, setEditingMarker] = useState<{
+    id: string
+    initialLabel: string
+    x: number
+  } | null>(null)
+  const [editingLabelValue, setEditingLabelValue] = useState('')
+  const editingInputRef = useRef<HTMLInputElement | null>(null)
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  Music waveform — WaveSurfer.js
@@ -312,13 +321,13 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       // Vertical line (thicker for song-title)
       ctx.beginPath()
       ctx.strokeStyle = color
-      ctx.lineWidth = isSongTitle ? 3 : 2
+      ctx.lineWidth = isSongTitle ? 4 : 3
       ctx.moveTo(x, 0)
       ctx.lineTo(x, cssH)
       ctx.stroke()
 
       // Triangle at top (bigger for song-title)
-      const triSize = isSongTitle ? 7 : 5
+      const triSize = isSongTitle ? 8 : 6
       ctx.beginPath()
       ctx.fillStyle = color
       ctx.moveTo(x - triSize, 0)
@@ -327,25 +336,30 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       ctx.closePath()
       ctx.fill()
 
-      // Type abbreviation badge (AC-1.2) — small colored box with single letter
+      // Type abbreviation badge — colored box with single letter, contrasting text
       const abbrev = MARKER_TYPE_ABBREV[mType] ?? '·'
-      const badgeSize = isSongTitle ? 12 : 10
-      const badgeX = Math.min(x + 4, cssW - 30)
-      const badgeY = isSongTitle ? 12 : 10
+      const badgeSize = isSongTitle ? 16 : 14
+      const badgeX = Math.min(x + 4, cssW - 40)
+      const badgeY = isSongTitle ? 18 : 16
       // Draw badge background
       ctx.fillStyle = color
       ctx.fillRect(badgeX, badgeY - badgeSize + 2, badgeSize, badgeSize)
-      // Draw abbreviation letter
-      ctx.font = `bold ${badgeSize - 2}px sans-serif`
-      ctx.fillStyle = '#fff'
-      ctx.fillText(abbrev, badgeX + 1, badgeY)
+      // Draw abbreviation letter — pick black or white based on background luminance
+      ctx.font = `bold ${badgeSize - 3}px sans-serif`
+      ctx.fillStyle = getContrastLetterColor(color)
+      ctx.fillText(abbrev, badgeX + 3, badgeY - 1)
 
-      // Label
+      // Label — white text with black outline so it stays readable on any marker color
       if (marker.label) {
-        ctx.font = isSongTitle ? 'bold 12px sans-serif' : '10px sans-serif'
-        ctx.fillStyle = color
-        const labelX = Math.min(x + 4 + badgeSize + 2, cssW - 80)
-        ctx.fillText(marker.label, labelX, isSongTitle ? 22 : 20)
+        ctx.font = isSongTitle ? 'bold 16px sans-serif' : '14px sans-serif'
+        const labelX = Math.min(x + 4 + badgeSize + 4, cssW - 100)
+        const labelY = isSongTitle ? 32 : 30
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)'
+        ctx.lineWidth = 3
+        ctx.lineJoin = 'round'
+        ctx.strokeText(marker.label, labelX, labelY)
+        ctx.fillStyle = '#fff'
+        ctx.fillText(marker.label, labelX, labelY)
       }
     }
   }, [])
@@ -395,34 +409,87 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     const m = getWsMetrics()
     const wrap = musicWrapRef.current
     if (!fp || !m || !wrap) return null
+    // v8 storage: markers keyed by setlist-item id (same key drawMarkers uses)
+    const itemId = useStore.getState().setlist.find(it => it.path === fp)?.id
+    if (!itemId) return null
     const rect = wrap.getBoundingClientRect()
-    const fileMarkers = markersRef.current[fp] ?? []
+    const fileMarkers = markersRef.current[itemId] ?? []
+    const clickX = e.clientX - rect.left
+    const clickY = e.clientY - rect.top
+    // Top region = badge + label area (~40px tall). Below = just the line.
+    // The hitbox is asymmetric (extends right) because badge + label live to
+    // the right of the line.
+    const inTopRegion = clickY <= 40
     let closest: WaveformMarker | null = null
-    let minDist = 15
+    let bestScore = Infinity
     for (const mk of fileMarkers) {
       const mx = mk.time * m.pxPerSec - m.scrollLeft
-      const dist = Math.abs(mx - (e.clientX - rect.left))
-      if (dist < minDist) { minDist = dist; closest = mk }
+      const dx = clickX - mx
+      const hit = inTopRegion
+        ? (dx >= -8 && dx <= 110)   // badge (~18) + label (~90) generous
+        : Math.abs(dx) <= 10        // tight hitbox on the line itself
+      if (hit && Math.abs(dx) < bestScore) {
+        bestScore = Math.abs(dx)
+        closest = mk
+      }
     }
     return closest
   }
 
-  // Double-click on waveform area → add marker immediately (edit name in Structure panel)
+  // Double-click on waveform area:
+  //   - on existing marker → open inline label editor
+  //   - on empty area      → add new marker at click time
   const handleMarkerDblClick = useCallback((e: React.MouseEvent): void => {
     const fp = filePathRef.current
+    if (fp === null) return
+
+    const closest = findNearestMarker(e)
+    if (closest) {
+      const metrics = getWsMetrics()
+      const wrap = musicWrapRef.current
+      if (!metrics || !wrap) return
+      const x = closest.time * metrics.pxPerSec - metrics.scrollLeft
+      setEditingMarker({ id: closest.id, initialLabel: closest.label, x })
+      setEditingLabelValue(closest.label)
+      setTimeout(() => editingInputRef.current?.focus(), 0)
+      return
+    }
+
     const time = getTimeFromMouseEvent(e)
-    if (fp === null || time === null) return
-    const m = Math.floor(time / 60)
-    const s = Math.floor(time % 60)
+    if (time === null) return
+    const mm = Math.floor(time / 60)
+    const ss = Math.floor(time % 60)
     useStore.getState().addMarker(fp, {
       id: `marker-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       time,
-      label: `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`,
+      label: `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`,
       type: 'custom' as const
     })
     markersRef.current = useStore.getState().markers
     drawMarkers()
   }, [drawMarkers])
+
+  const commitMarkerEdit = useCallback((): void => {
+    if (!editingMarker) return
+    const fp = filePathRef.current
+    if (!fp) { setEditingMarker(null); return }
+    const trimmed = editingLabelValue.trim()
+    const state = useStore.getState()
+    if (trimmed === '') {
+      state.removeMarker(fp, editingMarker.id)
+    } else if (trimmed !== editingMarker.initialLabel) {
+      state.updateMarker(fp, editingMarker.id, { label: trimmed })
+    }
+    markersRef.current = useStore.getState().markers
+    drawMarkers()
+    setEditingMarker(null)
+    setEditingLabelValue('')
+  }, [editingMarker, editingLabelValue, drawMarkers])
+
+  const cancelMarkerEdit = useCallback((): void => {
+    setEditingMarker(null)
+    setEditingLabelValue('')
+  }, [])
 
   // Right-click → rename / delete nearest marker (only when NOT a right-drag)
   const handleMarkerContextMenu = useCallback((e: React.MouseEvent): void => {
@@ -518,12 +585,15 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       dragRef.current.currentTime = time
 
       // Update canvas visually by temporarily modifying the ref (not the store)
+      // v8 storage: markers keyed by setlist-item id, not file path
       const fp = dragRef.current.filePath
       const id = dragRef.current.id
-      const fileMarkers = markersRef.current[fp] ?? []
+      const itemId = useStore.getState().setlist.find(it => it.path === fp)?.id
+      if (!itemId) return
+      const fileMarkers = markersRef.current[itemId] ?? []
       markersRef.current = {
         ...markersRef.current,
-        [fp]: fileMarkers.map(mk => mk.id === id ? { ...mk, time } : mk)
+        [itemId]: fileMarkers.map(mk => mk.id === id ? { ...mk, time } : mk)
       }
       drawMarkers()
     }
@@ -1026,6 +1096,23 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
             ref={markerCanvasRef}
             className="waveform-canvas waveform-canvas--overlay waveform-canvas--markers"
           />
+          {editingMarker && (
+            <input
+              ref={editingInputRef}
+              className="marker-inline-edit"
+              type="text"
+              value={editingLabelValue}
+              onChange={(e) => setEditingLabelValue(e.target.value)}
+              onBlur={commitMarkerEdit}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter') { e.preventDefault(); commitMarkerEdit() }
+                else if (e.key === 'Escape') { e.preventDefault(); cancelMarkerEdit() }
+              }}
+              style={{ left: editingMarker.x + 4 }}
+              placeholder={t(lang, 'markerLabel')}
+            />
+          )}
         </div>
       </div>
 

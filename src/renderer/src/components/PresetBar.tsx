@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import { toast } from './Toast'
-import { ProGate } from './ProGate'
 import { BackupDialog } from './BackupDialog'
 
 export function PresetBar(): React.JSX.Element {
@@ -128,23 +127,11 @@ export function PresetBar(): React.JSX.Element {
         </button>
       )}
 
-      <ProGate>
-        <button
-          className="btn-preset"
-          onClick={handleShareProjectZip}
-          title={t(lang, 'shareAsZip')}
-        >
-          {t(lang, 'shareAsZip')}
-        </button>
-      </ProGate>
-
-      <button
-        className="btn-preset"
-        onClick={handleImportLtcastProject}
-        title={t(lang, 'importLtcastProject')}
-      >
-        {t(lang, 'importLtcastProject')}
-      </button>
+      {/* Sprint UI-Reorg Follow-up — Share Project & Import .ltcastproject
+          buttons moved to the File dropdown menu in title-bar-left. The
+          menu-command listener for native File menu items still runs from
+          this component (see useEffect above) so the desktop menu keeps
+          working regardless of where the visible button lives. */}
 
       {presetName && (
         <button

@@ -374,13 +374,6 @@ export const strings = {
     checkMarkersNa: 'No active item',
     checkSetlistFilesMissing: '{n} files missing',
     checkSetlistFilesDetail: 'Missing: {names}',
-    // Sprint B — F7: resume last session
-    resumeTitle: 'Resume Session?',
-    resumePrompt: 'Resume from {time} in \'{name}\'?',
-    resumeButton: 'Resume',
-    resumeDismiss: 'Dismiss',
-    resumeDontAskAgain: "Don't ask again",
-    resumeFileMissing: 'File moved or missing — cannot resume',
     // Sprint C — F8: PDF cue sheet
     exportPdf: 'Export PDF Cue Sheet',
     exportPdfDetailed: 'Detailed (one page per song)',
@@ -453,7 +446,29 @@ export const strings = {
     // Setlist multi-select
     nSelected: '{n} selected',
     clearSelection: 'Clear',
-    deleteSelectedConfirm: 'Remove {n} selected items from setlist?'
+    deleteSelectedConfirm: 'Remove {n} selected items from setlist?',
+    // Sprint UI-Reorg — 3-tab strip
+    tab_cues: 'CUES',
+    tab_show: 'SHOW',
+    tab_tools: 'TOOLS',
+    // Sprint UI-Reorg — Settings modal
+    settingsTitle: 'LTCAST Configuration Settings',
+    settingsSection_outputs: 'Outputs',
+    settingsSection_devices: 'Devices',
+    settingsSection_appearance: 'Appearance',
+    settingsSection_backup: 'Backup',
+    settingsSection_license: 'License',
+    settingsClose: 'Close',
+    openSettings: 'Settings',
+    // Sprint UI-Reorg — Empty states (AC-12)
+    emptyCuesTitle: 'No cues yet',
+    emptyCuesHint: 'Double-click the waveform to add a marker, or use the buttons below',
+    emptyCuesAddMarker: '+ Add Marker',
+    emptyCuesAddMidiCue: '+ Add MIDI Cue',
+    emptyShowTitle: 'No events yet',
+    emptyShowHint: 'Events will appear here as the show plays',
+    // Sprint UI-Reorg Follow-up — File dropdown menu
+    fileMenuLabel: 'File'
   },
   zh: {
     appTitle: 'LTCast',
@@ -827,13 +842,6 @@ export const strings = {
     checkMarkersNa: '沒有選中的曲目',
     checkSetlistFilesMissing: '{n} 個檔案遺失',
     checkSetlistFilesDetail: '遺失：{names}',
-    // Sprint B — F7: resume last session
-    resumeTitle: '繼續上次？',
-    resumePrompt: '從「{name}」的 {time} 繼續？',
-    resumeButton: '繼續',
-    resumeDismiss: '略過',
-    resumeDontAskAgain: '不再提示',
-    resumeFileMissing: '檔案已移動或遺失，無法繼續',
     // Sprint C — F8: PDF cue sheet
     exportPdf: '匯出 PDF Cue Sheet',
     exportPdfDetailed: '詳細版（每首一頁）',
@@ -906,7 +914,29 @@ export const strings = {
     // Setlist multi-select
     nSelected: '已選 {n} 項',
     clearSelection: '清除',
-    deleteSelectedConfirm: '從曲目列表移除 {n} 個選取項目？'
+    deleteSelectedConfirm: '從曲目列表移除 {n} 個選取項目？',
+    // Sprint UI-Reorg — 3-tab strip
+    tab_cues: '提示',
+    tab_show: '演出',
+    tab_tools: '工具',
+    // Sprint UI-Reorg — Settings modal
+    settingsTitle: 'LTCAST 設定',
+    settingsSection_outputs: '輸出',
+    settingsSection_devices: '裝置',
+    settingsSection_appearance: '外觀',
+    settingsSection_backup: '備份',
+    settingsSection_license: '授權',
+    settingsClose: '關閉',
+    openSettings: '設定',
+    // Sprint UI-Reorg — Empty states (AC-12)
+    emptyCuesTitle: '尚無提示點',
+    emptyCuesHint: '雙擊波形可加入標記，或用下方按鈕新增',
+    emptyCuesAddMarker: '+ 加入標記',
+    emptyCuesAddMidiCue: '+ 加入 MIDI 提示',
+    emptyShowTitle: '尚無事件',
+    emptyShowHint: '演出開始後事件會顯示在這裡',
+    // Sprint UI-Reorg Follow-up — File dropdown menu
+    fileMenuLabel: '檔案'
   },
   ja: {
     appTitle: 'LTCast',
@@ -1280,13 +1310,6 @@ export const strings = {
     checkMarkersNa: 'アクティブな曲なし',
     checkSetlistFilesMissing: '{n} ファイルが見つかりません',
     checkSetlistFilesDetail: '見つからない：{names}',
-    // Sprint B — F7: resume last session
-    resumeTitle: 'セッションを再開',
-    resumePrompt: '「{name}」の {time} から再開しますか？',
-    resumeButton: '再開',
-    resumeDismiss: '閉じる',
-    resumeDontAskAgain: '今後は表示しない',
-    resumeFileMissing: 'ファイルが見つかりません — 再開できません',
     // Sprint C — F8: PDF cue sheet
     exportPdf: 'PDF キューシートをエクスポート',
     exportPdfDetailed: '詳細（1曲1ページ）',
@@ -1359,7 +1382,29 @@ export const strings = {
     // Setlist multi-select
     nSelected: '{n} 件選択中',
     clearSelection: 'クリア',
-    deleteSelectedConfirm: '選択した {n} 件をセットリストから削除しますか？'
+    deleteSelectedConfirm: '選択した {n} 件をセットリストから削除しますか？',
+    // Sprint UI-Reorg — 3-tab strip
+    tab_cues: 'キュー',
+    tab_show: 'ショー',
+    tab_tools: 'ツール',
+    // Sprint UI-Reorg — Settings modal
+    settingsTitle: 'LTCAST 設定',
+    settingsSection_outputs: '出力',
+    settingsSection_devices: 'デバイス',
+    settingsSection_appearance: '外観',
+    settingsSection_backup: 'バックアップ',
+    settingsSection_license: 'ライセンス',
+    settingsClose: '閉じる',
+    openSettings: '設定',
+    // Sprint UI-Reorg — Empty states (AC-12)
+    emptyCuesTitle: 'キューはまだありません',
+    emptyCuesHint: '波形をダブルクリックでマーカー追加、または下のボタンから',
+    emptyCuesAddMarker: '+ マーカー追加',
+    emptyCuesAddMidiCue: '+ MIDI キュー追加',
+    emptyShowTitle: 'イベントはまだありません',
+    emptyShowHint: 'ショー開始後にイベントが表示されます',
+    // Sprint UI-Reorg Follow-up — File dropdown menu
+    fileMenuLabel: 'ファイル'
   }
 }
 

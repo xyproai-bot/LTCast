@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { useStore, MARKER_TYPES, MARKER_TYPE_COLORS, MarkerType, WaveformMarker } from '../store'
+import { useStore, MARKER_TYPES, MARKER_TYPE_COLORS, MarkerType, WaveformMarker, getContrastLetterColor } from '../store'
 import { t } from '../i18n'
 
 /** Returns the effective color for a marker type, applying preset overrides (AC-1.4). */
@@ -157,7 +157,7 @@ export function StructurePanel({ onSeek }: Props): React.JSX.Element {
             <button
               key={mt}
               className={`structure-chip${isActive ? ' active' : ''}`}
-              style={isActive ? { background: color, borderColor: color, color: '#fff' } : { borderColor: color, color: color }}
+              style={isActive ? { background: color, borderColor: color, color: getContrastLetterColor(color) } : { borderColor: color, color: color }}
               onClick={() => toggleTypeFilter(mt)}
               title={t(lang, `markerType_${mt}`)}
             >

@@ -675,6 +675,11 @@ export class AudioEngine {
     // Set output sink:
     //   'default' (muted) → { type: 'none' } = worklet runs, no audio output
     //   deviceId           → setSinkId(id)   = audio routes to that device
+    //
+    // Safety rule: LTC must never leak to default monitor speakers. If the
+    // configured device fails (disconnected, invalid id, driver issue) we
+    // ALWAYS fall back to the silent sink rather than letting LTC buzz
+    // through the user's monitors.
     try {
       if (this.ltcOutputDeviceId && this.ltcOutputDeviceId !== 'default') {
         // @ts-expect-error - setSinkId newer API
@@ -683,10 +688,14 @@ export class AudioEngine {
         // @ts-expect-error - setSinkId with null sink
         await this.ltcCtx.setSinkId({ type: 'none' })
       }
-    } catch {
-      // Fallback for older Electron: if sink fails, audio may leak.
-      // setSinkId({ type: 'none' }) requires Chromium 110+ (Electron 28+).
-      console.warn('setSinkId failed, LTC audio may leak to default output')
+    } catch (e) {
+      console.warn('LTC setSinkId failed, falling back to silent sink:', e)
+      try {
+        // @ts-expect-error - setSinkId with null sink
+        await this.ltcCtx.setSinkId({ type: 'none' })
+      } catch (e2) {
+        console.warn('LTC silent-sink fallback also failed:', e2)
+      }
     }
 
     // Load worklet modules (decoder + encoder) with retry
