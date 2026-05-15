@@ -40,6 +40,9 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
   const lastSingleClickIdxRef = useRef<number | null>(null)
   const [missingPaths, setMissingPaths] = useState<Set<string>>(new Set())
   const [durations, setDurations] = useState<Record<string, number | null>>({})
+  // Per-item expand state — click left ▶ arrow toggles offset editor visibility.
+  // Local React state (not in store) — purely UI.
+  const [expandedItemIds, setExpandedItemIds] = useState<Set<string>>(new Set())
   const [editingOffsetIdx, setEditingOffsetIdx] = useState<number | null>(null)
   const [editingOffsetStr, setEditingOffsetStr] = useState('')
   const [editingNotesIdx, setEditingNotesIdx] = useState<number | null>(null)
@@ -107,9 +110,11 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
     }
   }, [editingStageNoteIdx])
 
-  // Clear selection when variant switches
+  // Clear selection + expand state when variant switches
   useEffect(() => {
     setSelectedIds(new Set())
+    setExpandedItemIds(new Set())
+    setEditingOffsetIdx(null)
     lastSingleClickIdxRef.current = null
   }, [activeSetlistVariantId])
 
@@ -323,16 +328,26 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
     return () => { if (clickTimerRef.current) clearTimeout(clickTimerRef.current) }
   }, [])
 
-  const handleToggleOffsetEdit = useCallback((e: React.MouseEvent, index: number): void => {
+  // Arrow toggle — expand/collapse the row's offset editor. The arrow replaces
+  // the old gear (⊕) icon: clicking it opens the same offset-edit UI that the
+  // gear used to open. Only one row can be expanded at a time because
+  // `editingOffsetStr` is shared state (single input value).
+  const handleToggleArrow = useCallback((e: React.MouseEvent, index: number, itemId: string): void => {
     e.stopPropagation()
-    if (editingOffsetIdx === index) {
+    const item = setlist[index]
+    const isOpen = expandedItemIds.has(itemId)
+    if (isOpen) {
+      setExpandedItemIds(new Set())
       setEditingOffsetIdx(null)
     } else {
-      const item = setlist[index]
+      // Opening — replace any previously-open row.
+      setExpandedItemIds(new Set([itemId]))
       setEditingOffsetIdx(index)
       setEditingOffsetStr(item.offsetFrames !== undefined ? String(item.offsetFrames) : '')
+      setEditingNotesIdx(null)
+      setEditingStageNoteIdx(null)
     }
-  }, [editingOffsetIdx, setlist])
+  }, [setlist, expandedItemIds])
 
   const commitOffset = useCallback((index: number): void => {
     const { setSetlistItemOffset } = useStore.getState()
@@ -1060,10 +1075,12 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
               const isMissing = missingPaths.has(item.path)
               const hasOffset = item.offsetFrames !== undefined
               const isEditingOffset = editingOffsetIdx === i
+              const isExpanded = expandedItemIds.has(item.id)
+              const isActive = i === activeSetlistIndex
               return (
                 <div key={item.id} className="setlist-item-wrap">
                   <div
-                    className={`setlist-item${i === activeSetlistIndex ? ' active' : ''}${i === standbySetlistIndex ? ' standby' : ''}${isMissing ? ' missing' : ''}${isEditingOffset ? ' offset-open' : ''}${armedIdx === i ? ' drag-armed' : ''}${selectedIds.has(item.id) ? ' setlist-item--selected' : ''}`}
+                    className={`setlist-item${isActive ? ' active' : ''}${i === standbySetlistIndex ? ' standby' : ''}${isMissing ? ' missing' : ''}${isEditingOffset ? ' offset-open' : ''}${isExpanded ? ' expanded' : ''}${armedIdx === i ? ' drag-armed' : ''}${selectedIds.has(item.id) ? ' setlist-item--selected' : ''}`}
                     draggable={armedIdx === i && !isEditingOffset}
                     onDragStart={(e) => handleDragStart(e, i)}
                     onDragOver={(e) => handleDragOver(e, i)}
@@ -1082,94 +1099,104 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
                     onDoubleClick={() => handleItemDoubleClick(i)}
                     title={isMissing ? t(lang, 'fileMissing') : item.name}
                   >
-                    <span className="setlist-index">{i + 1}</span>
-                    <span className="setlist-name">
-                      {isMissing && (
-                        <svg style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ff8800" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-                        </svg>
-                      )}
-                      {item.name}
-                    </span>
+                    {/* Top row: arrow + index + name (left) | badges + action buttons (right) */}
+                    <div className="setlist-item-row">
+                      <div className="setlist-item-row-left">
+                        <Tooltip text={t(lang, 'songOffset')}>
+                          <button
+                            className={`setlist-expand-arrow${isExpanded ? ' open' : ''}${isActive ? ' active' : ''}`}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => handleToggleArrow(e, i, item.id)}
+                            aria-expanded={isExpanded}
+                            aria-label={t(lang, 'songOffset')}
+                          >▶</button>
+                        </Tooltip>
+                        <span className="setlist-index">{i + 1}</span>
+                        <span className="setlist-name">
+                          {isMissing && (
+                            <svg style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ff8800" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                            </svg>
+                          )}
+                          {item.name}
+                        </span>
+                      </div>
+                      <div className="setlist-item-row-right">
+                        {hasOffset && (
+                          <span className="setlist-offset-badge" title={t(lang, 'songOffset')}>
+                            {(item.offsetFrames ?? 0) >= 0 ? '+' : ''}{item.offsetFrames}f
+                          </span>
+                        )}
+                        {item.notes && (
+                          <span className="setlist-notes-badge" title={item.notes}>N</span>
+                        )}
+                        {item.stageNote && (
+                          <span className="setlist-notes-badge" title={item.stageNote} style={{ background: '#e8c97a22', color: '#e8c97a' }}>S</span>
+                        )}
+                        <Tooltip text={t(lang, 'songNotes')}>
+                          <button
+                            className={`setlist-offset-btn${editingNotesIdx === i ? ' active' : ''}`}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (editingNotesIdx === i) {
+                                setEditingNotesIdx(null)
+                              } else {
+                                setEditingNotesStr(item.notes ?? '')
+                                setEditingNotesIdx(i)
+                                setEditingOffsetIdx(null)
+                                setEditingStageNoteIdx(null)
+                              }
+                            }}
+                          >N</button>
+                        </Tooltip>
+                        <Tooltip text={t(lang, 'stageNote')}>
+                          <button
+                            className={`setlist-offset-btn${editingStageNoteIdx === i ? ' active' : ''}`}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (editingStageNoteIdx === i) {
+                                setEditingStageNoteIdx(null)
+                              } else {
+                                setEditingStageNoteStr(item.stageNote ?? '')
+                                setEditingStageNoteIdx(i)
+                                setEditingNotesIdx(null)
+                                setEditingOffsetIdx(null)
+                              }
+                            }}
+                            style={{ color: item.stageNote ? '#e8c97a' : undefined }}
+                          >S</button>
+                        </Tooltip>
+                        <Tooltip text={t(lang, 'replaceAudio') + ' (Pro)'}>
+                          <button
+                            className="setlist-offset-btn"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (!useStore.getState().isPro()) { onShowLicense?.(); return }
+                              handleReplaceAudio(i)
+                            }}
+                            disabled={replacingAudioIdx === i && replaceAligning}
+                            title={t(lang, 'replaceAudio') + ' (Pro)'}
+                          >⇄</button>
+                        </Tooltip>
+                        <Tooltip text={t(lang, 'remove')}>
+                          <button
+                            className="setlist-remove"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => { e.stopPropagation(); removeFromSetlist(i) }}
+                          >✕</button>
+                        </Tooltip>
+                      </div>
+                    </div>
+                    {/* Bottom row: duration. ml-5 in Stitch ≈ aligned under the name (skip arrow column). */}
                     {durations[item.path] != null && (
                       <span className="setlist-duration">{formatDurShort(durations[item.path] as number)}</span>
                     )}
-                    {hasOffset && (
-                      <span className="setlist-offset-badge" title={t(lang, 'songOffset')}>
-                        {(item.offsetFrames ?? 0) >= 0 ? '+' : ''}{item.offsetFrames}f
-                      </span>
-                    )}
-                    {item.notes && (
-                      <span className="setlist-notes-badge" title={item.notes}>N</span>
-                    )}
-                    {item.stageNote && (
-                      <span className="setlist-notes-badge" title={item.stageNote} style={{ background: '#e8c97a22', color: '#e8c97a' }}>S</span>
-                    )}
-                    <Tooltip text={t(lang, 'songOffset')}>
-                      <button
-                        className={`setlist-offset-btn${isEditingOffset ? ' active' : ''}`}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => handleToggleOffsetEdit(e, i)}
-                      >⊕</button>
-                    </Tooltip>
-                    <Tooltip text={t(lang, 'songNotes')}>
-                      <button
-                        className={`setlist-offset-btn${editingNotesIdx === i ? ' active' : ''}`}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (editingNotesIdx === i) {
-                            setEditingNotesIdx(null)
-                          } else {
-                            setEditingNotesStr(item.notes ?? '')
-                            setEditingNotesIdx(i)
-                            setEditingOffsetIdx(null)
-                            setEditingStageNoteIdx(null)
-                          }
-                        }}
-                      >N</button>
-                    </Tooltip>
-                    <Tooltip text={t(lang, 'stageNote')}>
-                      <button
-                        className={`setlist-offset-btn${editingStageNoteIdx === i ? ' active' : ''}`}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (editingStageNoteIdx === i) {
-                            setEditingStageNoteIdx(null)
-                          } else {
-                            setEditingStageNoteStr(item.stageNote ?? '')
-                            setEditingStageNoteIdx(i)
-                            setEditingNotesIdx(null)
-                            setEditingOffsetIdx(null)
-                          }
-                        }}
-                        style={{ color: item.stageNote ? '#e8c97a' : undefined }}
-                      >S</button>
-                    </Tooltip>
-                    <Tooltip text={t(lang, 'replaceAudio') + ' (Pro)'}>
-                      <button
-                        className="setlist-offset-btn"
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (!useStore.getState().isPro()) { onShowLicense?.(); return }
-                          handleReplaceAudio(i)
-                        }}
-                        disabled={replacingAudioIdx === i && replaceAligning}
-                        title={t(lang, 'replaceAudio') + ' (Pro)'}
-                      >⇄</button>
-                    </Tooltip>
-                    <Tooltip text={t(lang, 'remove')}>
-                      <button
-                        className="setlist-remove"
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); removeFromSetlist(i) }}
-                      >✕</button>
-                    </Tooltip>
                   </div>
-                  {isEditingOffset && (
+                  {isExpanded && (
                     <div className="setlist-offset-editor" onClick={(e) => e.stopPropagation()}>
                       <Tooltip text="-1 frame">
                         <button
@@ -1191,12 +1218,18 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
                           if (v === '' || v === '-' || /^-?\d+$/.test(v)) setEditingOffsetStr(v)
                         }}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') { e.preventDefault(); commitOffset(i); setEditingOffsetIdx(null) }
-                          if (e.key === 'Escape') { e.stopPropagation(); setEditingOffsetIdx(null) }
+                          if (e.key === 'Enter') { e.preventDefault(); commitOffset(i) }
+                          if (e.key === 'Escape') {
+                            e.stopPropagation()
+                            setEditingOffsetIdx(null)
+                            setExpandedItemIds(prev => {
+                              const next = new Set(prev); next.delete(item.id); return next
+                            })
+                          }
                           if (e.key === 'ArrowUp') { e.preventDefault(); adjustOffset(1) }
                           if (e.key === 'ArrowDown') { e.preventDefault(); adjustOffset(-1) }
                         }}
-                        onBlur={() => { stopHold(); commitOffset(i); setEditingOffsetIdx(null) }}
+                        onBlur={() => { stopHold(); commitOffset(i) }}
                       />
                       <Tooltip text="+1 frame">
                         <button
@@ -1214,7 +1247,6 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
                             onClick={(e) => {
                               e.stopPropagation()
                               useStore.getState().setSetlistItemOffset(i, undefined)
-                              setEditingOffsetIdx(null)
                             }}
                           >✕</button>
                         </Tooltip>

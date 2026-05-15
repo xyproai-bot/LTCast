@@ -1759,20 +1759,23 @@ html, body, #root {
   padding-bottom: 4px;
 }
 
+/* Two-row layout (Stitch): top row = arrow + index + name + badges/buttons,
+   bottom row = duration (10px, ml-5 under the name). The whole row is a flex
+   column; the `.setlist-item-row` child handles horizontal layout. */
 .setlist-item {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
   padding: 8px 12px;
   background: transparent;
   border: none;
-  border-left: 2px solid transparent;
+  border-left: 4px solid transparent;
   cursor: pointer;
   transition: background 0.1s, border-color 0.1s;
 }
-.setlist-item:hover { background: #1e1e1e; }
+.setlist-item:hover { background: rgba(24, 24, 27, 0.6); }
 .setlist-item.active {
-  background: #1e1e1e;
+  background: rgba(24, 24, 27, 0.5);
   border-left-color: var(--accent);
 }
 .setlist-item.standby {
@@ -1790,6 +1793,52 @@ html, body, #root {
   outline-offset: -1px;
 }
 
+/* Top row of the item — flex row containing arrow + index + name on the left,
+   badges + action buttons on the right. */
+.setlist-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+.setlist-item-row-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.setlist-item-row-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Left ▶ arrow — toggles offset-editor expand. 10px chevron, cyan when active
+   row else zinc-600. Rotates 90deg → ▼ when the row is expanded. */
+.setlist-expand-arrow {
+  background: transparent;
+  border: none;
+  color: #52525b;            /* zinc-600 */
+  font-size: 10px;
+  line-height: 1;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transform: rotate(0deg);
+  transition: transform 0.15s ease, color 0.1s;
+}
+.setlist-expand-arrow.active { color: var(--accent); }
+.setlist-expand-arrow:hover { color: var(--accent); }
+.setlist-expand-arrow.open { transform: rotate(90deg); }
+
 /* F6: long-press "armed" visual — applied after the row has been held past LONG_PRESS_MS.
    Subtle lift + shadow + grab cursor tell the operator that a drag is now possible. */
 .setlist-item.drag-armed {
@@ -1806,18 +1855,20 @@ html, body, #root {
   color: #444;
   min-width: 16px;
   text-align: center;
+  flex-shrink: 0;
 }
 .setlist-item.active .setlist-index { color: var(--accent); }
 
 .setlist-name {
   flex: 1;
   font-size: 12px;
-  color: #888;
+  color: #d4d4d8;            /* zinc-300 — inactive default */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
-.setlist-item.active .setlist-name { color: var(--accent); }
+.setlist-item.active .setlist-name { color: #ffffff; font-weight: 500; }
 
 .setlist-remove {
   background: transparent;
@@ -1837,10 +1888,10 @@ html, body, #root {
 .setlist-item-wrap {
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid #1a1a1a;
+  border-bottom: 1px solid #18181b;
 }
 
-/* Per-song offset toggle button */
+/* Per-song action button (N, S, ⇄). Visible on hover, low-emphasis. */
 .setlist-offset-btn {
   background: transparent;
   border: none;
@@ -1857,13 +1908,14 @@ html, body, #root {
 .setlist-offset-btn:hover { color: var(--accent); }
 .setlist-offset-btn.active { opacity: 1; color: var(--accent); }
 
+/* Bottom row: duration. ml-5 in Stitch ≈ 20px, leaves arrow column blank.
+   Stays at 10px text-zinc-500 to match the spec. */
 .setlist-duration {
-  font-size: 9px;
-  color: #666;
+  font-size: 10px;
+  color: #71717a;            /* zinc-500 */
   font-family: 'JetBrains Mono', monospace;
-  margin-left: auto;
-  flex-shrink: 0;
-  padding: 0 4px;
+  margin-left: 20px;
+  padding: 0;
 }
 .setlist-total {
   text-align: center;
@@ -1885,14 +1937,15 @@ html, body, #root {
   flex-shrink: 0;
 }
 
-/* Offset editor row (expands below setlist-item) */
+/* Offset editor row (expands below setlist-item).
+   Indented to align under the name column (skips arrow + index gutter ≈ 36px). */
 .setlist-offset-editor {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 8px 6px 28px;
-  background: #0d0d0d;
-  border-left: 2px solid var(--accent)22;
+  padding: 6px 10px 8px 36px;
+  background: #0a0a0a;
+  border-left: 4px solid transparent;
 }
 .setlist-offset-input {
   flex: 1;
@@ -1921,9 +1974,9 @@ html, body, #root {
   flex-shrink: 0;
 }
 .setlist-notes-editor {
-  padding: 4px 8px 6px 28px;
-  background: #0d0d0d;
-  border-left: 2px solid #ffa50022;
+  padding: 6px 10px 8px 36px;
+  background: #0a0a0a;
+  border-left: 4px solid transparent;
 }
 .setlist-notes-input {
   width: 100%;
