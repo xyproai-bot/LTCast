@@ -147,6 +147,7 @@ contextBridge.exposeInMainWorld('api', {
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
   windowMaximize: () => ipcRenderer.invoke('window:maximize'),
   windowClose: () => ipcRenderer.invoke('window:close'),
+  windowSetZoom: (factor: number) => ipcRenderer.invoke('window:set-zoom', factor),
 
   // Open URL in default browser / email client
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),

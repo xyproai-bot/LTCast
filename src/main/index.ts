@@ -2077,6 +2077,12 @@ app.whenReady().then(() => {
     if (w?.isMaximized()) w.unmaximize(); else w?.maximize()
   })
   ipcMain.handle('window:close', () => { BrowserWindow.getFocusedWindow()?.close() })
+  ipcMain.handle('window:set-zoom', (_event, factor: number) => {
+    const w = BrowserWindow.getFocusedWindow()
+    if (!w) return
+    const clamped = Math.max(0.5, Math.min(2.0, factor))
+    w.webContents.setZoomFactor(clamped)
+  })
 
   // ── Art-Net Timecode IPC ──
   ipcMain.handle('artnet-start', () => {
@@ -2293,10 +2299,11 @@ app.whenReady().then(() => {
     const safeDefault = escapeHtml(defaultValue)
     const safeTitle = escapeHtml(title)
     const inputWin = new BrowserWindow({
-      width: 360, height: process.platform === 'darwin' ? 180 : 150,
+      width: 380, height: process.platform === 'darwin' ? 200 : 180,
+      minWidth: 280, minHeight: 160,
       parent: focusedWin,
       modal: true,
-      resizable: false,
+      resizable: true,
       minimizable: false,
       maximizable: false,
       skipTaskbar: true,
@@ -2308,15 +2315,17 @@ app.whenReady().then(() => {
     })
 
     const htmlContent = `<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><style>
-      body{margin:0;padding:20px;background:#1a1a1a;color:#e0e0e0;font-family:'Consolas',monospace;font-size:13px;display:flex;flex-direction:column;gap:12px}
+      html,body{margin:0;padding:0;height:100%;overflow:hidden}
+      body{padding:18px;background:#1a1a1a;color:#e0e0e0;font-family:'Consolas',monospace;font-size:13px;display:flex;flex-direction:column;gap:12px;box-sizing:border-box}
       label{font-size:12px;color:#aaa}
       input{width:100%;box-sizing:border-box;background:#222;color:#fff;border:1px solid #3a3a3a;border-radius:4px;padding:8px;font-size:13px;outline:none;font-family:inherit}
       input:focus{border-color:#00d4ff}
-      .btns{display:flex;gap:8px;justify-content:flex-end}
+      .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:auto}
       button{background:#2a2a2a;color:#ccc;border:1px solid #3a3a3a;border-radius:4px;padding:6px 16px;font-size:12px;cursor:pointer;font-family:inherit}
       button:hover{background:#3a3a3a;color:#fff}
       .primary{background:#003a4a;border-color:#00d4ff;color:#00d4ff}
       .primary:hover{background:#004d5c}
+      ::-webkit-scrollbar{display:none}
     </style></head><body>
       <label>${safeLabel}</label>
       <input id="inp" value="${safeDefault}" autofocus />

@@ -143,7 +143,9 @@ export default function App(): React.JSX.Element {
     midiInputPort, setMidiInputPort,
     midiMappings, updateMidiMapping,
     trialDaysLeft, isPro, savePreset,
-    audioLoading, loadingFileName, setAudioLoading
+    audioLoading, loadingFileName, setAudioLoading,
+    themeColor, uiSize,
+    musicVolume, musicPan
   } = useStore(useShallow((s) => ({
     filePath: s.filePath, fileName: s.fileName, presetName: s.presetName,
     presetDirty: s.presetDirty, lang: s.lang, loop: s.loop,
@@ -167,7 +169,9 @@ export default function App(): React.JSX.Element {
     midiInputPort: s.midiInputPort, setMidiInputPort: s.setMidiInputPort,
     midiMappings: s.midiMappings, updateMidiMapping: s.updateMidiMapping,
     trialDaysLeft: s.trialDaysLeft, isPro: s.isPro, savePreset: s.savePreset,
-    audioLoading: s.audioLoading, loadingFileName: s.loadingFileName, setAudioLoading: s.setAudioLoading
+    audioLoading: s.audioLoading, loadingFileName: s.loadingFileName, setAudioLoading: s.setAudioLoading,
+    themeColor: s.themeColor, uiSize: s.uiSize,
+    musicVolume: s.musicVolume, musicPan: s.musicPan
   })))
 
   // Sync window title bar with preset name
@@ -548,6 +552,8 @@ export default function App(): React.JSX.Element {
     // Restore saved engine settings
     engine.current.setOffset(savedState.offsetFrames)
     engine.current.setLtcGain(savedState.ltcGain)
+    engine.current.setMusicVolume(savedState.musicVolume ?? 1.0)
+    engine.current.setMusicPan(savedState.musicPan ?? 0.0)
 
     // Warm up VB-CABLE / BlackHole device on startup
     // This forces the OS to establish the device connection early,
@@ -647,6 +653,14 @@ export default function App(): React.JSX.Element {
     }
   }, [playStateForSave])
 
+  // UI size: apply via Electron's setZoomFactor so the layout reflows properly
+  // (CSS `zoom` would overflow on scale-up / leave gaps on scale-down).
+  useEffect(() => {
+    const factor = uiSize === 'sm' ? 0.9 : uiSize === 'lg' ? 1.15 : 1.0
+    // @ts-expect-error windowSetZoom not in env.d.ts
+    window.api.windowSetZoom?.(factor)
+  }, [uiSize])
+
   useEffect(() => {
     const onBeforeUnload = (): void => {
       const cur = useStore.getState()
@@ -716,6 +730,15 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     engine.current?.setLoop(loop)
   }, [loop])
+
+  // Sync music volume and pan to engine
+  useEffect(() => {
+    engine.current?.setMusicVolume(musicVolume)
+  }, [musicVolume])
+
+  useEffect(() => {
+    engine.current?.setMusicPan(musicPan)
+  }, [musicPan])
 
   // Sync A-B loop points to engine
   useEffect(() => {
@@ -1650,7 +1673,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <div
-      className={`app${dragging ? ' app--drag' : ''}${showLocked ? ' ui-locked' : ''}`}
+      className={`app theme-${themeColor}${dragging ? ' app--drag' : ''}${showLocked ? ' ui-locked' : ''}`}
       onDragEnter={(e) => { e.preventDefault(); dragCounter.current++; setDragging(true) }}
       onDragOver={(e) => { e.preventDefault() }}
       onDragLeave={() => { dragCounter.current--; if (dragCounter.current <= 0) { dragCounter.current = 0; setDragging(false) } }}
@@ -1743,6 +1766,7 @@ export default function App(): React.JSX.Element {
         <div className="setlist-sidebar" style={{ width: sidebarWidth }}>
           <SetlistPanel
             onLoadFile={(path, offsetFrames) => openFile(path, offsetFrames)}
+            onShowLicense={() => setShowLicenseDialog(true)}
             onImportFiles={async () => {
               const files = await window.api.openMultipleAudioDialog()
               if (files && files.length > 0) {
@@ -1905,6 +1929,8 @@ export default function App(): React.JSX.Element {
               onMusicDeviceChange={(id) => engine.current?.setMusicOutputDevice(id).catch(() => {})}
               onLtcDeviceChange={(id) => engine.current?.setLtcOutputDevice(id).catch(() => {})}
               onLtcGainChange={(gain) => engine.current?.setLtcGain(gain)}
+              onMusicVolumeChange={(v) => engine.current?.setMusicVolume(v)}
+              onMusicPanChange={(p) => engine.current?.setMusicPan(p)}
               onMtcModeChange={(mode) => mtc.current?.setMode(mode)}
               onLtcChannelChange={(ch) => { if (ch !== 'auto') engine.current?.setLtcChannel(ch) }}
             />

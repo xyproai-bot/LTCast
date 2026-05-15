@@ -140,6 +140,8 @@ export interface PresetData {
   musicOutputDeviceId: string
   ltcOutputDeviceId: string
   ltcGain: number
+  musicVolume?: number
+  musicPan?: number
   selectedMidiPort: string | null
   forceFps: number | null
   ltcChannel: LtcChannel
@@ -199,7 +201,7 @@ function ensureSetlistIds(data: PresetData): PresetData {
   return data
 }
 
-const CURRENT_PRESET_VERSION = 10
+const CURRENT_PRESET_VERSION = 11
 
 /** Warn once if a preset was created by a newer version of the app. */
 function warnIfNewerVersion(data: PresetData): void {
@@ -288,6 +290,11 @@ function migratePreset(data: PresetData): PresetData {
     }
     // Keep data.setlist as mirror (unchanged)
   }
+  // version 10 → 11: add music volume + pan
+  if (version < 11) {
+    data.musicVolume = data.musicVolume ?? 1.0
+    data.musicPan = data.musicPan ?? 0.0
+  }
   data.version = CURRENT_PRESET_VERSION
   return data
 }
@@ -297,7 +304,7 @@ function migratePreset(data: PresetData): PresetData {
  *  state.markers map (v8 storage). Top-level `markers` field is gone. */
 export function buildPresetData(s: Pick<AppState,
   'lang' | 'rightTab' | 'offsetFrames' | 'loop' | 'loopA' | 'loopB' | 'musicOutputDeviceId' |
-  'ltcOutputDeviceId' | 'ltcGain' | 'selectedMidiPort' | 'forceFps' |
+  'ltcOutputDeviceId' | 'ltcGain' | 'musicVolume' | 'musicPan' | 'selectedMidiPort' | 'forceFps' |
   'ltcChannel' | 'setlist' | 'activeSetlistIndex' | 'generatorStartTC' | 'generatorFps' | 'tcGeneratorMode' |
   'artnetEnabled' | 'artnetTargetIp' | 'mtcMode' | 'autoAdvance' | 'autoAdvanceGap' |
   'selectedCueMidiPort' | 'midiInputPort' | 'midiMappings' |
@@ -328,6 +335,7 @@ export function buildPresetData(s: Pick<AppState,
     loop: s.loop, loopA: s.loopA, loopB: s.loopB,
     musicOutputDeviceId: s.musicOutputDeviceId,
     ltcOutputDeviceId: s.ltcOutputDeviceId, ltcGain: s.ltcGain,
+    musicVolume: s.musicVolume, musicPan: s.musicPan,
     selectedMidiPort: s.selectedMidiPort, forceFps: s.forceFps,
     ltcChannel: s.ltcChannel, setlist: setlistWithMarkers,
     generatorStartTC: s.generatorStartTC, generatorFps: s.generatorFps,
@@ -395,6 +403,8 @@ function deriveMarkersFromAllVariants(variants: SetlistVariant[]): Record<string
 }
 
 export type SortMode = 'az' | 'za' | 'ext' | 'reverse'
+export type ThemeColor = 'cyan' | 'red' | 'green' | 'orange' | 'purple' | 'pink'
+export type UiSize = 'sm' | 'md' | 'lg'
 
 export interface AppState {
   // File
@@ -430,6 +440,8 @@ export interface AppState {
   musicOutputDeviceId: string
   ltcOutputDeviceId: string
   ltcGain: number       // 0.0–1.5 (1.0 = unity / 0 dB)
+  musicVolume: number   // 0.0–1.5 (1.0 = unity)
+  musicPan: number      // -1.0 (L) to +1.0 (R), 0 = center
 
   // MIDI
   midiOutputs: MidiPort[]
@@ -553,6 +565,8 @@ export interface AppState {
   lang: 'en' | 'zh' | 'ja'
   showLocked: boolean   // UI lock mode — prevents accidental changes during live shows
   ultraDark: boolean    // Ultra-dark high-contrast mode for dim environments
+  themeColor: ThemeColor  // Accent color theme (per-install)
+  uiSize: UiSize          // UI scale factor (per-install)
 
   // License
   licenseKey: string | null
@@ -592,6 +606,8 @@ export interface AppState {
   setMusicOutputDeviceId: (id: string) => void
   setLtcOutputDeviceId: (id: string) => void
   setLtcGain: (gain: number) => void
+  setMusicVolume: (v: number) => void
+  setMusicPan: (p: number) => void
   setMidiOutputs: (ports: MidiPort[]) => void
   setSelectedMidiPort: (port: string | null) => void
   setMidiConnected: (connected: boolean) => void
@@ -675,6 +691,8 @@ export interface AppState {
   setLang: (lang: 'en' | 'zh' | 'ja') => void
   setShowLocked: (locked: boolean) => void
   setUltraDark: (dark: boolean) => void
+  setThemeColor: (color: ThemeColor) => void
+  setUiSize: (size: UiSize) => void
   setAutoAdvance: (enabled: boolean) => void
   // Waveform Markers (Sprint 4)
   addMarker: (filePath: string, marker: WaveformMarker) => void
@@ -750,6 +768,8 @@ export const useStore = create<AppState>()(persist((set) => ({
   musicOutputDeviceId: 'default',
   ltcOutputDeviceId: 'default',
   ltcGain: 1.0,
+  musicVolume: 1.0,
+  musicPan: 0.0,
 
   midiOutputs: [],
   selectedMidiPort: null,
@@ -832,6 +852,8 @@ export const useStore = create<AppState>()(persist((set) => ({
   showTimers: [],
   showLocked: false,
   ultraDark: false,
+  themeColor: 'cyan',
+  uiSize: 'md',
 
   licenseKey: null,
   licenseStatus: 'none',
@@ -897,6 +919,8 @@ export const useStore = create<AppState>()(persist((set) => ({
   setMusicOutputDeviceId: (musicOutputDeviceId) => set({ musicOutputDeviceId, presetDirty: true }),
   setLtcOutputDeviceId: (ltcOutputDeviceId) => set({ ltcOutputDeviceId, presetDirty: true }),
   setLtcGain: (ltcGain) => set({ ltcGain, presetDirty: true }),
+  setMusicVolume: (musicVolume) => set({ musicVolume: Math.max(0, Math.min(5.7, musicVolume)), presetDirty: true }),
+  setMusicPan: (musicPan) => set({ musicPan: Math.max(-1.0, Math.min(1.0, musicPan)), presetDirty: true }),
   setMidiOutputs: (midiOutputs) => set({ midiOutputs }),
   setSelectedMidiPort: (selectedMidiPort) => set({ selectedMidiPort, presetDirty: true }),
   setMidiConnected: (midiConnected) => set({ midiConnected }),
@@ -1423,6 +1447,8 @@ export const useStore = create<AppState>()(persist((set) => ({
   setLang: (lang) => set({ lang, presetDirty: true }),
   setShowLocked: (showLocked) => set({ showLocked, presetDirty: true }),
   setUltraDark: (ultraDark) => set({ ultraDark }),
+  setThemeColor: (themeColor) => set({ themeColor }),
+  setUiSize: (uiSize) => set({ uiSize }),
   setAutoAdvance: (autoAdvance) => set({ autoAdvance, presetDirty: true }),
   setAutoAdvanceGap: (autoAdvanceGap) => set({ autoAdvanceGap: Math.max(0, Math.min(30, autoAdvanceGap)), presetDirty: true }),
   setSelectedCueMidiPort: (selectedCueMidiPort) => set({ selectedCueMidiPort, presetDirty: true }),
@@ -1547,6 +1573,10 @@ export const useStore = create<AppState>()(persist((set) => ({
   setLicenseValidatedAt: (licenseValidatedAt) => set({ licenseValidatedAt }),
   setLicenseExpiresAt: (licenseExpiresAt) => set({ licenseExpiresAt }),
   isPro: () => {
+    // Dev mode: always unlock Pro features for local testing (npm run dev).
+    // Production builds (npm run package) have import.meta.env.DEV === false.
+    if (import.meta.env.DEV) return true
+
     const s = useStore.getState()
     // Licensed user — 30-day offline grace period (live events often have no internet)
     if (s.licenseStatus === 'valid') {
@@ -1594,6 +1624,8 @@ export const useStore = create<AppState>()(persist((set) => ({
       musicOutputDeviceId: 'default',
       ltcOutputDeviceId: 'default',
       ltcGain: 1.0,
+      musicVolume: 1.0,
+      musicPan: 0.0,
       selectedMidiPort: null,
       forceFps: null,
       ltcChannel: 'auto',
@@ -1798,7 +1830,7 @@ export const useStore = create<AppState>()(persist((set) => ({
       lang: 'en', rightTab: 'devices', offsetFrames: 0, loop: false,
       loopA: null, loopB: null, previousSetlist: null,
       musicOutputDeviceId: 'default', ltcOutputDeviceId: 'default',
-      ltcGain: 1.0, selectedMidiPort: null, forceFps: null,
+      ltcGain: 1.0, musicVolume: 1.0, musicPan: 0.0, selectedMidiPort: null, forceFps: null,
       ltcChannel: 'auto', setlist: [], activeSetlistIndex: null,
       presetName: null, presetPath: null, presetDirty: false,
       generatorStartTC: '01:00:00:00', generatorFps: 25,
@@ -1946,6 +1978,8 @@ export const useStore = create<AppState>()(persist((set) => ({
     musicOutputDeviceId: state.musicOutputDeviceId,
     ltcOutputDeviceId: state.ltcOutputDeviceId,
     ltcGain: state.ltcGain,
+    musicVolume: state.musicVolume,
+    musicPan: state.musicPan,
     selectedMidiPort: state.selectedMidiPort,
     forceFps: state.forceFps,
     ltcChannel: state.ltcChannel,
@@ -1993,6 +2027,8 @@ export const useStore = create<AppState>()(persist((set) => ({
     showTimers: state.showTimers,
     showLocked: state.showLocked,
     ultraDark: state.ultraDark,
+    themeColor: state.themeColor,
+    uiSize: state.uiSize,
     presetPath: state.presetPath,
     presetName: state.presetName,
     // Crash recovery: persist last played file so we can restore on relaunch

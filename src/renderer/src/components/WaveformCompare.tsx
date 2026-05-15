@@ -171,6 +171,12 @@ export function WaveformCompare({
           step={0.010}
           value={localOffset}
           onChange={handleSliderChange}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setLocalOffset(offsetSec)
+            onOffsetChange?.(offsetSec)
+          }}
+          title="Right-click: reset to auto-aligned value"
           style={{ flex: 1 }}
         />
         <span style={{ fontFamily: 'Consolas, monospace', color: '#00d4ff', minWidth: 72, textAlign: 'right' }}>

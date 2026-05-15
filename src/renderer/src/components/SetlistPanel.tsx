@@ -6,7 +6,6 @@ import { t } from '../i18n'
 import { toast } from './Toast'
 import { buildCueSheetHtml, CueSheetLayout } from '../utils/exportCueSheet'
 import { Tooltip } from './Tooltip'
-import { ProGate } from './ProGate'
 import { WaveformCompare } from './WaveformCompare'
 
 // F6: Long-press threshold before a setlist row becomes draggable.
@@ -16,6 +15,7 @@ const LONG_PRESS_MS = 300
 interface Props {
   onLoadFile: (path: string, offsetFrames?: number) => void
   onImportFiles?: () => void
+  onShowLicense?: () => void
 }
 
 function formatDurShort(secs: number): string {
@@ -24,7 +24,7 @@ function formatDurShort(secs: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.Element {
+export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props): React.JSX.Element {
   const {
     setlist, activeSetlistIndex, lang,
     addToSetlist, removeFromSetlist, reorderSetlist, clearSetlist,
@@ -36,6 +36,8 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
   } = useStore()
 
   const [showSortMenu, setShowSortMenu] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const lastSingleClickIdxRef = useRef<number | null>(null)
   const [missingPaths, setMissingPaths] = useState<Set<string>>(new Set())
   const [durations, setDurations] = useState<Record<string, number | null>>({})
   const [editingOffsetIdx, setEditingOffsetIdx] = useState<number | null>(null)
@@ -104,6 +106,12 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
       stageNoteInputRef.current?.focus()
     }
   }, [editingStageNoteIdx])
+
+  // Clear selection when variant switches
+  useEffect(() => {
+    setSelectedIds(new Set())
+    lastSingleClickIdxRef.current = null
+  }, [activeSetlistVariantId])
 
   // Clear hold timer/interval on unmount (also F6 long-press timer)
   useEffect(() => {
@@ -262,13 +270,39 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
   // Debounce single-click by 250ms so double-click doesn't briefly flash standby.
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const handleItemClick = useCallback((index: number): void => {
+  const handleItemClick = useCallback((index: number, e?: React.MouseEvent): void => {
     if (editingOffsetIdx === index) return
     const item = setlist[index]
     if (missingPaths.has(item.path)) {
       handleRelink(index)
       return
     }
+
+    const isCtrl = e ? (e.ctrlKey || e.metaKey) : false
+    const isShift = e ? e.shiftKey : false
+
+    if (isCtrl) {
+      // Toggle this item in selection without changing active song
+      setSelectedIds(prev => {
+        const next = new Set(prev)
+        if (next.has(item.id)) { next.delete(item.id) } else { next.add(item.id) }
+        return next
+      })
+      lastSingleClickIdxRef.current = index
+      return
+    }
+
+    if (isShift && lastSingleClickIdxRef.current !== null) {
+      // Range select from last single-click to here
+      const lo = Math.min(lastSingleClickIdxRef.current, index)
+      const hi = Math.max(lastSingleClickIdxRef.current, index)
+      setSelectedIds(new Set(setlist.slice(lo, hi + 1).map(it => it.id)))
+      return
+    }
+
+    // Normal click: update standby (existing behavior) + single-select
+    lastSingleClickIdxRef.current = index
+    setSelectedIds(new Set([item.id]))
     if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
     clickTimerRef.current = setTimeout(() => {
       clickTimerRef.current = null
@@ -461,6 +495,11 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
   const handleExportPdf = useCallback(async (layout: CueSheetLayout): Promise<void> => {
     if (setlist.length === 0) return
     const s = useStore.getState()
+    // Pro gate: PDF export is Pro-only
+    if (!s.isPro()) {
+      onShowLicense?.()
+      return
+    }
     const fps = s.forceFps ?? s.detectedFps ?? 25
     // Get durations for title page
     const paths = setlist.map(item => item.path)
@@ -776,6 +815,55 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     }
   }, [lang, extractPeaks])
 
+  // Keyboard handler for multi-select: Ctrl+A, Escape, Delete
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      // Guard: ignore if an input/textarea/select is focused
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      const isCtrlOrMeta = e.ctrlKey || e.metaKey
+
+      if (isCtrlOrMeta && e.key === 'a') {
+        // Ctrl+A: select all items in current variant
+        if (setlist.length === 0) return
+        e.preventDefault()
+        setSelectedIds(new Set(setlist.map(it => it.id)))
+        return
+      }
+
+      if (e.key === 'Escape') {
+        // Clear selection on Escape (only if we have a selection — let other handlers run otherwise)
+        if (selectedIds.size > 0) {
+          e.stopPropagation()
+          setSelectedIds(new Set())
+        }
+        return
+      }
+
+      if (e.key === 'Delete' && selectedIds.size > 0) {
+        e.preventDefault()
+        const count = selectedIds.size
+        const confirmMsg = t(useStore.getState().lang, 'deleteSelectedConfirm').replace('{n}', String(count))
+        const doDelete = count === 1 || confirm(confirmMsg)
+        if (!doDelete) return
+        // Remove all selected items. Work from highest index downward to avoid index shift.
+        const indicesToRemove = setlist
+          .map((item, i) => ({ id: item.id, i }))
+          .filter(({ id }) => selectedIds.has(id))
+          .map(({ i }) => i)
+          .sort((a, b) => b - a) // descending
+        const { removeFromSetlist } = useStore.getState()
+        for (const idx of indicesToRemove) {
+          removeFromSetlist(idx)
+        }
+        setSelectedIds(new Set())
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [setlist, selectedIds])
+
   return (
     <div
       className="setlist-panel"
@@ -784,7 +872,19 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
     >
       {/* Always-visible header: title + actions */}
       <div className="setlist-panel-header">
-        <span className="setlist-panel-title">{t(lang, 'setlist')}</span>
+        <span className="setlist-panel-title">
+          {selectedIds.size > 0
+            ? t(lang, 'nSelected').replace('{n}', String(selectedIds.size))
+            : t(lang, 'setlist')}
+        </span>
+        {selectedIds.size > 0 && (
+          <button
+            className="btn-sm"
+            style={{ marginLeft: 4, padding: '1px 6px', fontSize: '11px' }}
+            onClick={() => setSelectedIds(new Set())}
+            title={t(lang, 'clearSelection')}
+          >{t(lang, 'clearSelection')}</button>
+        )}
         <div className="setlist-header-actions">
           <button className="setlist-hdr-btn setlist-hdr-btn--add" onClick={onImportFiles} title={t(lang, 'addFiles')}>+</button>
           <div className="setlist-sort-wrapper" ref={sortRef}>
@@ -808,22 +908,23 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
             title={t(lang, 'exportCsv')}
             disabled={setlist.length === 0}
           >↑</button>
-          <ProGate>
-            <div className="setlist-sort-wrapper" ref={pdfMenuRef}>
-              <button
-                className="setlist-hdr-btn"
-                onClick={() => setShowPdfLayoutMenu(!showPdfLayoutMenu)}
-                title={t(lang, 'exportPdf')}
-                disabled={setlist.length === 0}
-              >PDF</button>
-              {showPdfLayoutMenu && (
-                <div className="setlist-sort-menu--down">
-                  <button onClick={() => handleExportPdf('detailed')}>{t(lang, 'exportPdfDetailed')}</button>
-                  <button onClick={() => handleExportPdf('compact')}>{t(lang, 'exportPdfCompact')}</button>
-                </div>
-              )}
-            </div>
-          </ProGate>
+          <div className="setlist-sort-wrapper" ref={pdfMenuRef}>
+            <button
+              className="setlist-hdr-btn"
+              onClick={() => {
+                if (!useStore.getState().isPro()) { onShowLicense?.(); return }
+                setShowPdfLayoutMenu(!showPdfLayoutMenu)
+              }}
+              title={t(lang, 'exportPdf') + ' (Pro)'}
+              disabled={setlist.length === 0}
+            >PDF</button>
+            {showPdfLayoutMenu && (
+              <div className="setlist-sort-menu--down">
+                <button onClick={() => handleExportPdf('detailed')}>{t(lang, 'exportPdfDetailed')}</button>
+                <button onClick={() => handleExportPdf('compact')}>{t(lang, 'exportPdfCompact')}</button>
+              </div>
+            )}
+          </div>
           <button
             className="setlist-hdr-btn"
             onClick={handleImportCsv}
@@ -884,9 +985,13 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
         <button
           className="variant-tab variant-tab--add"
           title={t(lang, 'variantAdd')}
-          onClick={(e) => {
+          onClick={async (e) => {
             e.stopPropagation()
-            const name = window.prompt(t(lang, 'variantNamePlaceholder'), t(lang, 'defaultVariantName'))
+            const name = await window.api.showInputDialog(
+              t(lang, 'variantAdd'),
+              t(lang, 'variantNamePlaceholder'),
+              t(lang, 'defaultVariantName')
+            )
             if (name !== null) addSetlistVariant(name.trim() || t(lang, 'defaultVariantName'))
           }}
         >+</button>
@@ -907,17 +1012,21 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
               setRenamingVariantStr(v.name)
               setVariantContextMenu(null)
             }}>{t(lang, 'variantRename')}</button>
-            <button onClick={() => {
-              const name = window.prompt(t(lang, 'variantNamePlaceholder'), `${v.name} copy`)
+            <button onClick={async () => {
+              const name = await window.api.showInputDialog(
+                t(lang, 'variantDuplicate'),
+                t(lang, 'variantNamePlaceholder'),
+                `${v.name} copy`
+              )
               if (name !== null) duplicateSetlistVariant(v.id, name.trim() || `${v.name} copy`)
               setVariantContextMenu(null)
             }}>{t(lang, 'variantDuplicate')}</button>
             <button
               disabled={setlistVariants.length <= 1}
               title={setlistVariants.length <= 1 ? t(lang, 'variantCannotDeleteLast') : ''}
-              onClick={() => {
+              onClick={async () => {
                 if (setlistVariants.length <= 1) return
-                if (window.confirm(`Delete variant "${v.name}"?`)) {
+                if (await window.api.showConfirmDialog(`Delete variant "${v.name}"?`)) {
                   deleteSetlistVariant(v.id)
                 }
                 setVariantContextMenu(null)
@@ -954,7 +1063,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
               return (
                 <div key={item.id} className="setlist-item-wrap">
                   <div
-                    className={`setlist-item${i === activeSetlistIndex ? ' active' : ''}${i === standbySetlistIndex ? ' standby' : ''}${isMissing ? ' missing' : ''}${isEditingOffset ? ' offset-open' : ''}${armedIdx === i ? ' drag-armed' : ''}`}
+                    className={`setlist-item${i === activeSetlistIndex ? ' active' : ''}${i === standbySetlistIndex ? ' standby' : ''}${isMissing ? ' missing' : ''}${isEditingOffset ? ' offset-open' : ''}${armedIdx === i ? ' drag-armed' : ''}${selectedIds.has(item.id) ? ' setlist-item--selected' : ''}`}
                     draggable={armedIdx === i && !isEditingOffset}
                     onDragStart={(e) => handleDragStart(e, i)}
                     onDragOver={(e) => handleDragOver(e, i)}
@@ -962,13 +1071,13 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                     onMouseDown={(e) => handleItemMouseDown(e, i, isEditingOffset)}
                     onMouseUp={(e) => handleItemMouseUp(e, i)}
                     onMouseLeave={handleItemMouseLeave}
-                    onClick={() => {
+                    onClick={(e) => {
                       // F6: swallow the click that trails a long-press gesture (Q2).
                       if (suppressNextClickRef.current) {
                         suppressNextClickRef.current = false
                         return
                       }
-                      handleItemClick(i)
+                      handleItemClick(i, e)
                     }}
                     onDoubleClick={() => handleItemDoubleClick(i)}
                     title={isMissing ? t(lang, 'fileMissing') : item.name}
@@ -1039,20 +1148,19 @@ export function SetlistPanel({ onLoadFile, onImportFiles }: Props): React.JSX.El
                         style={{ color: item.stageNote ? '#e8c97a' : undefined }}
                       >S</button>
                     </Tooltip>
-                    <ProGate>
-                      <Tooltip text={t(lang, 'replaceAudio')}>
-                        <button
-                          className="setlist-offset-btn"
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleReplaceAudio(i)
-                          }}
-                          disabled={replacingAudioIdx === i && replaceAligning}
-                          title={t(lang, 'replaceAudio')}
-                        >⇄</button>
-                      </Tooltip>
-                    </ProGate>
+                    <Tooltip text={t(lang, 'replaceAudio') + ' (Pro)'}>
+                      <button
+                        className="setlist-offset-btn"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (!useStore.getState().isPro()) { onShowLicense?.(); return }
+                          handleReplaceAudio(i)
+                        }}
+                        disabled={replacingAudioIdx === i && replaceAligning}
+                        title={t(lang, 'replaceAudio') + ' (Pro)'}
+                      >⇄</button>
+                    </Tooltip>
                     <Tooltip text={t(lang, 'remove')}>
                       <button
                         className="setlist-remove"

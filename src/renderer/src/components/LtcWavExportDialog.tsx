@@ -155,6 +155,8 @@ export function LtcWavExportDialog({ onClose }: Props): React.JSX.Element {
                 step={0.05}
                 value={amplitude}
                 onChange={(e) => setAmplitude(Number(e.target.value))}
+                onContextMenu={(e) => { e.preventDefault(); setAmplitude(0.5) }}
+                title="Right-click: reset to 50%"
                 disabled={exporting}
               />
             </div>
