@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react'
-import { useStore, AudioDevice } from '../store'
+import { useStore, AudioDevice, ThemeColor, UiSize } from '../store'
 import { t } from '../i18n'
 import { tcToFrames } from '../audio/timecodeConvert'
 
@@ -8,6 +8,8 @@ interface Props {
   onMusicDeviceChange: (deviceId: string) => void
   onLtcDeviceChange: (deviceId: string) => void
   onLtcGainChange: (gain: number) => void
+  onMusicVolumeChange: (v: number) => void
+  onMusicPanChange: (p: number) => void
   onMtcModeChange: (mode: 'quarter-frame' | 'full-frame') => void
   onLtcChannelChange: (ch: import('../store').LtcChannel) => void
 }
@@ -24,12 +26,20 @@ function gainToDb(gain: number): string {
   return (db >= 0 ? '+' : '') + db.toFixed(1) + ' dB'
 }
 
-export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDeviceChange, onLtcGainChange, onMtcModeChange, onLtcChannelChange }: Props): React.JSX.Element {
+function panToDisplay(pan: number): string {
+  if (Math.abs(pan) < 0.01) return 'C'
+  const pct = Math.round(Math.abs(pan) * 100)
+  return pan < 0 ? `L ${pct}` : `R ${pct}`
+}
+
+export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDeviceChange, onLtcGainChange, onMusicVolumeChange, onMusicPanChange, onMtcModeChange, onLtcChannelChange }: Props): React.JSX.Element {
   const {
     audioOutputDevices, setAudioOutputDevices,
     musicOutputDeviceId, setMusicOutputDeviceId,
     ltcOutputDeviceId, setLtcOutputDeviceId,
     ltcGain, setLtcGain,
+    musicVolume, setMusicVolume,
+    musicPan, setMusicPan,
     midiOutputs,
     selectedMidiPort, setSelectedMidiPort,
     midiConnected,
@@ -59,6 +69,9 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
     autoBackupEnabled, setAutoBackupEnabled,
     autoBackupIntervalMin, setAutoBackupIntervalMin,
     autoBackupKeepCount, setAutoBackupKeepCount,
+    // Theme & UI size
+    themeColor, setThemeColor,
+    uiSize, setUiSize,
     lang
   } = useStore()
 
@@ -128,6 +141,16 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
   const handleLtcGain = (value: number): void => {
     setLtcGain(value)
     onLtcGainChange(value)
+  }
+
+  const handleMusicVolume = (value: number): void => {
+    setMusicVolume(value)
+    onMusicVolumeChange(value)
+  }
+
+  const handleMusicPan = (value: number): void => {
+    setMusicPan(value)
+    onMusicPanChange(value)
   }
 
   const handleMtcMode = (mode: 'quarter-frame' | 'full-frame'): void => {
@@ -231,6 +254,52 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
         </select>
       </div>
 
+      {/* Music Volume */}
+      <div className="device-row">
+        <span className="device-label">{t(lang, 'musicVolume')}</span>
+        <div className="ltc-gain-row">
+          <input
+            type="range"
+            className="ltc-gain-slider"
+            min={0}
+            max={5.7}
+            step={0.01}
+            value={musicVolume}
+            onChange={(e) => handleMusicVolume(parseFloat(e.target.value))}
+            onDoubleClick={() => handleMusicVolume(1.0)}
+            onContextMenu={(e) => { e.preventDefault(); handleMusicVolume(1.0) }}
+            title="Right-click: reset to 0 dB"
+          />
+          <span className={`ltc-gain-value${musicVolume > 2.0 ? ' ltc-gain-warn' : ''}`}>
+            {gainToDb(musicVolume)}
+          </span>
+        </div>
+      </div>
+
+      {/* Music Pan */}
+      <div className="device-row">
+        <span className="device-label">{t(lang, 'musicPan')}</span>
+        <div className="ltc-gain-row">
+          <span className="artnet-ip-label" style={{ minWidth: '14px', textAlign: 'center', fontSize: '10px' }}>{t(lang, 'panLeft')}</span>
+          <input
+            type="range"
+            className="ltc-gain-slider"
+            min={-1}
+            max={1}
+            step={0.01}
+            value={musicPan}
+            onChange={(e) => handleMusicPan(parseFloat(e.target.value))}
+            onDoubleClick={() => handleMusicPan(0)}
+            onContextMenu={(e) => { e.preventDefault(); handleMusicPan(0) }}
+            title="Right-click: center"
+          />
+          <span className="artnet-ip-label" style={{ minWidth: '14px', textAlign: 'center', fontSize: '10px' }}>{t(lang, 'panRight')}</span>
+          <span className="ltc-gain-value" style={{ minWidth: '34px' }}>
+            {panToDisplay(musicPan)}
+          </span>
+        </div>
+      </div>
+
       {/* LTC Audio Output */}
       <div className="device-row">
         <span className="device-label">{t(lang, 'ltcOutput')}</span>
@@ -258,13 +327,13 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
             step={0.01}
             value={ltcGain}
             onChange={(e) => handleLtcGain(parseFloat(e.target.value))}
+            onDoubleClick={() => handleLtcGain(1.0)}
+            onContextMenu={(e) => { e.preventDefault(); handleLtcGain(1.0) }}
+            title="Right-click: reset to 0 dB"
           />
           <span className={`ltc-gain-value${ltcGain < 0.9 || ltcGain > 1.2 ? ' ltc-gain-warn' : ''}`}>
             {gainToDb(ltcGain)}
           </span>
-          <button className="btn-sm" onClick={() => handleLtcGain(1.0)} title={t(lang, 'resetGain')}>
-            0dB
-          </button>
         </div>
         <span className="ltc-gain-hint">{t(lang, 'ltcGainHint')}</span>
       </div>
@@ -612,6 +681,71 @@ export function DevicePanel({ onMidiPortChange, onMusicDeviceChange, onLtcDevice
           </div>
         </>
       )}
+
+      {/* Theme Color */}
+      <div className="device-row" style={{ alignItems: 'center' }}>
+        <span className="device-label">{t(lang, 'themeColor')}</span>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {([
+            { color: 'cyan',   hex: '#00d4ff' },
+            { color: 'red',    hex: '#ef4444' },
+            { color: 'green',  hex: '#10b981' },
+            { color: 'orange', hex: '#f59e0b' },
+            { color: 'purple', hex: '#a855f7' },
+            { color: 'pink',   hex: '#ec4899' },
+          ] as Array<{ color: ThemeColor; hex: string }>).map(({ color, hex }) => (
+            <button
+              key={color}
+              title={color}
+              onClick={() => setThemeColor(color)}
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                border: themeColor === color ? `2px solid #fff` : '2px solid transparent',
+                background: hex,
+                cursor: 'pointer',
+                padding: 0,
+                outline: themeColor === color ? `2px solid ${hex}` : 'none',
+                outlineOffset: 2,
+                boxSizing: 'border-box',
+              }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* UI Size */}
+      <div className="device-row" style={{ alignItems: 'center' }}>
+        <span className="device-label">{t(lang, 'uiSize')}</span>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {([
+            { size: 'sm', label: 'Aa', labelKey: 'sizeSmall',  fontSize: 10 },
+            { size: 'md', label: 'Aa', labelKey: 'sizeMedium', fontSize: 13 },
+            { size: 'lg', label: 'Aa', labelKey: 'sizeLarge',  fontSize: 16 },
+          ] as Array<{ size: UiSize; label: string; labelKey: 'sizeSmall' | 'sizeMedium' | 'sizeLarge'; fontSize: number }>).map(({ size, label, labelKey, fontSize }) => (
+            <button
+              key={size}
+              title={t(lang, labelKey)}
+              onClick={() => setUiSize(size)}
+              style={{
+                background: uiSize === size ? 'var(--accent-bg)' : 'transparent',
+                border: `1px solid ${uiSize === size ? 'var(--accent)' : '#333'}`,
+                color: uiSize === size ? 'var(--accent)' : '#888',
+                borderRadius: 4,
+                cursor: 'pointer',
+                padding: '2px 8px',
+                fontSize,
+                fontFamily: 'inherit',
+                lineHeight: 1.4,
+                fontWeight: uiSize === size ? 600 : 400,
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Help text */}
       <div className="help-text">

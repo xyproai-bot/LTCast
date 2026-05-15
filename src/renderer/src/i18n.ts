@@ -437,7 +437,23 @@ export const strings = {
     // Sprint D — F12: Waveform Compare
     compareWaveforms: 'Waveform Compare',
     manualOffsetAdjust: 'Manual Offset Adjust',
-    useArrowsToNudge: 'Arrow keys: ±10ms  ·  Shift+Arrow: ±100ms'
+    useArrowsToNudge: 'Arrow keys: ±10ms  ·  Shift+Arrow: ±100ms',
+    // Theme & UI size
+    themeColor: 'Theme Color',
+    uiSize: 'UI Size',
+    sizeSmall: 'Small',
+    sizeMedium: 'Medium',
+    sizeLarge: 'Large',
+    // Music volume + pan
+    musicVolume: 'Music Volume',
+    musicPan: 'Pan',
+    panLeft: 'L',
+    panRight: 'R',
+    panCenter: 'Center',
+    // Setlist multi-select
+    nSelected: '{n} selected',
+    clearSelection: 'Clear',
+    deleteSelectedConfirm: 'Remove {n} selected items from setlist?'
   },
   zh: {
     appTitle: 'LTCast',
@@ -874,7 +890,23 @@ export const strings = {
     // Sprint D — F12: Waveform Compare
     compareWaveforms: '波形比對',
     manualOffsetAdjust: '手動偏移調整',
-    useArrowsToNudge: '方向鍵：±10ms  ·  Shift+方向鍵：±100ms'
+    useArrowsToNudge: '方向鍵：±10ms  ·  Shift+方向鍵：±100ms',
+    // Theme & UI size
+    themeColor: '主題顏色',
+    uiSize: '介面大小',
+    sizeSmall: '小',
+    sizeMedium: '中',
+    sizeLarge: '大',
+    // Music volume + pan
+    musicVolume: '音樂音量',
+    musicPan: '聲像',
+    panLeft: 'L',
+    panRight: 'R',
+    panCenter: '中央',
+    // Setlist multi-select
+    nSelected: '已選 {n} 項',
+    clearSelection: '清除',
+    deleteSelectedConfirm: '從曲目列表移除 {n} 個選取項目？'
   },
   ja: {
     appTitle: 'LTCast',
@@ -1311,7 +1343,23 @@ export const strings = {
     // Sprint D — F12: Waveform Compare
     compareWaveforms: '波形比較',
     manualOffsetAdjust: '手動オフセット調整',
-    useArrowsToNudge: '矢印キー：±10ms  ·  Shift+矢印：±100ms'
+    useArrowsToNudge: '矢印キー：±10ms  ·  Shift+矢印：±100ms',
+    // Theme & UI size
+    themeColor: 'テーマカラー',
+    uiSize: 'UIサイズ',
+    sizeSmall: '小',
+    sizeMedium: '中',
+    sizeLarge: '大',
+    // Music volume + pan
+    musicVolume: '音楽音量',
+    musicPan: 'パン',
+    panLeft: 'L',
+    panRight: 'R',
+    panCenter: 'センター',
+    // Setlist multi-select
+    nSelected: '{n} 件選択中',
+    clearSelection: 'クリア',
+    deleteSelectedConfirm: '選択した {n} 件をセットリストから削除しますか？'
   }
 }
 

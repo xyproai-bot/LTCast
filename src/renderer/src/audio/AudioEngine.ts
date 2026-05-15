@@ -59,6 +59,10 @@ export class AudioEngine {
   // ── Music playback context ───────────────────────────────
   private ctx: AudioContext | null = null
   private musicSource: AudioBufferSourceNode | null = null
+  private musicGainNode: GainNode | null = null
+  private musicPannerNode: StereoPannerNode | null = null
+  private musicVolumeValue = 1.0
+  private musicPanValue = 0.0
 
   // ── LTC decode + output context ──────────────────────────
   private ltcCtx: AudioContext | null = null
@@ -413,6 +417,24 @@ export class AudioEngine {
 
   getLtcGain(): number { return this.ltcGainValue }
 
+  setMusicVolume(linearGain: number): void {
+    this.musicVolumeValue = Math.max(0, Math.min(5.7, linearGain))
+    if (this.musicGainNode && this.ctx) {
+      this.musicGainNode.gain.setTargetAtTime(this.musicVolumeValue, this.ctx.currentTime, 0.01)
+    }
+  }
+
+  getMusicVolume(): number { return this.musicVolumeValue }
+
+  setMusicPan(pan: number): void {
+    this.musicPanValue = Math.max(-1.0, Math.min(1.0, pan))
+    if (this.musicPannerNode && this.ctx) {
+      this.musicPannerNode.pan.setTargetAtTime(this.musicPanValue, this.ctx.currentTime, 0.01)
+    }
+  }
+
+  getMusicPan(): number { return this.musicPanValue }
+
   // ════════════════════════════════════════════════════════════
   // Playback control
   // ════════════════════════════════════════════════════════════
@@ -439,15 +461,24 @@ export class AudioEngine {
     this.musicSource.buffer = this.buffer
     this.musicSource.loop = this.loop
 
+    // Create music gain + panner nodes for volume/pan control
+    this.musicGainNode = this.ctx.createGain()
+    this.musicGainNode.gain.value = this.musicVolumeValue
+    this.musicPannerNode = this.ctx.createStereoPanner()
+    this.musicPannerNode.pan.value = this.musicPanValue
+    // Chain: source → gain → panner → destination
+    this.musicPannerNode.connect(this.ctx.destination)
+    this.musicGainNode.connect(this.musicPannerNode)
+
     if (this.generatorMode) {
-      this.musicSource.connect(this.ctx.destination)
+      this.musicSource.connect(this.musicGainNode)
     } else {
       const splitter = this.ctx.createChannelSplitter(this.buffer.numberOfChannels)
       this.musicSource.connect(splitter)
       const merger = this.ctx.createChannelMerger(2)
       splitter.connect(merger, this.musicChannelIndex, 0)
       splitter.connect(merger, this.musicChannelIndex, 1)
-      merger.connect(this.ctx.destination)
+      merger.connect(this.musicGainNode)
     }
 
     // ── LTC context — setup before scheduling so both start at the same time ──
@@ -564,6 +595,8 @@ export class AudioEngine {
     if (this.musicSource) { try { this.musicSource.stop() } catch { /**/ } this.musicSource = null }
     if (this.ctx) { try { this.ctx.close() } catch { /**/ } this.ctx = null }
     if (this.ltcCtx) { try { this.ltcCtx.close() } catch { /**/ } this.ltcCtx = null }
+    this.musicGainNode = null
+    this.musicPannerNode = null
     this.ltcWorkletReady = false
     this.ltcEncoderReady = false
   }
@@ -877,6 +910,9 @@ export class AudioEngine {
     // Stop music (clear onended first to prevent double-firing of onEnded callback)
     if (this.musicSource) { this.musicSource.onended = null; try { this.musicSource.stop() } catch { /**/ } this.musicSource = null }
     if (this.ctx) { try { this.ctx.close() } catch { /**/ } this.ctx = null }
+    // Music gain/panner belong to the closed ctx — clear references
+    this.musicGainNode = null
+    this.musicPannerNode = null
 
     // Stop LTC source only — keep worklet + gain alive for instant resume
     this._stopLtcSource()

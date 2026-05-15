@@ -84,6 +84,8 @@ export function Transport({ onPlay, onPause, onStop, onSeek, onPanic }: Props): 
   // Scrub bar: only seek on mouse release
   const isScrubbing = useRef(false)
   const [scrubValue, setScrubValue] = useState(0)
+  // Offset is collapsed by default — click summary to expand full controls
+  const [offsetExpanded, setOffsetExpanded] = useState(false)
 
   useEffect(() => {
     if (!isScrubbing.current) setScrubValue(currentTime)
@@ -222,57 +224,52 @@ export function Transport({ onPlay, onPause, onStop, onSeek, onPanic }: Props): 
 
       {/* Main transport row */}
       <div className="transport-main">
-        {/* Left: offset control */}
-        <div ref={offsetWrapRef} className="transport-offset">
-          <span className="offset-label">{t(lang, 'offset')}</span>
-          <button className="btn-offset" onClick={() => setOffsetFrames(Math.max(-999, offsetFrames - 1))}>−</button>
-          <input
-            type="range"
-            className="offset-slider"
-            min={-999}
-            max={999}
-            step={1}
-            value={offsetFrames}
-            onChange={handleOffsetSlider}
-          />
-          <input
-            type="number"
-            className="offset-input"
-            min={-999}
-            max={999}
-            value={offsetFrames}
-            onChange={handleOffsetInput}
-          />
-          <button className="btn-offset" onClick={() => setOffsetFrames(Math.min(999, offsetFrames + 1))}>+</button>
-          <span className="offset-unit">{t(lang, 'frames')}</span>
+        {/* Left: offset control (collapsible — Sprint UI polish) */}
+        <div ref={offsetWrapRef} className={`transport-offset${offsetExpanded ? ' transport-offset--expanded' : ''}`}>
+          <button
+            className={`offset-summary${offsetFrames !== 0 ? ' offset-summary--set' : ''}`}
+            onClick={() => setOffsetExpanded(v => !v)}
+            title={t(lang, 'offset')}
+          >
+            <span className="offset-label">{t(lang, 'offset')}</span>
+            <span className="offset-value">
+              {offsetFrames > 0 ? `+${offsetFrames}f` : offsetFrames < 0 ? `${offsetFrames}f` : '0'}
+            </span>
+            <span className="offset-chevron">{offsetExpanded ? '▾' : '▸'}</span>
+          </button>
+          {offsetExpanded && (
+            <>
+              <button className="btn-offset" onClick={() => setOffsetFrames(Math.max(-999, offsetFrames - 1))}>−</button>
+              <input
+                type="range"
+                className="offset-slider"
+                min={-999}
+                max={999}
+                step={1}
+                value={offsetFrames}
+                onChange={handleOffsetSlider}
+                onContextMenu={(e) => { e.preventDefault(); setOffsetFrames(0) }}
+                title="Right-click: reset to 0"
+              />
+              <input
+                type="number"
+                className="offset-input"
+                min={-999}
+                max={999}
+                value={offsetFrames}
+                onChange={handleOffsetInput}
+              />
+              <button className="btn-offset" onClick={() => setOffsetFrames(Math.min(999, offsetFrames + 1))}>+</button>
+              <span className="offset-unit">{t(lang, 'frames')}</span>
 
-          {/* F3 — Beat-aligned nudge buttons (AC-3.1) */}
-          <div className="beat-nudge-group" title={beatTooltip}>
-            <button
-              className="btn-beat-nudge"
-              disabled={beatNudgeDisabled || !duration}
-              onClick={() => nudgeBeat(-1)}
-              title={beatTooltip}
-            >−1♩</button>
-            <button
-              className="btn-beat-nudge"
-              disabled={beatNudgeDisabled || !duration}
-              onClick={() => nudgeBeat(-0.5)}
-              title={beatTooltip}
-            >−½</button>
-            <button
-              className="btn-beat-nudge"
-              disabled={beatNudgeDisabled || !duration}
-              onClick={() => nudgeBeat(0.5)}
-              title={beatTooltip}
-            >+½</button>
-            <button
-              className="btn-beat-nudge"
-              disabled={beatNudgeDisabled || !duration}
-              onClick={() => nudgeBeat(1)}
-              title={beatTooltip}
-            >+1♩</button>
-          </div>
+              <div className="beat-nudge-group" title={beatTooltip}>
+                <button className="btn-beat-nudge" disabled={beatNudgeDisabled || !duration} onClick={() => nudgeBeat(-1)} title={beatTooltip}>−1♩</button>
+                <button className="btn-beat-nudge" disabled={beatNudgeDisabled || !duration} onClick={() => nudgeBeat(-0.5)} title={beatTooltip}>−½</button>
+                <button className="btn-beat-nudge" disabled={beatNudgeDisabled || !duration} onClick={() => nudgeBeat(0.5)} title={beatTooltip}>+½</button>
+                <button className="btn-beat-nudge" disabled={beatNudgeDisabled || !duration} onClick={() => nudgeBeat(1)} title={beatTooltip}>+1♩</button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Center: playback buttons */}
