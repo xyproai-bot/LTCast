@@ -3,6 +3,9 @@ import { persist } from 'zustand/middleware'
 import { TimecodeLookupEntry } from './audio/LtcDecoder'
 import { t } from './i18n'
 import { toast } from './components/Toast'
+import { migrateRightTab } from './utils/rightTabMigration'
+
+export { migrateRightTab }
 
 export interface TimecodeFrame {
   hours: number
@@ -85,13 +88,26 @@ export type MarkerType = 'intro' | 'verse' | 'chorus' | 'bridge' | 'outro' | 'br
 
 export const MARKER_TYPE_COLORS: Record<MarkerType, string> = {
   'intro':      '#42a5f5',  // blue
-  'verse':      '#66bb6a',  // green
+  'verse':      '#7e57c2',  // deep purple — avoids clash with video green waveform
   'chorus':     '#ef5350',  // red
-  'bridge':     '#ab47bc',  // purple
+  'bridge':     '#5e35b1',  // indigo — distinct from new verse purple
   'outro':      '#78909c',  // grey-blue
-  'break':      '#ffa726',  // orange
+  'break':      '#ff6f61',  // coral — avoids clash with LTC orange waveform
   'song-title': '#ffee58',  // yellow
-  'custom':     '#00d4ff',  // cyan (legacy default)
+  'custom':     '#e91e63',  // magenta — distinct from cyan music waveform
+}
+
+// Pick black or white text color based on background hex luminance (YIQ).
+// Used for marker badges + structure filter chips so labels stay readable
+// on light backgrounds (yellow / orange) vs dark ones.
+export function getContrastLetterColor(hex: string): string {
+  const c = hex.replace('#', '')
+  if (c.length < 6) return '#fff'
+  const r = parseInt(c.slice(0, 2), 16)
+  const g = parseInt(c.slice(2, 4), 16)
+  const b = parseInt(c.slice(4, 6), 16)
+  const luma = (r * 299 + g * 587 + b * 114) / 1000
+  return luma > 160 ? '#000' : '#fff'
 }
 
 export const MARKER_TYPES: MarkerType[] = ['song-title', 'intro', 'verse', 'chorus', 'bridge', 'outro', 'break', 'custom']
@@ -132,7 +148,7 @@ export function nextShowTimerId(): string {
 
 export interface PresetData {
   lang: 'en' | 'zh' | 'ja'
-  rightTab: 'devices' | 'setlist' | 'cues' | 'structure' | 'calc' | 'log' | 'timer'
+  rightTab: 'cues' | 'show' | 'tools'
   offsetFrames: number
   loop: boolean
   loopA?: number | null
@@ -201,7 +217,7 @@ function ensureSetlistIds(data: PresetData): PresetData {
   return data
 }
 
-const CURRENT_PRESET_VERSION = 11
+const CURRENT_PRESET_VERSION = 12
 
 /** Warn once if a preset was created by a newer version of the app. */
 function warnIfNewerVersion(data: PresetData): void {
@@ -294,6 +310,13 @@ function migratePreset(data: PresetData): PresetData {
   if (version < 11) {
     data.musicVolume = data.musicVolume ?? 1.0
     data.musicPan = data.musicPan ?? 0.0
+  }
+  // version 11 → 12: right panel 6 tabs → 3 tabs (Cues/Show/Tools).
+  // Old values like 'devices' / 'structure' / 'log' / 'timer' / 'calc' / 'setlist'
+  // are mapped via migrateRightTab(). All previously-valid values fall into
+  // one of the 3 buckets; unknown values fall back to 'cues'.
+  if (version < 12) {
+    data.rightTab = migrateRightTab(data.rightTab)
   }
   data.version = CURRENT_PRESET_VERSION
   return data
@@ -533,16 +556,6 @@ export interface AppState {
   // F4: behavior of number keys 1-9
   numericKeyAction: 'goto-song' | 'goto-marker'
 
-  // Sprint B — F7: last session (per-install, for resume on launch)
-  lastSession: {
-    filePath: string
-    fileName: string
-    positionSeconds: number
-    setlistIndex: number | null
-    savedAt: number
-  } | null
-  disableResumePrompt: boolean
-
   // Sprint D — F11: auto backup per-install settings
   autoBackupEnabled: boolean       // default true
   autoBackupIntervalMin: number    // default 5, min 1, max 60
@@ -561,7 +574,7 @@ export interface AppState {
   showTimers: ShowTimer[]
 
   // UI
-  rightTab: 'devices' | 'setlist' | 'cues' | 'structure' | 'calc' | 'log' | 'timer'
+  rightTab: 'cues' | 'show' | 'tools'
   lang: 'en' | 'zh' | 'ja'
   showLocked: boolean   // UI lock mode — prevents accidental changes during live shows
   ultraDark: boolean    // Ultra-dark high-contrast mode for dim environments
@@ -669,16 +682,11 @@ export interface AppState {
   duplicateSetlistVariant: (id: string, newName: string) => string
   switchSetlistVariant: (id: string) => void
 
-  // Sprint B — F7: last session
-  saveLastSession: (filePath: string, fileName: string, positionSeconds: number, setlistIndex: number | null) => void
-  clearLastSession: () => void
-  setDisableResumePrompt: (disabled: boolean) => void
-
   // Sprint D — F11: auto backup settings
   setAutoBackupEnabled: (enabled: boolean) => void
   setAutoBackupIntervalMin: (min: number) => void
   setAutoBackupKeepCount: (count: number) => void
-  setRightTab: (tab: 'devices' | 'setlist' | 'cues' | 'structure' | 'calc' | 'log' | 'timer') => void
+  setRightTab: (tab: 'cues' | 'show' | 'tools') => void
   // F4 Show Timer actions
   addShowTimer: (name: string, durationMs: number) => void
   removeShowTimer: (id: string) => void
@@ -836,10 +844,6 @@ export const useStore = create<AppState>()(persist((set) => ({
   showLoopDragLabel: true,       // show label by default (Q2.1)
   numericKeyAction: 'goto-song', // backward-compatible default (Q4.1)
 
-  // Sprint B — F7: last session defaults
-  lastSession: null,
-  disableResumePrompt: false,
-
   // Sprint D — F11: auto backup defaults
   autoBackupEnabled: true,
   autoBackupIntervalMin: 5,
@@ -861,7 +865,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   licenseExpiresAt: null,
   trialDaysLeft: null,
 
-  rightTab: 'devices',
+  rightTab: 'cues',
   lang: 'en',
 
   presetName: null,  // restored from Zustand persist on load
@@ -1349,13 +1353,6 @@ export const useStore = create<AppState>()(persist((set) => ({
     }
   }),
 
-  // Sprint B — F7: last session management
-  saveLastSession: (filePath, fileName, positionSeconds, setlistIndex) => set({
-    lastSession: { filePath, fileName, positionSeconds, setlistIndex, savedAt: Date.now() }
-  }),
-  clearLastSession: () => set({ lastSession: null }),
-  setDisableResumePrompt: (disabled) => set({ disableResumePrompt: disabled }),
-
   // Sprint D — F11: auto backup settings actions
   setAutoBackupEnabled: (enabled) => set({ autoBackupEnabled: enabled }),
   setAutoBackupIntervalMin: (min) => set({ autoBackupIntervalMin: Math.max(1, Math.min(60, min)) }),
@@ -1827,7 +1824,7 @@ export const useStore = create<AppState>()(persist((set) => ({
 
   resetToDefaults: () => {
     set({
-      lang: 'en', rightTab: 'devices', offsetFrames: 0, loop: false,
+      lang: 'en', rightTab: 'cues', offsetFrames: 0, loop: false,
       loopA: null, loopB: null, previousSetlist: null,
       musicOutputDeviceId: 'default', ltcOutputDeviceId: 'default',
       ltcGain: 1.0, musicVolume: 1.0, musicPan: 0.0, selectedMidiPort: null, forceFps: null,
@@ -2014,9 +2011,6 @@ export const useStore = create<AppState>()(persist((set) => ({
     markerTypeFilter: state.markerTypeFilter,
     showLoopDragLabel: state.showLoopDragLabel,
     numericKeyAction: state.numericKeyAction,
-    // Sprint B — F7: last session (per-install)
-    lastSession: state.lastSession,
-    disableResumePrompt: state.disableResumePrompt,
     // Sprint D — F11: auto backup per-install settings
     autoBackupEnabled: state.autoBackupEnabled,
     autoBackupIntervalMin: state.autoBackupIntervalMin,
@@ -2047,6 +2041,10 @@ export const useStore = create<AppState>()(persist((set) => ({
     // Validate critical fields — revert to defaults if corrupted
     if (!Array.isArray(merged.setlist)) merged.setlist = current.setlist
     if (typeof merged.lang !== 'string') merged.lang = current.lang
+    // v12 — rightTab. Per-install state may carry an older value
+    // (e.g. user was on 'devices' tab when they quit) — coerce to the new
+    // 3-tab scheme so the panel renders something valid on first launch.
+    merged.rightTab = migrateRightTab(merged.rightTab)
     if (typeof merged.offsetFrames !== 'number' || !isFinite(merged.offsetFrames)) merged.offsetFrames = current.offsetFrames
     if (typeof merged.generatorFps !== 'number' || merged.generatorFps <= 0) merged.generatorFps = current.generatorFps
     if (!Array.isArray(merged.midiMappings)) merged.midiMappings = current.midiMappings ?? []

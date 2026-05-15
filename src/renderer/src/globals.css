@@ -406,6 +406,139 @@ html, body, #root {
   gap: 10px;
 }
 
+/* Music master strip — horizontal mixer between filename and waveform (Stitch Variant 3) */
+.music-mixer-strip {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  background: #18181b;
+  border-top: 1px solid #27272a;
+  border-bottom: 1px solid #27272a;
+  padding: 0 16px;
+  gap: 24px;
+  flex-shrink: 0;
+  margin-bottom: 14px; /* room for scale labels below the track */
+  overflow: visible;
+}
+.mixer-master-label {
+  font-size: 9px;
+  font-weight: 700;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+.mixer-divider {
+  height: 16px;
+  width: 1px;
+  background: #3f3f46;
+  flex-shrink: 0;
+}
+.mixer-vol-section,
+.mixer-pan-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.mixer-vol-section {
+  flex: 1;
+  max-width: 360px;
+}
+.mixer-pan-section {
+  width: 160px;
+  flex-shrink: 0;
+}
+.mixer-mini-label {
+  font-size: 9px;
+  color: #a1a1aa;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+.mixer-slider-wrap {
+  position: relative;
+  flex: 1;
+  height: 4px;
+}
+.mixer-vol-slider,
+.mixer-pan-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: #27272a;
+  border-radius: 2px;
+  cursor: pointer;
+  outline: none;
+  margin: 0;
+  padding: 0;
+}
+.mixer-vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border-radius: 2px;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+}
+.mixer-pan-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  background: #d4d4d8;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+}
+.mixer-scale {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 9px;
+  height: 10px;
+  font-size: 8px;
+  color: #52525b;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+/* Pan scale: -1 / 0 / +1 maps evenly to left / center / right */
+.mixer-scale--pan {
+  display: flex;
+  justify-content: space-between;
+}
+/* Volume scale: 0 dB is at value 1.0 in a 0..5.7 linear range = 17.5% from left */
+.mixer-scale--vol span {
+  position: absolute;
+}
+.mixer-scale--vol span:nth-child(1) { left: 0; }
+.mixer-scale--vol span:nth-child(2) { left: 17.5%; transform: translateX(-50%); }
+.mixer-scale--vol span:nth-child(3) { right: 0; }
+.mixer-db-value {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: #fff;
+  min-width: 56px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.mixer-db-value--warn {
+  color: #ff6f61;
+}
+.mixer-pan-value {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: #fff;
+  min-width: 32px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
 /* Signal badge */
 .signal-badge {
   display: flex;
@@ -880,6 +1013,27 @@ html, body, #root {
 .waveform-canvas--overlay.waveform-canvas--markers {
   pointer-events: none;
   z-index: 10;
+}
+
+/* Inline marker label editor — appears on double-click of an existing marker */
+.marker-inline-edit {
+  position: absolute;
+  top: 38px;
+  width: 180px;
+  background: rgba(0, 0, 0, 0.92);
+  border: 1px solid var(--accent);
+  color: #fff;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  border-radius: 4px;
+  z-index: 20;
+  outline: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+.marker-inline-edit:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent), 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
 /* ── Video waveform ─────────────────────────────────────── */
@@ -3802,5 +3956,314 @@ html, body, #root {
 .update-progress-cancel:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Sprint UI-Reorg-Option-A — Settings Modal
+   Dimensions locked by 主人: 900×580 modal, 220px sidebar, 56px header.
+   Active sidebar item: solid #00d4ff bg + black text (per Stitch design).
+   Sibling overlay pattern copies LicenseDialog / shortcuts-dialog so the
+   close-on-overlay-click + ESC handling is consistent across modals.
+   ────────────────────────────────────────────────────────────── */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+}
+.settings-dialog {
+  width: 900px;
+  height: 580px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  background: #09090b;
+  border: 1px solid #27272a;
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.settings-header {
+  height: 56px;
+  flex-shrink: 0;
+  border-bottom: 1px solid #27272a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+}
+.settings-header h1 {
+  margin: 0;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.settings-close {
+  background: none;
+  border: none;
+  color: #71717a;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color 0.12s, background 0.12s;
+}
+.settings-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+.settings-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.settings-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: #121214;
+  border-right: 1px solid #27272a;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0;
+  gap: 2px;
+}
+.settings-section-btn {
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  padding: 10px 24px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.settings-section-btn:hover {
+  background: rgba(63, 63, 70, 0.5);
+  color: #e4e4e7;
+}
+.settings-section-btn.active {
+  background: var(--accent);
+  color: #000;
+  font-weight: 700;
+}
+.settings-section-btn.active:hover {
+  background: var(--accent);
+  color: #000;
+}
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px;
+  min-width: 0;
+}
+.settings-content .device-panel {
+  padding: 0;
+}
+.settings-footer {
+  flex-shrink: 0;
+  border-top: 1px solid #27272a;
+  padding: 12px 24px;
+  display: flex;
+  justify-content: flex-end;
+}
+.settings-close-btn {
+  min-width: 90px;
+}
+
+/* Title-bar gear icon — sits between save and trial badge */
+.title-bar-gear {
+  -webkit-app-region: no-drag;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Sprint UI-Reorg Follow-up — File dropdown menu
+   Triggered from title-bar-left; anchored below the trigger.
+   Visual language matches SettingsModal (black surface, cyan
+   accent, subtle border) so the two title-bar UIs feel related.
+   ────────────────────────────────────────────────────────────── */
+.file-menu {
+  position: relative;
+  display: inline-flex;
+  -webkit-app-region: no-drag;
+}
+.file-menu-trigger {
+  /* Inherits .title-bar-btn — only add the caret spacing tweak here */
+  gap: 6px;
+}
+.file-menu-caret {
+  opacity: 0.7;
+  transition: transform 0.12s, opacity 0.12s;
+}
+.file-menu-trigger[aria-expanded="true"] .file-menu-caret {
+  opacity: 1;
+}
+.file-menu-trigger[aria-expanded="true"] {
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.06);
+}
+.file-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  z-index: 9000;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  -webkit-app-region: no-drag;
+}
+.file-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #d4d4d8;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
+}
+.file-menu-item:hover:not(:disabled) {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+.file-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.file-menu-item svg {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+.file-menu-separator {
+  height: 1px;
+  background: #27272a;
+  margin: 4px 6px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Sprint UI-Reorg — Tab empty states (AC-12)
+   Vertical center, dim icon, accent button + outline button.
+   ────────────────────────────────────────────────────────────── */
+.tab-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+  text-align: center;
+  min-height: 240px;
+}
+.tab-empty-state__icon {
+  color: #52525b;
+  opacity: 0.5;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tab-empty-state__title {
+  color: #d4d4d8;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.tab-empty-state__hint {
+  color: #71717a;
+  font-size: 12px;
+  max-width: 240px;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+.tab-empty-state__buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 200px;
+}
+.tab-empty-state__buttons .btn-sm {
+  width: 100%;
+}
+.tab-empty-state__buttons .btn-primary {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.tab-empty-state__buttons .btn-primary:hover {
+  filter: brightness(1.1);
+}
+.tab-empty-state__buttons .btn-outline {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+.tab-empty-state__buttons .btn-outline:hover {
+  background: var(--accent-bg);
+}
+
+/* CuesTab / ShowTab containers split the panel area top/bottom */
+.cues-tab,
+.show-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.cues-tab__half,
+.show-tab__half {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.cues-tab__divider,
+.show-tab__divider {
+  flex-shrink: 0;
+  height: 1px;
+  background: #1e1e1e;
+  margin: 0;
+}
+.cues-tab__top {
+  flex: 0 0 auto;
+  max-height: 50%;
+  overflow-y: auto;
+}
+.cues-tab__bottom {
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+.show-tab__top {
+  flex: 0 0 auto;
+  max-height: 50%;
+  overflow-y: auto;
+}
+.show-tab__bottom {
+  flex: 1 1 auto;
+  overflow-y: auto;
 }
 

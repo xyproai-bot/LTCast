@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import { PreShowCheck } from './PreShowCheck'
+import type { SettingsSection } from './SettingsModal'
 
 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
 const mod = isMac ? '⌘' : 'Ctrl'
@@ -32,14 +33,20 @@ interface Props {
   version: string
   onToggleFullscreen: () => void
   onSwitchToGenerator?: () => void
+  /** Sprint UI-Reorg AC-6.2 — open Settings modal at a specific section.
+   *  Pill clicks (LTC/MTC/Art-Net/OSC) call this with 'outputs'. */
+  onOpenSettings?: (section?: SettingsSection) => void
 }
 
-export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator }: Props): React.JSX.Element {
-  const { lang, setLang, midiConnected, ltcSignalOk, artnetEnabled, oscEnabled, playState, tcGeneratorMode, setRightTab, showLocked, setShowLocked, ultraDark, setUltraDark } = useStore()
+export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator, onOpenSettings }: Props): React.JSX.Element {
+  const { lang, setLang, midiConnected, ltcSignalOk, artnetEnabled, oscEnabled, playState, tcGeneratorMode, showLocked, setShowLocked } = useStore()
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [showPreShow, setShowPreShow] = useState(false)
 
-  const goDevices = (): void => setRightTab('devices')
+  // Sprint UI-Reorg AC-6.1 — pills now open Settings → Outputs (instead of
+  // the deleted Devices tab). Use the prop callback so the modal state stays
+  // owned by App.tsx.
+  const goOutputs = (): void => onOpenSettings?.('outputs')
 
   return (
     <>
@@ -55,7 +62,7 @@ export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator }: 
         )}
         <button
           className={`status-pill${ltcSignalOk ? ' status-pill--active' : ''}`}
-          onClick={goDevices}
+          onClick={goOutputs}
           title="LTC Signal"
         >
           <span className={`status-dot${ltcSignalOk ? ' status-dot--ok' : ''}${ltcSignalOk && playState === 'playing' ? ' status-dot--pulse' : ''}`} />
@@ -63,7 +70,7 @@ export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator }: 
         </button>
         <button
           className={`status-pill${midiConnected ? ' status-pill--active' : ''}`}
-          onClick={goDevices}
+          onClick={goOutputs}
           title="MIDI Timecode output"
         >
           <span className={`status-dot${midiConnected ? ' status-dot--ok' : ''}${midiConnected && playState === 'playing' ? ' status-dot--pulse' : ''}`} />
@@ -71,7 +78,7 @@ export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator }: 
         </button>
         <button
           className={`status-pill${artnetEnabled ? ' status-pill--active' : ''}`}
-          onClick={goDevices}
+          onClick={goOutputs}
           title="Art-Net output"
         >
           <span className={`status-dot${artnetEnabled ? ' status-dot--ok' : ''}${artnetEnabled && playState === 'playing' ? ' status-dot--pulse' : ''}`} />
@@ -79,7 +86,7 @@ export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator }: 
         </button>
         <button
           className={`status-pill${oscEnabled ? ' status-pill--active' : ''}`}
-          onClick={goDevices}
+          onClick={goOutputs}
           title="OSC output"
         >
           <span className={`status-dot${oscEnabled ? ' status-dot--ok' : ''}${oscEnabled && playState === 'playing' ? ' status-dot--pulse' : ''}`} />
@@ -100,13 +107,8 @@ export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator }: 
         <span style={{ flex: 1 }} />
 
         <button className="btn-sm" onClick={() => setShowPreShow(true)} title={t(lang, 'preShowTitle')}>CHECK</button>
-        <button
-          className={`btn-sm${ultraDark ? ' btn-sm--active' : ''}`}
-          onClick={() => setUltraDark(!ultraDark)}
-          title="Ultra-dark mode"
-        >
-          {ultraDark ? 'DARK' : 'dark'}
-        </button>
+        {/* Sprint UI-Reorg Q-A — DARK toggle moved to Settings → Appearance.
+            🔒 locked indicator stays here (above) for fast access during shows. */}
         <button className="btn-sm" onClick={() => setShowShortcuts(true)} title={t(lang, 'shortcutsTitle')}>?</button>
         <button className="btn-sm" onClick={onToggleFullscreen}>{t(lang, 'fullscreen')}</button>
         <button
