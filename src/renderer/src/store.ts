@@ -492,7 +492,12 @@ export interface AppState {
   // (operator hasn't configured an input source yet). Per-install
   // setting (Q-G): persisted via Zustand, never written to .ltcast.
   ltcInputDeviceId: string | null
-  ltcInputChannel: LtcChannel        // which channel of the input device carries LTC (auto = channel 0)
+  ltcInputChannel: LtcChannel        // which channel of the input device carries LTC ('auto' = scan all candidates)
+  // Runtime-only: the channel index that auto-detect locked onto, surfaced
+  // to the UI so the operator can see "Auto → CH 2". null = not in auto
+  // mode, or auto mode is still waiting for a valid frame. Never persisted
+  // and never marks presetDirty.
+  detectedLtcInputChannel: number | null
   ltcGain: number       // 0.0–1.5 (1.0 = unity / 0 dB)
   musicVolume: number   // 0.0–5.7 (1.0 = unity, +15 dB max)
   musicPan: number      // -1.0 (L) to +1.0 (R), 0 = center
@@ -669,6 +674,7 @@ export interface AppState {
   setLtcOutputDeviceId: (id: string) => void
   setLtcInputDevice: (id: string | null) => void
   setLtcInputChannel: (ch: LtcChannel) => void
+  setDetectedLtcInputChannel: (ch: number | null) => void
   setLtcGain: (gain: number) => void
   setMusicVolume: (v: number) => void
   setMusicPan: (p: number) => void
@@ -846,6 +852,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   ltcOutputDeviceId: 'default',
   ltcInputDeviceId: null,
   ltcInputChannel: 'auto',
+  detectedLtcInputChannel: null,
   ltcGain: 1.0,
   musicVolume: 1.0,
   musicPan: 0.0,
@@ -1005,7 +1012,8 @@ export const useStore = create<AppState>()(persist((set) => ({
   setLtcOutputDeviceId: (ltcOutputDeviceId) => set({ ltcOutputDeviceId, presetDirty: true }),
   // LTC Input — per-install, never marks presetDirty (Q-G).
   setLtcInputDevice: (ltcInputDeviceId) => set({ ltcInputDeviceId }),
-  setLtcInputChannel: (ltcInputChannel) => set({ ltcInputChannel }),
+  setLtcInputChannel: (ltcInputChannel) => set({ ltcInputChannel, detectedLtcInputChannel: null }),
+  setDetectedLtcInputChannel: (detectedLtcInputChannel) => set({ detectedLtcInputChannel }),
   setLtcGain: (ltcGain) => set({ ltcGain, presetDirty: true }),
   setMusicVolume: (musicVolume) => set({ musicVolume: Math.max(0, Math.min(5.7, musicVolume)), presetDirty: true }),
   setMusicPan: (musicPan) => set({ musicPan: Math.max(-1.0, Math.min(1.0, musicPan)), presetDirty: true }),

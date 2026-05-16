@@ -43,6 +43,11 @@ export interface AudioEngineCallbacks {
    *  device, mid-show disconnect). `type` is a coarse classifier so the
    *  UI can pick the right toast string. */
   onLtcInputError?: (type: 'permission-denied' | 'device-missing' | 'disconnected' | 'unknown') => void
+  /** Fires when auto-detect mode locks onto an input channel for LTC.
+   *  Only emitted in 'auto' mode (channel === 'auto') the first time any
+   *  channel produces a decoded TC frame. The UI can use this to show
+   *  "Auto → CH N" to the operator. Passed value is 0-based channel index. */
+  onLtcInputChannelDetected?: (channelIndex: number) => void
 }
 
 /**
@@ -151,6 +156,19 @@ export class AudioEngine {
   // Track the worklet load promise so concurrent setLtcInputDevice() calls
   // don't race on addModule.
   private ltcInputWorkletLoaded = false
+  // Auto-detect mode: one AudioWorkletNode per scanned channel. Each worklet
+  // listens to a single channel of the input device and posts decoded TC
+  // frames back to the engine. The first worklet to emit a frame "wins"
+  // and its channel index is locked in via `ltcAutoDetectedChannel`; frames
+  // from other worklets are silently dropped after that. This lets us pick
+  // up LTC on whichever channel actually carries it (Auto-fixes the case
+  // where the operator's LTC is on CH 2 but we used to always read CH 0).
+  private ltcInputAutoWorklets: AudioWorkletNode[] = []
+  private ltcAutoDetectedChannel: number | null = null
+  // Indices that the auto-detect pipeline is currently scanning. Maps a
+  // worklet's position in `ltcInputAutoWorklets` to a real channel index
+  // on the source device. Static once the pipeline starts.
+  private ltcAutoScanChannels: number[] = []
 
   // ── Pre-buffer (F1) — one-slot cache for the next cued song ──────
   // A disposable scratch AudioContext decodes the next file ahead of time
@@ -687,26 +705,63 @@ export class AudioEngine {
 
       this.ltcInputStream = stream
       this.ltcInputSourceNode = this.ltcInputCtx.createMediaStreamSource(stream)
-      this.ltcInputWorkletNode = new AudioWorkletNode(this.ltcInputCtx, 'ltc-processor', {
-        numberOfInputs: 1,
-        numberOfOutputs: 0,
-        // The worklet's input is mono — the splitter (below) picks exactly
-        // one channel of the source and routes it here.
-        channelCount: 1,
-        channelCountMode: 'explicit',
-      })
-      this.ltcInputWorkletNode.port.onmessage = (e): void => this._onLtcInputFrame(e.data)
 
       // Use a channel splitter so we can pick which channel of a multi-channel
-      // input device carries LTC. 'auto' falls back to channel 0 (left).
-      // Splitter outputs default to 6; bump to 8 to cover prosumer multi-ch
-      // interfaces. Non-existent channels just feed silence.
+      // input device carries LTC. Splitter outputs default to 6; bump to 8 to
+      // cover prosumer multi-ch interfaces. Non-existent channels just feed
+      // silence — so the auto-detect path can safely subscribe to a channel
+      // that may not exist on a mono device.
       const splitterChannels = 8
       this.ltcInputSplitter = this.ltcInputCtx.createChannelSplitter(splitterChannels)
       this.ltcInputSourceNode.connect(this.ltcInputSplitter)
-      const chIdx = channel === 'auto' ? 0 : channel
-      const safeChIdx = Math.max(0, Math.min(splitterChannels - 1, chIdx))
-      this.ltcInputSplitter.connect(this.ltcInputWorkletNode, safeChIdx, 0)
+
+      if (channel === 'auto') {
+        // ── AUTO MODE ──────────────────────────────────────────
+        // Spawn one worklet per candidate channel. The first worklet to
+        // produce a decoded frame wins, and subsequent frames from any
+        // other channel are dropped. We scan channels 0 and 1 — covers
+        // 99% of LTC-on-stereo-cable setups; multi-channel pro
+        // interfaces are rare in this use case and the operator can
+        // pick the channel explicitly if needed.
+        this.ltcAutoDetectedChannel = null
+        this.ltcAutoScanChannels = [0, 1]
+        this.ltcInputAutoWorklets = []
+        for (const ch of this.ltcAutoScanChannels) {
+          const worklet = new AudioWorkletNode(this.ltcInputCtx, 'ltc-processor', {
+            numberOfInputs: 1,
+            numberOfOutputs: 0,
+            channelCount: 1,
+            channelCountMode: 'explicit',
+          })
+          // Capture `ch` so the onmessage handler knows which channel
+          // produced this frame — used by _onLtcInputAutoFrame to
+          // decide whether to lock-in or drop.
+          const myCh = ch
+          worklet.port.onmessage = (e): void => this._onLtcInputAutoFrame(e.data, myCh)
+          const safeCh = Math.max(0, Math.min(splitterChannels - 1, ch))
+          this.ltcInputSplitter.connect(worklet, safeCh, 0)
+          this.ltcInputAutoWorklets.push(worklet)
+        }
+        // Leave `ltcInputWorkletNode` null in auto mode — the single-worklet
+        // teardown helper short-circuits on null and the auto-worklet
+        // array is cleaned up in _teardownLtcInput.
+      } else {
+        // ── EXPLICIT CHANNEL MODE (CH 0/1/2/3) ─────────────────
+        // Historical single-worklet path: route exactly one channel into
+        // one ltc-processor instance. Detected-channel state is reset
+        // because there's nothing to "detect".
+        this.ltcAutoDetectedChannel = null
+        this.ltcAutoScanChannels = []
+        this.ltcInputWorkletNode = new AudioWorkletNode(this.ltcInputCtx, 'ltc-processor', {
+          numberOfInputs: 1,
+          numberOfOutputs: 0,
+          channelCount: 1,
+          channelCountMode: 'explicit',
+        })
+        this.ltcInputWorkletNode.port.onmessage = (e): void => this._onLtcInputFrame(e.data)
+        const safeChIdx = Math.max(0, Math.min(splitterChannels - 1, channel))
+        this.ltcInputSplitter.connect(this.ltcInputWorkletNode, safeChIdx, 0)
+      }
 
       // Hook device-disconnect: if the USB cable is yanked, the MediaStream
       // ends asynchronously. We tear down + notify so the UI flips chase to
@@ -735,6 +790,10 @@ export class AudioEngine {
   /** Currently-configured LTC input device id, or null if none. */
   getLtcInputDeviceId(): string | null { return this.ltcInputDeviceId }
 
+  /** Channel that the auto-detect pipeline locked onto, or null if no
+   *  channel has produced a frame yet (or we're not in auto mode). */
+  getLtcAutoDetectedChannel(): number | null { return this.ltcAutoDetectedChannel }
+
   /**
    * Tear down the LTC input pipeline. Idempotent — safe to call from
    * dispose() or back-to-back setLtcInputDevice() calls.
@@ -745,6 +804,14 @@ export class AudioEngine {
       try { this.ltcInputWorkletNode.disconnect() } catch { /* ignore */ }
       this.ltcInputWorkletNode = null
     }
+    // Tear down any auto-mode parallel worklets the same way.
+    for (const worklet of this.ltcInputAutoWorklets) {
+      worklet.port.onmessage = null
+      try { worklet.disconnect() } catch { /* ignore */ }
+    }
+    this.ltcInputAutoWorklets = []
+    this.ltcAutoScanChannels = []
+    this.ltcAutoDetectedChannel = null
     if (this.ltcInputSplitter) {
       try { this.ltcInputSplitter.disconnect() } catch { /* ignore */ }
       this.ltcInputSplitter = null
@@ -773,6 +840,43 @@ export class AudioEngine {
   private _onLtcInputFrame(raw: TimecodeFrame): void {
     const fps = raw.fps
     if (!fps || fps <= 0 || !isFinite(fps)) return
+    const fpsInt = Math.round(fps)
+    const tc: TimecodeFrame = {
+      hours: raw.hours,
+      minutes: raw.minutes,
+      seconds: raw.seconds,
+      frames: Math.min(raw.frames, fpsInt - 1),
+      fps,
+      dropFrame: raw.dropFrame,
+    }
+    this.callbacks.onLtcInputTimecode?.(tc)
+  }
+
+  /**
+   * Auto-detect handler — called when one of the parallel worklets
+   * (in 'auto' mode) decodes a frame. The first channel to produce a
+   * frame wins: we lock `ltcAutoDetectedChannel` to that channel and
+   * fire `onLtcInputChannelDetected`. Subsequent frames from any other
+   * channel are silently dropped; frames from the winning channel are
+   * dispatched as if they came from the single-worklet path.
+   *
+   * Keeping the losing worklets connected (rather than tearing them
+   * down on first detection) lets the system recover if the LTC source
+   * is later replugged into a different channel — though we don't yet
+   * implement re-detection in this version; if the operator wants to
+   * switch channels mid-show they can re-pick the device.
+   */
+  private _onLtcInputAutoFrame(raw: TimecodeFrame, channel: number): void {
+    const fps = raw.fps
+    if (!fps || fps <= 0 || !isFinite(fps)) return
+    if (this.ltcAutoDetectedChannel === null) {
+      // First valid frame across all candidate channels — lock in.
+      this.ltcAutoDetectedChannel = channel
+      this.callbacks.onLtcInputChannelDetected?.(channel)
+    } else if (this.ltcAutoDetectedChannel !== channel) {
+      // Different channel after lock-in — drop.
+      return
+    }
     const fpsInt = Math.round(fps)
     const tc: TimecodeFrame = {
       hours: raw.hours,
@@ -971,6 +1075,13 @@ export class AudioEngine {
       try { this.ltcInputWorkletNode.disconnect() } catch { /* ignore */ }
       this.ltcInputWorkletNode = null
     }
+    for (const worklet of this.ltcInputAutoWorklets) {
+      worklet.port.onmessage = null
+      try { worklet.disconnect() } catch { /* ignore */ }
+    }
+    this.ltcInputAutoWorklets = []
+    this.ltcAutoScanChannels = []
+    this.ltcAutoDetectedChannel = null
     if (this.ltcInputSplitter) { try { this.ltcInputSplitter.disconnect() } catch { /* ignore */ } this.ltcInputSplitter = null }
     if (this.ltcInputSourceNode) { try { this.ltcInputSourceNode.disconnect() } catch { /* ignore */ } this.ltcInputSourceNode = null }
     if (this.ltcInputStream) { try { this.ltcInputStream.getTracks().forEach(t => { t.onended = null; t.stop() }) } catch { /* ignore */ } this.ltcInputStream = null }
