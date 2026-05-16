@@ -71,6 +71,22 @@ export class AudioEngine {
   private musicPannerNode: StereoPannerNode | null = null
   private musicVolumeValue = 1.0
   private musicPanValue = 0.0
+  // When true, the music routing strips the LTC channel so it isn't audible
+  // on the music output. Useful for files that have music + LTC mixed into
+  // one stereo file. Set via setMuteLtcFromMusic().
+  private muteLtcFromMusicFlag = false
+  // Channel the operator selected for LTC ('auto' | 0..3). Used in addition
+  // to detectedLtcChannel to decide which channel to mute from music.
+  private operatorLtcChannelChoice: 'auto' | 0 | 1 | 2 | 3 = 'auto'
+  // Set to true after _applyDecodedBuffer when detection confidence cleared
+  // the LTC_CONFIDENCE_THRESHOLD. Lets the mute-channel resolver fall back
+  // to channel 1 when the operator left ltcChannel on 'auto' for a file
+  // that has no detectable LTC.
+  private callbacksDetectedLtc = false
+  // Splitter/merger pair wiring `musicSource` to `musicGainNode`. Tracked
+  // so we can tear them down when the routing is rebuilt mid-play.
+  private _musicSplitter: ChannelSplitterNode | null = null
+  private _musicMerger: ChannelMergerNode | null = null
 
   // ── LTC decode + output context ──────────────────────────
   private ltcCtx: AudioContext | null = null
@@ -329,11 +345,13 @@ export class AudioEngine {
       this.musicChannelIndex = this.buffer.numberOfChannels > 1
         ? (detection.channelIndex === 0 ? 1 : 0)
         : 0
+      this.callbacksDetectedLtc = true
       this.callbacks.onLtcChannelDetected(detection.channelIndex)
     } else {
       // No LTC — both channels are music
       this.ltcChannelIndex = 0
       this.musicChannelIndex = 0
+      this.callbacksDetectedLtc = false
       this.callbacks.onLtcChannelDetected(-1)
     }
 
@@ -370,6 +388,147 @@ export class AudioEngine {
   }
 
   setOffset(frames: number): void { this.offsetFrames = frames }
+
+  /**
+   * Toggle whether the LTC channel is stripped from the music output.
+   *
+   * When `true`, the music speaker hears only the non-LTC channels of the
+   * source — useful for files where music + LTC are mixed into one stereo
+   * file. When `false` (default), the music output uses the historical
+   * routing (single channel duplicated to L+R).
+   *
+   * Calling this while playing transparently rebuilds the music routing so
+   * the change is audible immediately (no pause/resume required).
+   */
+  setMuteLtcFromMusic(v: boolean): void {
+    if (this.muteLtcFromMusicFlag === v) return
+    this.muteLtcFromMusicFlag = v
+    if (this.playing && this.ctx && this.musicSource && this.musicGainNode) {
+      this._rebuildMusicRouting()
+    }
+  }
+
+  /**
+   * Remember the operator's LTC-channel choice from the store. Used in
+   * mute-LTC-from-music routing to figure out which channel to skip when
+   * `ltcChannel === 'auto'` and detection didn't find LTC.
+   *
+   * The engine still uses `ltcChannelIndex` for actual LTC decoding (set
+   * by detectLtcChannel or `setLtcChannel`); this flag only matters for
+   * the mute fallback path.
+   */
+  setOperatorLtcChannelChoice(ch: 'auto' | 0 | 1 | 2 | 3): void {
+    this.operatorLtcChannelChoice = ch
+  }
+
+  /**
+   * Rebuild the music source → musicGain wiring without disturbing the
+   * gain/panner/destination chain or the LTC pipeline. Called when
+   * `muteLtcFromMusic` is toggled mid-playback.
+   *
+   * Stale splitter/merger from the previous routing are disconnected and
+   * dropped — the source is reconnected to the new chain. We deliberately
+   * do NOT recreate the music source (no audible glitch / restart).
+   */
+  private _rebuildMusicRouting(): void {
+    if (!this.ctx || !this.musicSource || !this.musicGainNode || !this.buffer) return
+
+    // Disconnect source from previous routing
+    try { this.musicSource.disconnect() } catch { /* ignore */ }
+    // Disconnect any previous splitter/merger nodes hanging off the source
+    if (this._musicSplitter) { try { this._musicSplitter.disconnect() } catch { /* ignore */ } this._musicSplitter = null }
+    if (this._musicMerger) { try { this._musicMerger.disconnect() } catch { /* ignore */ } this._musicMerger = null }
+
+    this._connectMusicRouting()
+  }
+
+  /**
+   * Resolve which channel index of the source buffer holds LTC, for the
+   * purpose of stripping it from music. Distinct from `ltcChannelIndex`
+   * because that one is only valid when LTC was actually detected.
+   *
+   * Priority:
+   *   1. Operator picked a channel explicitly (ltcChannel = 0/1/2/3) → use it
+   *   2. Operator left it on 'auto' AND detection found LTC → use detected
+   *   3. Otherwise → default to channel 1 (right), the common LTC position
+   *      in two-track music+LTC files.
+   *
+   * Result is clamped to the file's channel count.
+   */
+  private _resolveLtcChannelForMute(): number {
+    if (!this.buffer) return 1
+    const maxCh = this.buffer.numberOfChannels - 1
+    let ch: number
+    if (this.operatorLtcChannelChoice !== 'auto') {
+      ch = this.operatorLtcChannelChoice
+    } else if (this.ltcChannelIndex >= 0 && this.callbacksDetectedLtc) {
+      ch = this.ltcChannelIndex
+    } else {
+      // 'auto' + no detection → assume right channel (typical music+LTC stereo)
+      ch = 1
+    }
+    return Math.max(0, Math.min(maxCh, ch))
+  }
+
+  /**
+   * Wire `musicSource` to `musicGainNode` according to the current mode:
+   *
+   *   - Generator mode → source straight into gain (no channel routing).
+   *   - LTC mode, mute-LTC OFF → historical behaviour: pick the music
+   *     channel, splitter → merger (mono → stereo) → gain.
+   *   - LTC mode, mute-LTC ON → splitter → merger but EXCLUDE the LTC
+   *     channel. The remaining channels are spread across L and R; a
+   *     single-channel result is duplicated to both sides so the music
+   *     still plays in stereo.
+   *
+   * Caller must have created musicSource + musicGainNode beforehand.
+   * Sets `_musicSplitter` and `_musicMerger` so a future rebuild can
+   * clean them up.
+   */
+  private _connectMusicRouting(): void {
+    if (!this.ctx || !this.musicSource || !this.musicGainNode || !this.buffer) return
+
+    if (this.generatorMode) {
+      this.musicSource.connect(this.musicGainNode)
+      return
+    }
+
+    const channelCount = this.buffer.numberOfChannels
+    const splitter = this.ctx.createChannelSplitter(channelCount)
+    this._musicSplitter = splitter
+    this.musicSource.connect(splitter)
+    const merger = this.ctx.createChannelMerger(2)
+    this._musicMerger = merger
+
+    if (this.muteLtcFromMusicFlag) {
+      const ltcCh = this._resolveLtcChannelForMute()
+      // Collect non-LTC channel indices (in source order).
+      const musicChannels: number[] = []
+      for (let i = 0; i < channelCount; i++) {
+        if (i !== ltcCh) musicChannels.push(i)
+      }
+      if (musicChannels.length === 0) {
+        // Pathological: only one channel and it's LTC. Fall through to
+        // historical behaviour so we don't silence the whole output.
+        splitter.connect(merger, this.musicChannelIndex, 0)
+        splitter.connect(merger, this.musicChannelIndex, 1)
+      } else if (musicChannels.length === 1) {
+        // Mono music — duplicate to L+R.
+        splitter.connect(merger, musicChannels[0], 0)
+        splitter.connect(merger, musicChannels[0], 1)
+      } else {
+        // Multi-channel music — first non-LTC → L, second non-LTC → R.
+        splitter.connect(merger, musicChannels[0], 0)
+        splitter.connect(merger, musicChannels[1], 1)
+      }
+    } else {
+      // Historical behaviour: route only the music channel to both sides.
+      splitter.connect(merger, this.musicChannelIndex, 0)
+      splitter.connect(merger, this.musicChannelIndex, 1)
+    }
+
+    merger.connect(this.musicGainNode)
+  }
 
   /** Override the FPS reported by the LTC decoder. null = use detected fps. */
   setForceFps(fps: number | null): void { this.forceFpsValue = fps }
@@ -681,16 +840,12 @@ export class AudioEngine {
     this.musicPannerNode.connect(this.ctx.destination)
     this.musicGainNode.connect(this.musicPannerNode)
 
-    if (this.generatorMode) {
-      this.musicSource.connect(this.musicGainNode)
-    } else {
-      const splitter = this.ctx.createChannelSplitter(this.buffer.numberOfChannels)
-      this.musicSource.connect(splitter)
-      const merger = this.ctx.createChannelMerger(2)
-      splitter.connect(merger, this.musicChannelIndex, 0)
-      splitter.connect(merger, this.musicChannelIndex, 1)
-      merger.connect(this.musicGainNode)
-    }
+    // Wire music routing (handles generator vs LTC mode, plus the
+    // mute-LTC-from-music option). Tracks splitter/merger on the engine
+    // so they can be torn down on rebuild without leaking dead nodes.
+    this._musicSplitter = null
+    this._musicMerger = null
+    this._connectMusicRouting()
 
     // ── LTC context — setup before scheduling so both start at the same time ──
     await this._setupLtcContext()
@@ -1148,6 +1303,8 @@ export class AudioEngine {
     // Music gain/panner belong to the closed ctx — clear references
     this.musicGainNode = null
     this.musicPannerNode = null
+    this._musicSplitter = null
+    this._musicMerger = null
 
     // Stop LTC source only — keep worklet + gain alive for instant resume
     this._stopLtcSource()

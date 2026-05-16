@@ -181,6 +181,7 @@ function OutputsSection({
     midiClockManualBpm, setMidiClockManualBpm,
     selectedMidiPort,
     tappedBpm, detectedBpm,
+    muteLtcFromMusic, setMuteLtcFromMusic,
   } = useStore()
 
   // F3 — OSC feedback listener subscription
@@ -257,6 +258,22 @@ function OutputsSection({
           <span className={`ltc-gain-value${ltcGain < 0.9 || ltcGain > 1.2 ? ' ltc-gain-warn' : ''}`}>{gainToDb(ltcGain)}</span>
         </div>
         <span className="ltc-gain-hint">{t(lang, 'ltcGainHint')}</span>
+      </div>
+
+      {/* Mute LTC channel from music output */}
+      <div className="device-row">
+        <span className="device-label">{t(lang, 'muteLtcFromMusic')}</span>
+        <div className="artnet-row">
+          <label className="artnet-toggle">
+            <input
+              type="checkbox"
+              checked={muteLtcFromMusic}
+              onChange={(e) => setMuteLtcFromMusic(e.target.checked)}
+            />
+            <span>{muteLtcFromMusic ? t(lang, 'artnetOn') : t(lang, 'artnetOff')}</span>
+          </label>
+        </div>
+        <span className="ltc-gain-hint">{t(lang, 'muteLtcFromMusicHint')}</span>
       </div>
 
       {/* MTC Mode */}
