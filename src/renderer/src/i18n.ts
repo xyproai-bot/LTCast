@@ -478,6 +478,10 @@ export const strings = {
     ltcInputDeviceNone: 'None',
     ltcInputDeviceHint: 'Audio device that receives external LTC for chase mode',
     ltcInputPermissionHint: 'Permission required — your browser will ask for microphone access on first use',
+    ltcInputDeviceNamesHidden: 'Device names are hidden until you grant microphone access. VB-Cable Output and similar virtual devices won’t show their real names until granted.',
+    ltcInputGrantPermission: 'Grant microphone access',
+    ltcInputRequestingPermission: 'Requesting...',
+    ltcInputJumpToDevicesHint: 'Click to jump to Devices settings',
     ltcInputPermissionDenied: 'Microphone permission denied. LTC chase requires audio input access.',
     ltcInputDeviceDisconnected: 'LTC input device disconnected',
     ltcInputNotConfiguredHint: 'No LTC input device selected. Pick one in Devices.'
@@ -958,6 +962,10 @@ export const strings = {
     ltcInputDeviceNone: '無',
     ltcInputDeviceHint: '接收外部 LTC 訊號的音訊輸入設備（Chase 模式專用）',
     ltcInputPermissionHint: '首次使用時瀏覽器會請求麥克風權限',
+    ltcInputDeviceNamesHidden: '尚未授權麥克風權限、設備名稱顯示為亂碼。VB-Cable Output 等虛擬線需要授權後才看得到真實名稱。',
+    ltcInputGrantPermission: '授權麥克風存取',
+    ltcInputRequestingPermission: '請求中...',
+    ltcInputJumpToDevicesHint: '點擊跳到設備設定',
     ltcInputPermissionDenied: '麥克風權限被拒絕，無法接收 LTC 輸入。',
     ltcInputDeviceDisconnected: 'LTC 輸入設備已中斷',
     ltcInputNotConfiguredHint: '尚未選擇 LTC 輸入設備，請至「設備」頁設定。'
@@ -1438,6 +1446,10 @@ export const strings = {
     ltcInputDeviceNone: 'なし',
     ltcInputDeviceHint: 'チェイスモード用の外部 LTC を受信する音声入力デバイス',
     ltcInputPermissionHint: '初回使用時にブラウザがマイク権限を要求します',
+    ltcInputDeviceNamesHidden: 'マイク権限が許可されるまでデバイス名は伏せられます。VB-Cable Output などの仮想ケーブルは許可後にのみ実名で表示されます。',
+    ltcInputGrantPermission: 'マイクアクセスを許可',
+    ltcInputRequestingPermission: 'リクエスト中...',
+    ltcInputJumpToDevicesHint: 'クリックでデバイス設定へ',
     ltcInputPermissionDenied: 'マイク権限が拒否されました。LTC チェイスには入力アクセスが必要です。',
     ltcInputDeviceDisconnected: 'LTC 入力デバイスが切断されました',
     ltcInputNotConfiguredHint: 'LTC 入力デバイスが選択されていません。「デバイス」で選択してください。'
