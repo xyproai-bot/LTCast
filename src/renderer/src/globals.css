@@ -2981,6 +2981,130 @@ html, body, #root {
 .cp-add-btn:hover { background: rgba(0, 212, 255, 0.15); border-color: rgba(0, 212, 255, 0.5); }
 .cp-add-btn:disabled { opacity: 0.3; cursor: default; }
 
+/* "Now" button — pulls live TC into the add-cue form */
+.cp-tc-now-btn {
+  background: transparent;
+  border: 1px solid #2a2a2a;
+  color: #888;
+  font-size: 10px;
+  font-family: inherit;
+  letter-spacing: 0.05em;
+  padding: 3px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.cp-tc-now-btn:hover { border-color: var(--accent); color: var(--accent); }
+.cp-tc-now-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* Small hint text next to data1 input — e.g. "(C4)" for note number */
+.cp-form-hint {
+  font-size: 9px;
+  color: #555;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Test-fire (▶) and duplicate (⧉) buttons on each cue row */
+.cp-cue-fire, .cp-cue-dup {
+  background: none;
+  border: none;
+  color: #333;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.1s, opacity 0.1s, background 0.1s;
+}
+.cp-cue-item:hover .cp-cue-fire,
+.cp-cue-item:hover .cp-cue-dup { opacity: 1; }
+.cp-cue-fire:hover  { color: #00d4ff; background: rgba(0, 212, 255, 0.1); }
+.cp-cue-dup:hover   { color: #aaa;    background: rgba(255, 255, 255, 0.08); }
+.cp-cue-fire:disabled { opacity: 0.25; cursor: default; }
+.cp-cue-fire:disabled:hover { color: #333; background: none; }
+
+/* Inline-editable cells — subtle dotted underline on hover, becomes solid on edit */
+.cp-cue-editable { cursor: text; border-bottom: 1px dashed transparent; transition: border-color 0.1s; }
+.cp-cue-item:hover .cp-cue-editable { border-bottom-color: rgba(255, 255, 255, 0.08); }
+.cp-cue-editable:hover { border-bottom-color: rgba(0, 212, 255, 0.4); }
+
+/* Inline edit inputs — kept compact so the row layout doesn't jump */
+.cp-cue-edit-input {
+  background: #0a0a0a;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+  width: 90px;
+  outline: none;
+}
+.cp-cue-edit-num {
+  background: #0a0a0a;
+  color: #ccc;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 1px 3px;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+  width: 40px;
+  text-align: center;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.cp-cue-edit-label {
+  flex: 1;
+  background: #0a0a0a;
+  color: #ccc;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 10px;
+  outline: none;
+  min-width: 60px;
+}
+.cp-cue-edit-select {
+  background: #0a0a0a;
+  color: #ccc;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 1px 3px;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: 'Inter', system-ui, sans-serif;
+  letter-spacing: 0.05em;
+  outline: none;
+  cursor: pointer;
+}
+.cp-cue-label--placeholder {
+  color: #2a2a2a !important;
+  font-style: normal !important;
+  font-size: 11px !important;
+}
+.cp-cue-item:hover .cp-cue-label--placeholder { color: #555 !important; }
+
+/* "From markers" button on the cue list section header */
+.cp-import-markers-btn {
+  background: transparent;
+  border: 1px solid #2a2a2a;
+  color: #777;
+  font-size: 10px;
+  font-family: inherit;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  margin-left: auto;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.cp-import-markers-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(0, 212, 255, 0.06); }
+
 /* ── MIDI Mapping cards ── */
 .cp-mapping {
   background: #0c0c0c;

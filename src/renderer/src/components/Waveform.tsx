@@ -2,9 +2,17 @@ import React, { useRef, useEffect, useCallback, useState } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline.esm.js'
 import MinimapPlugin from 'wavesurfer.js/dist/plugins/minimap.esm.js'
-import { useStore, WaveformMarker, getContrastLetterColor } from '../store'
+import { useStore, WaveformMarker, MidiCuePoint, getContrastLetterColor } from '../store'
 import { MARKER_TYPE_ABBREV, resolveMarkerTypeColor } from './StructurePanel'
+import { tcToFrames } from '../audio/timecodeConvert'
 import { t } from '../i18n'
+
+/** Color per MIDI cue messageType — used for the small triangle drawn on the waveform. */
+const CUE_COLOR: Record<MidiCuePoint['messageType'], string> = {
+  'note-on':        '#22d3ee',   // cyan
+  'control-change': '#f59e0b',   // orange
+  'program-change': '#ec4899',   // magenta
+}
 
 interface Props {
   musicData: Float32Array | null
@@ -41,6 +49,27 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     markerTypeColorOverrides
   } = useStore()
 
+  // Subscribe narrowly to the active song's MIDI cues so the waveform redraws
+  // when they change, without churning on every TC tick. Uses the same item-id
+  // resolution as drawMarkers (line ~325 below).
+  const activeSongMidiCues = useStore((s) => {
+    const fp = s.filePath
+    if (!fp) return undefined
+    const item = s.setlist.find(it => it.path === fp)
+    return item?.midiCues
+  })
+  // Pull global + per-item offset and a usable fps for cue-TC → seconds.
+  // We snapshot these only via refs (no re-render dep) so the cue drawing path
+  // can convert wall-TC back to audio-time without re-mounting the canvas.
+  const offsetFramesForCues = useStore((s) => s.offsetFrames)
+  const detectedFpsForCues  = useStore((s) => s.detectedFps)
+  const activeItemOffset    = useStore((s) => {
+    const fp = s.filePath
+    if (!fp) return 0
+    const item = s.setlist.find(it => it.path === fp)
+    return item?.offsetFrames ?? 0
+  })
+
   // Stable refs for canvas drawing
   const currentTimeRef = useRef(currentTime)
   const durationRef    = useRef(duration)
@@ -64,6 +93,16 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   const filePathRef = useRef(filePath)
   useEffect(() => { markersRef.current = markers }, [markers])
   useEffect(() => { filePathRef.current = filePath }, [filePath])
+
+  // Stable refs for MIDI cue drawing (see CUE_COLOR + drawMarkers below).
+  // Updated whenever the live values change so the canvas paints fresh cues
+  // even when the rest of the render path is memoised.
+  const midiCuesRef = useRef<MidiCuePoint[] | undefined>(activeSongMidiCues)
+  const cueOffsetRef = useRef(offsetFramesForCues + activeItemOffset)
+  const cueFpsRef    = useRef(detectedFpsForCues ?? 30)
+  useEffect(() => { midiCuesRef.current = activeSongMidiCues }, [activeSongMidiCues])
+  useEffect(() => { cueOffsetRef.current = offsetFramesForCues + activeItemOffset }, [offsetFramesForCues, activeItemOffset])
+  useEffect(() => { cueFpsRef.current = detectedFpsForCues ?? 30 }, [detectedFpsForCues])
 
   // Inline marker label edit (double-click on existing marker)
   const [editingMarker, setEditingMarker] = useState<{
@@ -387,13 +426,50 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       // Equals: gap + badge + gap + label width (or just badge if no label).
       markerHitWidthsRef.current[marker.id] = 4 + badgeSize + (labelTextWidth > 0 ? 4 + labelTextWidth + 2 : 4)
     }
+
+    // Draw MIDI cues — small downward-pointing triangles at the bottom edge
+    // of the waveform, colored by message type. Display-only: not interactive,
+    // sits below the marker visual hierarchy so they don't compete for attention.
+    const fileMidiCues = midiCuesRef.current
+    if (fileMidiCues && fileMidiCues.length > 0) {
+      const cueFps = cueFpsRef.current
+      const cueOffset = cueOffsetRef.current
+      const triBaseY = cssH - 1
+      const triHeight = 5
+      const halfWidth = 3
+      for (const cue of fileMidiCues) {
+        // Cue TC → audio time. Reverse of the playback path:
+        //   wallFrames = audioTime*fps + offsetFrames  (from AudioEngine generator)
+        // → audioTime = (cueFrames - offsetFrames) / fps
+        const cueFrames = tcToFrames(cue.triggerTimecode, cueFps) + (cue.offsetFrames ?? 0)
+        const audioTime = (cueFrames - cueOffset) / cueFps
+        if (!isFinite(audioTime) || audioTime < 0 || audioTime > dur) continue
+        const absX = audioTime * pxPerSec
+        const x = absX - scrollLeft
+        if (x < -halfWidth || x > cssW + halfWidth) continue
+        const color = CUE_COLOR[cue.messageType] ?? '#888'
+        // Translucent fill for disabled cues so they read as muted
+        const alpha = cue.enabled ? 1 : 0.35
+        ctx.globalAlpha = alpha
+        ctx.beginPath()
+        ctx.fillStyle = color
+        ctx.moveTo(x - halfWidth, triBaseY)
+        ctx.lineTo(x + halfWidth, triBaseY)
+        ctx.lineTo(x, triBaseY - triHeight)
+        ctx.closePath()
+        ctx.fill()
+        ctx.globalAlpha = 1
+      }
+    }
   }, [])
 
   // Keep drawMarkersRef in sync so WaveSurfer event handlers can call it
   drawMarkersRef.current = drawMarkers
 
   // Redraw markers whenever markers, filePath, duration, currentTime, loop points, or selected marker change
-  useEffect(() => { drawMarkers() }, [markers, filePath, duration, currentTime, loopA, loopB, selectedMarkerId, drawMarkers])
+  // Also redraw when the active song's MIDI cues change (or the wall-TC offset
+  // / fps used to map cue TC → audio time changes).
+  useEffect(() => { drawMarkers() }, [markers, filePath, duration, currentTime, loopA, loopB, selectedMarkerId, activeSongMidiCues, offsetFramesForCues, detectedFpsForCues, activeItemOffset, drawMarkers])
 
   // ResizeObserver for music waveform wrap
   useEffect(() => {
