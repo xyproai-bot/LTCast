@@ -128,6 +128,8 @@ export class AudioEngine {
   private ltcInputCtx: AudioContext | null = null
   private ltcInputStream: MediaStream | null = null
   private ltcInputSourceNode: MediaStreamAudioSourceNode | null = null
+  private ltcInputSplitter: ChannelSplitterNode | null = null
+  private ltcInputChannel: 'auto' | 0 | 1 | 2 | 3 = 'auto'
   private ltcInputWorkletNode: AudioWorkletNode | null = null
   private ltcInputDeviceId: string | null = null
   // Track the worklet load promise so concurrent setLtcInputDevice() calls
@@ -456,7 +458,7 @@ export class AudioEngine {
    * Errors are surfaced via `onLtcInputError`; the method itself never
    * throws so the UI can call it freely from a select handler.
    */
-  async setLtcInputDevice(deviceId: string | null): Promise<void> {
+  async setLtcInputDevice(deviceId: string | null, channel: 'auto' | 0 | 1 | 2 | 3 = 'auto'): Promise<void> {
     const normalised = deviceId && deviceId.length > 0 ? deviceId : null
 
     // Always tear down the previous pipeline first — even if the device
@@ -465,6 +467,7 @@ export class AudioEngine {
     await this._teardownLtcInput()
 
     this.ltcInputDeviceId = normalised
+    this.ltcInputChannel = channel
     if (!normalised) return
 
     let stream: MediaStream
@@ -528,15 +531,23 @@ export class AudioEngine {
       this.ltcInputWorkletNode = new AudioWorkletNode(this.ltcInputCtx, 'ltc-processor', {
         numberOfInputs: 1,
         numberOfOutputs: 0,
-        // Accept mono OR stereo — the LTC worklet looks at channel 0 only,
-        // but the input source may be stereo so we let the WebAudio
-        // automatic mixdown handle it (channelCountMode: max picks the
-        // source's actual channelCount).
+        // The worklet's input is mono — the splitter (below) picks exactly
+        // one channel of the source and routes it here.
         channelCount: 1,
         channelCountMode: 'explicit',
       })
       this.ltcInputWorkletNode.port.onmessage = (e): void => this._onLtcInputFrame(e.data)
-      this.ltcInputSourceNode.connect(this.ltcInputWorkletNode)
+
+      // Use a channel splitter so we can pick which channel of a multi-channel
+      // input device carries LTC. 'auto' falls back to channel 0 (left).
+      // Splitter outputs default to 6; bump to 8 to cover prosumer multi-ch
+      // interfaces. Non-existent channels just feed silence.
+      const splitterChannels = 8
+      this.ltcInputSplitter = this.ltcInputCtx.createChannelSplitter(splitterChannels)
+      this.ltcInputSourceNode.connect(this.ltcInputSplitter)
+      const chIdx = channel === 'auto' ? 0 : channel
+      const safeChIdx = Math.max(0, Math.min(splitterChannels - 1, chIdx))
+      this.ltcInputSplitter.connect(this.ltcInputWorkletNode, safeChIdx, 0)
 
       // Hook device-disconnect: if the USB cable is yanked, the MediaStream
       // ends asynchronously. We tear down + notify so the UI flips chase to
@@ -574,6 +585,10 @@ export class AudioEngine {
       this.ltcInputWorkletNode.port.onmessage = null
       try { this.ltcInputWorkletNode.disconnect() } catch { /* ignore */ }
       this.ltcInputWorkletNode = null
+    }
+    if (this.ltcInputSplitter) {
+      try { this.ltcInputSplitter.disconnect() } catch { /* ignore */ }
+      this.ltcInputSplitter = null
     }
     if (this.ltcInputSourceNode) {
       try { this.ltcInputSourceNode.disconnect() } catch { /* ignore */ }
@@ -801,6 +816,7 @@ export class AudioEngine {
       try { this.ltcInputWorkletNode.disconnect() } catch { /* ignore */ }
       this.ltcInputWorkletNode = null
     }
+    if (this.ltcInputSplitter) { try { this.ltcInputSplitter.disconnect() } catch { /* ignore */ } this.ltcInputSplitter = null }
     if (this.ltcInputSourceNode) { try { this.ltcInputSourceNode.disconnect() } catch { /* ignore */ } this.ltcInputSourceNode = null }
     if (this.ltcInputStream) { try { this.ltcInputStream.getTracks().forEach(t => { t.onended = null; t.stop() }) } catch { /* ignore */ } this.ltcInputStream = null }
     if (this.ltcInputCtx) { try { this.ltcInputCtx.close() } catch { /* ignore */ } this.ltcInputCtx = null }

@@ -519,6 +519,7 @@ function DevicesSection({
     musicOutputDeviceId, setMusicOutputDeviceId,
     ltcOutputDeviceId, setLtcOutputDeviceId,
     ltcInputDeviceId, setLtcInputDevice,
+    ltcInputChannel, setLtcInputChannel,
     midiOutputs,
     selectedMidiPort, setSelectedMidiPort,
     midiConnected,
@@ -664,7 +665,7 @@ function DevicesSection({
 
       {/* LTC INPUT device — chase mode */}
       <div className="device-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span className="device-label">{t(lang, 'ltcInputDevice')}</span>
           <select
             className="device-select"
@@ -673,6 +674,19 @@ function DevicesSection({
           >
             <option value="">{t(lang, 'ltcInputDeviceNone')}</option>
             {audioInputDevices.map((d) => (<option key={d.deviceId} value={d.deviceId}>{d.label}</option>))}
+          </select>
+          <select
+            className="device-select"
+            value={ltcInputChannel}
+            onChange={(e) => setLtcInputChannel(e.target.value === 'auto' ? 'auto' : Number(e.target.value) as 0 | 1 | 2 | 3)}
+            disabled={!ltcInputDeviceId}
+            title={t(lang, 'ltcInputChannelHint')}
+          >
+            <option value="auto">{t(lang, 'ltcChannelAuto')}</option>
+            <option value={0}>CH 1</option>
+            <option value={1}>CH 2</option>
+            <option value={2}>CH 3</option>
+            <option value={3}>CH 4</option>
           </select>
         </div>
         {needsMicPermission && (

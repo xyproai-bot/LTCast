@@ -482,6 +482,7 @@ export const strings = {
     ltcInputGrantPermission: 'Grant microphone access',
     ltcInputRequestingPermission: 'Requesting...',
     ltcInputJumpToDevicesHint: 'Click to jump to Devices settings',
+    ltcInputChannelHint: 'Which channel of the input device carries LTC. Auto = channel 1.',
     ltcInputPermissionDenied: 'Microphone permission denied. LTC chase requires audio input access.',
     ltcInputDeviceDisconnected: 'LTC input device disconnected',
     ltcInputNotConfiguredHint: 'No LTC input device selected. Pick one in Devices.'
@@ -966,6 +967,7 @@ export const strings = {
     ltcInputGrantPermission: '授權麥克風存取',
     ltcInputRequestingPermission: '請求中...',
     ltcInputJumpToDevicesHint: '點擊跳到設備設定',
+    ltcInputChannelHint: '輸入設備上 LTC 所在的聲道。自動 = 聲道 1。',
     ltcInputPermissionDenied: '麥克風權限被拒絕，無法接收 LTC 輸入。',
     ltcInputDeviceDisconnected: 'LTC 輸入設備已中斷',
     ltcInputNotConfiguredHint: '尚未選擇 LTC 輸入設備，請至「設備」頁設定。'
@@ -1450,6 +1452,7 @@ export const strings = {
     ltcInputGrantPermission: 'マイクアクセスを許可',
     ltcInputRequestingPermission: 'リクエスト中...',
     ltcInputJumpToDevicesHint: 'クリックでデバイス設定へ',
+    ltcInputChannelHint: '入力デバイスで LTC が乗っているチャンネル。自動 = チャンネル 1。',
     ltcInputPermissionDenied: 'マイク権限が拒否されました。LTC チェイスには入力アクセスが必要です。',
     ltcInputDeviceDisconnected: 'LTC 入力デバイスが切断されました',
     ltcInputNotConfiguredHint: 'LTC 入力デバイスが選択されていません。「デバイス」で選択してください。'
