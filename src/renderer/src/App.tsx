@@ -18,7 +18,7 @@ import { TapBpm } from './components/TapBpm'
 import { StatusBar } from './components/StatusBar'
 import { LtcWavExportDialog } from './components/LtcWavExportDialog'
 import { LicenseDialog } from './components/LicenseDialog'
-import { useStore, TimecodeFrame, buildPresetData } from './store'
+import { useStore, TimecodeFrame, MidiCuePoint, buildPresetData } from './store'
 import { useShallow } from 'zustand/react/shallow'
 import { alignAudio } from './audio/AudioAligner'
 import { getTimecodeAtTime, formatTimecode } from './audio/LtcDecoder'
@@ -1193,6 +1193,24 @@ export default function App(): React.JSX.Element {
     setSelectedCueMidiPort(ok ? portId : null)
   }, [setSelectedCueMidiPort])
 
+  /**
+   * Test-fire a MIDI cue from the renderer immediately. Same MtcOutput path
+   * the scheduler uses (`mtc.current.sendNoteOn` / `sendControlChange` /
+   * `sendProgramChange`), so the user hears the same MIDI byte stream they'd
+   * get during playback. Used by the cue-row ▶ button.
+   */
+  const testFireCue = useCallback((cue: MidiCuePoint): void => {
+    if (!mtc.current) return
+    if (cue.messageType === 'program-change') {
+      mtc.current.sendProgramChange(cue.channel, cue.data1)
+    } else if (cue.messageType === 'note-on') {
+      mtc.current.sendNoteOn(cue.channel, cue.data1, cue.data2 ?? 100)
+    } else if (cue.messageType === 'control-change') {
+      mtc.current.sendControlChange(cue.channel, cue.data1, cue.data2 ?? 0)
+    }
+    showLog.log('cue', `[test] ${cue.messageType} ch${cue.channel} #${cue.data1}${cue.label ? ` "${cue.label}"` : ''}`)
+  }, [])
+
   const selectMidiInputPort = useCallback((portId: string): void => {
     if (!midiIn.current) return
     if (!portId) {
@@ -1875,6 +1893,7 @@ export default function App(): React.JSX.Element {
               onStartLearn={handleStartLearn}
               learningMappingId={learningMappingId}
               lastFiredCueId={lastFiredCueId}
+              onTestFireCue={testFireCue}
               onAddMarker={() => {
                 // Defer to the marker-add flow already wired into the keyboard
                 // 'M' shortcut: drop a marker at the current playhead.

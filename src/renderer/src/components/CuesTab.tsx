@@ -12,7 +12,7 @@
  */
 
 import React from 'react'
-import { useStore } from '../store'
+import { useStore, MidiCuePoint } from '../store'
 import { useShallow } from 'zustand/react/shallow'
 import { t } from '../i18n'
 import { StructurePanel } from './StructurePanel'
@@ -29,13 +29,14 @@ interface Props {
   lastFiredCueId: string | null
   onAddMarker: () => void
   onAddMidiCue: () => void
+  onTestFireCue?: (cue: MidiCuePoint) => void
 }
 
 export function CuesTab({
   onSeek, onUpgrade,
   onCueMidiPortChange, onMidiInputPortChange,
   onStartLearn, learningMappingId, lastFiredCueId,
-  onAddMarker, onAddMidiCue,
+  onAddMarker, onAddMidiCue, onTestFireCue,
 }: Props): React.JSX.Element {
   // Subscribe narrowly so this wrapper doesn't re-render every TC update.
   // We project the relevant counts (not full arrays) to keep useShallow's
@@ -97,6 +98,7 @@ export function CuesTab({
             onStartLearn={onStartLearn}
             learningMappingId={learningMappingId}
             lastFiredCueId={lastFiredCueId}
+            onTestFireCue={onTestFireCue}
           />
         </div>
       </div>

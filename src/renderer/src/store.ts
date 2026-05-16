@@ -653,6 +653,7 @@ export interface AppState {
   setSetlistItemNotes: (index: number, notes: string | undefined) => void
   setSetlistItemStageNote: (index: number, stageNote: string | undefined) => void
   setSetlistItemMidiCues: (index: number, cues: MidiCuePoint[]) => void
+  updateSetlistItemMidiCue: (index: number, cueId: string, patch: Partial<MidiCuePoint>) => void
   // Sprint B — F5: replace audio with alignment
   setSetlistItemPath: (index: number, path: string, name: string) => void
   replaceSetlistItemAudio: (
@@ -1279,6 +1280,26 @@ export const useStore = create<AppState>()(persist((set) => ({
     if (index < 0 || index >= s.setlist.length) return s
     const setlist = [...s.setlist]
     setlist[index] = { ...setlist[index], midiCues: cues }
+    return {
+      setlist,
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist } : v
+      ),
+      presetDirty: true
+    }
+  }),
+  // Patch a single cue by id. Re-sorts by triggerTimecode if the TC changed,
+  // so inline edits keep the list ordered without callers having to think.
+  updateSetlistItemMidiCue: (index: number, cueId: string, patch: Partial<MidiCuePoint>) => set((s) => {
+    if (index < 0 || index >= s.setlist.length) return s
+    const cues = s.setlist[index].midiCues ?? []
+    const idx = cues.findIndex(c => c.id === cueId)
+    if (idx < 0) return s
+    const updatedCues = cues.map(c => c.id === cueId ? { ...c, ...patch } : c)
+    // Re-sort so TC edits stay ordered
+    updatedCues.sort((a, b) => a.triggerTimecode.localeCompare(b.triggerTimecode))
+    const setlist = [...s.setlist]
+    setlist[index] = { ...setlist[index], midiCues: updatedCues }
     return {
       setlist,
       setlistVariants: s.setlistVariants.map(v =>
