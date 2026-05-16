@@ -3006,8 +3006,8 @@ html, body, #root {
   font-variant-numeric: tabular-nums;
 }
 
-/* Test-fire (▶) and duplicate (⧉) buttons on each cue row */
-.cp-cue-fire, .cp-cue-dup {
+/* Test-fire (▶), duplicate (⧉), and sync-to-now (⏱) buttons on each cue row */
+.cp-cue-fire, .cp-cue-dup, .cp-cue-sync {
   background: none;
   border: none;
   color: #333;
@@ -3022,11 +3022,15 @@ html, body, #root {
   transition: color 0.1s, opacity 0.1s, background 0.1s;
 }
 .cp-cue-item:hover .cp-cue-fire,
-.cp-cue-item:hover .cp-cue-dup { opacity: 1; }
+.cp-cue-item:hover .cp-cue-dup,
+.cp-cue-item:hover .cp-cue-sync { opacity: 1; }
 .cp-cue-fire:hover  { color: #00d4ff; background: rgba(0, 212, 255, 0.1); }
 .cp-cue-dup:hover   { color: #aaa;    background: rgba(255, 255, 255, 0.08); }
-.cp-cue-fire:disabled { opacity: 0.25; cursor: default; }
-.cp-cue-fire:disabled:hover { color: #333; background: none; }
+.cp-cue-sync:hover  { color: #00d4ff; background: rgba(0, 212, 255, 0.1); }
+.cp-cue-fire:disabled,
+.cp-cue-sync:disabled { opacity: 0.25; cursor: default; }
+.cp-cue-fire:disabled:hover,
+.cp-cue-sync:disabled:hover { color: #333; background: none; }
 
 /* Inline-editable cells — subtle dotted underline on hover, becomes solid on edit */
 .cp-cue-editable { cursor: text; border-bottom: 1px dashed transparent; transition: border-color 0.1s; }
