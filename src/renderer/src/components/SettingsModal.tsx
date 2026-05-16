@@ -673,7 +673,7 @@ function ChaseSection(): React.JSX.Element {
     lang,
     chaseEnabled, setChaseEnabled,
     chaseOutputAudio, setChaseOutputAudio,
-    chaseFreewheelMs, setChaseFreewheelMs,
+    chaseFreewheelEnabled, setChaseFreewheelEnabled,
     chaseStatus,
     ltcInputDeviceId,
   } = useStore()
@@ -736,21 +736,17 @@ function ChaseSection(): React.JSX.Element {
         <span className="ltc-gain-hint" style={{ marginLeft: 28 }}>{t(lang, 'chaseOutputAudioHint')}</span>
       </div>
 
-      {/* Freewheel threshold */}
-      <div className="device-row">
-        <span className="device-label">{t(lang, 'chaseFreewheelThreshold')}</span>
-        <input
-          type="number"
-          className="device-select"
-          style={{ width: 80 }}
-          min={100} max={2000} step={50}
-          value={chaseFreewheelMs}
-          onChange={(e) => {
-            const v = parseInt(e.target.value, 10)
-            if (!isNaN(v)) setChaseFreewheelMs(v)
-          }}
-        />
-        <span className="ltc-gain-hint">{t(lang, 'chaseFreewheelHint')}</span>
+      {/* Freewheel toggle — keep running when LTC drops? */}
+      <div className="device-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+        <label className="artnet-toggle" style={{ gap: 8, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={chaseFreewheelEnabled}
+            onChange={(e) => setChaseFreewheelEnabled(e.target.checked)}
+          />
+          <span className="device-label" style={{ cursor: 'pointer' }}>{t(lang, 'chaseFreewheelEnable')}</span>
+        </label>
+        <span className="ltc-gain-hint" style={{ marginLeft: 28 }}>{t(lang, 'chaseFreewheelHint')}</span>
       </div>
 
       {/* Status read-out */}

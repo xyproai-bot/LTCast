@@ -615,13 +615,13 @@ export interface AppState {
   uiSize: UiSize          // UI scale factor (per-install)
 
   // LTC Chase mode — D3-style follow external timecode.
-  // chaseEnabled / chaseOutputAudio / chaseFreewheelMs are per-install
+  // chaseEnabled / chaseOutputAudio / chaseFreewheelEnabled are per-install
   // settings (persisted via Zustand). chaseStatus / chaseLastTcFrames are
   // runtime-only — never persisted, never marks preset dirty.
   chaseEnabled: boolean
   chaseOutputAudio: boolean
-  chaseFreewheelMs: number       // 100–2000, default 500
-  chaseStatus: ChaseStatus       // runtime
+  chaseFreewheelEnabled: boolean    // when LTC stops, keep running on internal clock
+  chaseStatus: ChaseStatus          // runtime
   chaseLastTcFrames: number | null  // runtime, integer frame count for cursor follow
 
   // License
@@ -764,7 +764,7 @@ export interface AppState {
   // LTC Chase actions
   setChaseEnabled: (v: boolean) => void
   setChaseOutputAudio: (v: boolean) => void
-  setChaseFreewheelMs: (v: number) => void
+  setChaseFreewheelEnabled: (v: boolean) => void
   setChaseStatus: (s: ChaseStatus) => void
   setChaseLastTcFrames: (v: number | null) => void
   // Set / clear scanned LTC segments on a setlist item (by index, not id, to
@@ -926,7 +926,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   // means safe for any operator who isn't expecting external TC).
   chaseEnabled: false,
   chaseOutputAudio: false,
-  chaseFreewheelMs: 500,
+  chaseFreewheelEnabled: true,
   chaseStatus: 'idle',
   chaseLastTcFrames: null,
 
@@ -1678,8 +1678,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   // touch presetDirty (they're operator preferences, not show data).
   setChaseEnabled: (chaseEnabled) => set({ chaseEnabled }),
   setChaseOutputAudio: (chaseOutputAudio) => set({ chaseOutputAudio }),
-  setChaseFreewheelMs: (chaseFreewheelMs) =>
-    set({ chaseFreewheelMs: Math.max(100, Math.min(2000, Math.floor(chaseFreewheelMs))) }),
+  setChaseFreewheelEnabled: (chaseFreewheelEnabled) => set({ chaseFreewheelEnabled }),
   setChaseStatus: (chaseStatus) => set({ chaseStatus }),
   setChaseLastTcFrames: (chaseLastTcFrames) => set({ chaseLastTcFrames }),
   // Write scanned LTC segments + status onto a setlist item. Mirrors into
@@ -2164,7 +2163,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     // runtime-only and deliberately excluded from persistence).
     chaseEnabled: state.chaseEnabled,
     chaseOutputAudio: state.chaseOutputAudio,
-    chaseFreewheelMs: state.chaseFreewheelMs,
+    chaseFreewheelEnabled: state.chaseFreewheelEnabled,
     // F4 — Show Timer: per-install, not per-preset (Q-E). On rehydrate we
     // force running=false in merge() so a ticking timer at quit comes back
     // stopped at its last snapshot (AC-8).
@@ -2256,11 +2255,15 @@ export const useStore = create<AppState>()(persist((set) => ({
     // restarts because there's no LTC source live yet.
     merged.chaseStatus = 'idle'
     merged.chaseLastTcFrames = null
-    if (typeof merged.chaseFreewheelMs !== 'number' || !isFinite(merged.chaseFreewheelMs)) {
-      merged.chaseFreewheelMs = 500
-    } else {
-      merged.chaseFreewheelMs = Math.max(100, Math.min(2000, Math.floor(merged.chaseFreewheelMs)))
+    // Migrate v13 chaseFreewheelMs (number) → chaseFreewheelEnabled (boolean).
+    // Any positive ms means "freewheel was on"; absent / 0 means "off".
+    if (typeof merged.chaseFreewheelEnabled !== 'boolean') {
+      const legacyMs = (merged as Record<string, unknown>).chaseFreewheelMs
+      merged.chaseFreewheelEnabled = typeof legacyMs === 'number' && legacyMs > 0
+        ? true
+        : true // default ON
     }
+    delete (merged as Record<string, unknown>).chaseFreewheelMs
     if (typeof merged.chaseEnabled !== 'boolean') merged.chaseEnabled = false
     if (typeof merged.chaseOutputAudio !== 'boolean') merged.chaseOutputAudio = false
     // LTC Input device: must be null or non-empty string. Older installs
