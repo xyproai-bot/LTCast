@@ -1962,6 +1962,49 @@ html, body, #root {
 .setlist-offset-input:focus { border-color: var(--accent); }
 .setlist-offset-input::placeholder { color: #444; font-size: 10px; }
 
+/* Expanded action row — N / S / ⇄ / ✕ buttons, shown only when row is expanded */
+.setlist-expanded-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 8px 36px;
+  background: #0a0a0a;
+  border-left: 4px solid transparent;
+}
+.setlist-action-btn {
+  background: transparent;
+  border: 1px solid #2a2a2a;
+  color: #888;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 24px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.setlist-action-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.setlist-action-btn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.setlist-action-btn--danger:hover {
+  color: #f44336;
+  border-color: #f44336;
+  background: #3a1111;
+}
+.setlist-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Notes badge + editor */
 .setlist-notes-badge {
   font-size: 9px;
