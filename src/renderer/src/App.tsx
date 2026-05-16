@@ -469,6 +469,16 @@ export default function App(): React.JSX.Element {
           // next configure step.
           useStore.getState().setLtcInputDevice(null)
         }
+      },
+      onLtcInputChannelDetected: (channelIndex) => {
+        // Auto-detect locked onto a channel — surface it in the UI so the
+        // operator can see e.g. "Auto → CH 2". Toast once per detection
+        // so they get unambiguous feedback the first time it happens.
+        const s = useStore.getState()
+        if (s.detectedLtcInputChannel !== channelIndex) {
+          s.setDetectedLtcInputChannel(channelIndex)
+          toast.info(t(s.lang, 'ltcInputAutoDetected', { n: String(channelIndex + 1) }))
+        }
       }
     })
 
@@ -820,7 +830,34 @@ export default function App(): React.JSX.Element {
               })
             },
             onStatusChange: (status) => {
-              useStore.getState().setChaseStatus(status)
+              const stateNow = useStore.getState()
+              const prevStatus = stateNow.chaseStatus
+              stateNow.setChaseStatus(status)
+              // Chase audio output on transitions into a "live" status:
+              //   idle/lost → chasing (or freewheeling)
+              // If the operator wants audio during chase AND we have a
+              // virtual time anchor from the chase engine, kick off
+              // playback at the current chase offset. This handles the
+              // case where chase locks on mid-song (no song-change
+              // event, so the onSongChange path doesn't fire).
+              const becameLive = (prevStatus === 'idle' || prevStatus === 'lost') &&
+                (status === 'chasing' || status === 'freewheeling')
+              if (becameLive && stateNow.chaseOutputAudio && stateNow.duration > 0) {
+                const offset = chaseVirtualTimeRef.current
+                if (offset !== null && isFinite(offset) && offset >= 0) {
+                  setPlayState('playing')
+                  engine.current?.seek(offset).then(() => engine.current?.play())
+                    .catch(() => setPlayState('paused'))
+                }
+              }
+              // Chase lost / idle while audio is running → pause to keep
+              // the audio cursor aligned with the (now-unknown) external TC.
+              const becameLost = (prevStatus === 'chasing' || prevStatus === 'freewheeling') &&
+                (status === 'lost' || status === 'idle')
+              if (becameLost && stateNow.chaseOutputAudio && stateNow.playState === 'playing') {
+                engine.current?.pause()
+                setPlayState('paused')
+              }
             },
             onTcUpdate: (chaseSec) => {
               // chaseSec is the audio-file position the programmer is at.
@@ -867,6 +904,32 @@ export default function App(): React.JSX.Element {
       if (s.chaseFreewheelEnabled !== prev.chaseFreewheelEnabled) {
         ch.setFreewheelEnabled(s.chaseFreewheelEnabled)
       }
+      // Chase audio output toggle: when the operator flips this mid-chase
+      // we need to start or stop audio without waiting for the next song
+      // change. The chase engine itself never controls audio — it just
+      // reports virtual time — so the host has to seek + play here.
+      if (s.chaseOutputAudio !== prev.chaseOutputAudio && s.chaseEnabled) {
+        const isLive = s.chaseStatus === 'chasing' || s.chaseStatus === 'freewheeling'
+        if (s.chaseOutputAudio && isLive && s.duration > 0) {
+          // Toggle ON while already chasing → snap audio to the current
+          // chase virtual time and play. If the virtual time is null
+          // (no frames received yet or out-of-segment) we do nothing —
+          // the next chase frame inside a song will kick playback off
+          // via the becameLive branch above or onSongChange.
+          const offset = chaseVirtualTimeRef.current
+          if (offset !== null && isFinite(offset) && offset >= 0) {
+            setPlayState('playing')
+            engine.current?.seek(offset).then(() => engine.current?.play())
+              .catch(() => setPlayState('paused'))
+          }
+        } else if (!s.chaseOutputAudio && s.playState === 'playing') {
+          // Toggle OFF while audio is running → pause. Chase logic itself
+          // (TC follow, cue firing) keeps running because it's driven by
+          // external LTC, not playback time.
+          engine.current?.pause()
+          setPlayState('paused')
+        }
+      }
       // Rebuild segment index whenever the setlist mutates while enabled
       if (s.chaseEnabled && s.setlist !== prev.setlist) {
         const songs: Array<{ setlistIdx: number; segments: import('./store').LtcSegment[] }> = []
@@ -902,6 +965,10 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     const unsub = useStore.subscribe((s, prev) => {
       if (s.ltcInputDeviceId !== prev.ltcInputDeviceId || s.ltcInputChannel !== prev.ltcInputChannel) {
+        // Device or channel-mode changed — clear any auto-detect lock-in so
+        // the UI doesn't show a stale "Auto → CH N" badge while the new
+        // pipeline is still waiting for a frame.
+        useStore.getState().setDetectedLtcInputChannel(null)
         engine.current?.setLtcInputDevice(s.ltcInputDeviceId, s.ltcInputChannel).catch(() => { /* engine surfaces errors */ })
       }
     })

@@ -537,6 +537,7 @@ function DevicesSection({
     ltcOutputDeviceId, setLtcOutputDeviceId,
     ltcInputDeviceId, setLtcInputDevice,
     ltcInputChannel, setLtcInputChannel,
+    detectedLtcInputChannel,
     midiOutputs,
     selectedMidiPort, setSelectedMidiPort,
     midiConnected,
@@ -705,6 +706,14 @@ function DevicesSection({
             <option value={2}>CH 3</option>
             <option value={3}>CH 4</option>
           </select>
+          {/* When auto-detect has locked onto a channel, surface it so the
+              operator can see "Auto → CH 2" without having to inspect
+              chase behaviour. Only visible in 'auto' mode + after detection. */}
+          {ltcInputChannel === 'auto' && detectedLtcInputChannel !== null && (
+            <span className="status-badge" style={{ fontSize: 10, opacity: 0.85 }}>
+              {t(lang, 'ltcInputAutoDetected', { n: String(detectedLtcInputChannel + 1) })}
+            </span>
+          )}
         </div>
         {needsMicPermission && (
           <button

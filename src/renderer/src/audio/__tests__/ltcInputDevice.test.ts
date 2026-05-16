@@ -204,3 +204,140 @@ describe('AudioEngine.setLtcInputDevice', () => {
     })
   })
 })
+
+// ════════════════════════════════════════════════════════════════════
+// setLtcInputDevice — auto-detect channel
+//
+// In 'auto' mode the engine should spawn parallel worklets (one per
+// candidate channel) and the first worklet to emit a TC frame wins.
+// We capture the worklet instances created during pipeline setup, then
+// simulate worklet `port.onmessage` events from the channel under test
+// to verify the lock-in behaviour.
+// ════════════════════════════════════════════════════════════════════
+
+describe('AudioEngine.setLtcInputDevice — auto-detect channel', () => {
+  // Captured worklets across the most recent setLtcInputDevice call. The
+  // mock AudioWorkletNode constructor pushes to this array so tests can
+  // grab the parallel-mode instances by index.
+  let createdWorklets: Array<{ port: { onmessage: ((e: { data: unknown }) => void) | null } }>
+
+  beforeEach(() => {
+    createdWorklets = []
+    // Override the AudioWorkletNode mock from the outer beforeEach so we
+    // can capture instances (the outer one is fine for error-path tests
+    // that never construct one but isn't observable enough for these).
+    vi.stubGlobal('AudioWorkletNode', class MockCaptureWorkletNode {
+      public port: { onmessage: ((e: { data: unknown }) => void) | null; postMessage(): void } = {
+        onmessage: null,
+        postMessage(): void { /* noop */ },
+      }
+      constructor(_ctx: unknown, _name: string, _opts?: unknown) {
+        createdWorklets.push(this)
+      }
+      connect(): void { /* noop */ }
+      disconnect(): void { /* noop */ }
+    })
+
+    // getUserMedia must succeed so the pipeline gets built. Return a stream
+    // with a single (irrelevant) audio track that exposes the .onended hook.
+    getUserMediaMock.mockResolvedValue({
+      getTracks: () => [{ stop(): void {}, set onended(_h: (() => void) | null) {} }],
+      getAudioTracks: () => [{ stop(): void {}, set onended(_h: (() => void) | null) {} }],
+    } as unknown as MediaStream)
+  })
+
+  /** Build a fake worklet port message that matches the shape produced by
+   *  ltcProcessor.js (HH:MM:SS:FF + fps + dropFrame). */
+  function mkFrame(h: number, m: number, s: number, f: number): { data: unknown } {
+    return { data: { hours: h, minutes: m, seconds: s, frames: f, fps: 25, dropFrame: false } }
+  }
+
+  it('spawns two parallel worklets when channel === "auto"', async () => {
+    const engine = new AudioEngine(makeCallbacks())
+    await engine.setLtcInputDevice('cable-1', 'auto')
+    // One worklet per scanned channel (CH 0 + CH 1).
+    expect(createdWorklets.length).toBe(2)
+    expect(engine.getLtcAutoDetectedChannel()).toBeNull()
+  })
+
+  it('spawns exactly one worklet when channel is explicit (CH 1)', async () => {
+    const engine = new AudioEngine(makeCallbacks())
+    await engine.setLtcInputDevice('cable-1', 1)
+    expect(createdWorklets.length).toBe(1)
+  })
+
+  it('locks onto the first channel to emit a frame, drops later frames from the other', async () => {
+    const onLtcInputTimecode = vi.fn()
+    const onLtcInputChannelDetected = vi.fn()
+    const engine = new AudioEngine(makeCallbacks({ onLtcInputTimecode, onLtcInputChannelDetected }))
+    await engine.setLtcInputDevice('cable-1', 'auto')
+
+    // Worklet 0 listens to CH 0, worklet 1 to CH 1 (per ltcAutoScanChannels = [0, 1]).
+    const [worklet0, worklet1] = createdWorklets
+    expect(worklet0).toBeDefined()
+    expect(worklet1).toBeDefined()
+
+    // CH 1 emits first — it wins the race.
+    worklet1.port.onmessage?.(mkFrame(1, 0, 0, 5))
+    expect(engine.getLtcAutoDetectedChannel()).toBe(1)
+    expect(onLtcInputChannelDetected).toHaveBeenCalledWith(1)
+    expect(onLtcInputChannelDetected).toHaveBeenCalledTimes(1)
+    expect(onLtcInputTimecode).toHaveBeenCalledTimes(1)
+
+    // CH 0 fires later — must be dropped, count stays at 1.
+    worklet0.port.onmessage?.(mkFrame(1, 0, 0, 10))
+    expect(onLtcInputTimecode).toHaveBeenCalledTimes(1)
+    expect(engine.getLtcAutoDetectedChannel()).toBe(1)
+
+    // CH 1 keeps emitting — counts add up because it's the locked channel.
+    worklet1.port.onmessage?.(mkFrame(1, 0, 0, 6))
+    worklet1.port.onmessage?.(mkFrame(1, 0, 0, 7))
+    expect(onLtcInputTimecode).toHaveBeenCalledTimes(3)
+    // onLtcInputChannelDetected is fire-once per detection — still 1.
+    expect(onLtcInputChannelDetected).toHaveBeenCalledTimes(1)
+  })
+
+  it('CH 0 winning the race produces detected channel = 0', async () => {
+    const onLtcInputChannelDetected = vi.fn()
+    const engine = new AudioEngine(makeCallbacks({ onLtcInputChannelDetected }))
+    await engine.setLtcInputDevice('cable-1', 'auto')
+
+    const [worklet0, worklet1] = createdWorklets
+    worklet0.port.onmessage?.(mkFrame(0, 0, 1, 0))
+    expect(engine.getLtcAutoDetectedChannel()).toBe(0)
+    expect(onLtcInputChannelDetected).toHaveBeenCalledWith(0)
+    // CH 1 trying later is dropped.
+    worklet1.port.onmessage?.(mkFrame(0, 0, 2, 0))
+    expect(onLtcInputChannelDetected).toHaveBeenCalledTimes(1)
+  })
+
+  it('switching from auto to explicit tears down auto worklets and resets detected channel', async () => {
+    const engine = new AudioEngine(makeCallbacks())
+    await engine.setLtcInputDevice('cable-1', 'auto')
+    expect(createdWorklets.length).toBe(2)
+
+    // Lock onto a channel via a fake frame.
+    createdWorklets[1].port.onmessage?.({ data: { hours: 1, minutes: 0, seconds: 0, frames: 0, fps: 25, dropFrame: false } })
+    expect(engine.getLtcAutoDetectedChannel()).toBe(1)
+
+    // Reset the captured list and pick CH 0 explicitly. Single worklet now.
+    createdWorklets = []
+    await engine.setLtcInputDevice('cable-1', 0)
+    expect(createdWorklets.length).toBe(1)
+    expect(engine.getLtcAutoDetectedChannel()).toBeNull()
+  })
+
+  it('frames with invalid fps are silently dropped (no detection)', async () => {
+    const onLtcInputChannelDetected = vi.fn()
+    const onLtcInputTimecode = vi.fn()
+    const engine = new AudioEngine(makeCallbacks({ onLtcInputChannelDetected, onLtcInputTimecode }))
+    await engine.setLtcInputDevice('cable-1', 'auto')
+
+    const [worklet0] = createdWorklets
+    worklet0.port.onmessage?.({ data: { hours: 0, minutes: 0, seconds: 0, frames: 0, fps: 0, dropFrame: false } })
+    worklet0.port.onmessage?.({ data: { hours: 0, minutes: 0, seconds: 0, frames: 0, fps: NaN, dropFrame: false } })
+    expect(onLtcInputChannelDetected).not.toHaveBeenCalled()
+    expect(onLtcInputTimecode).not.toHaveBeenCalled()
+    expect(engine.getLtcAutoDetectedChannel()).toBeNull()
+  })
+})
