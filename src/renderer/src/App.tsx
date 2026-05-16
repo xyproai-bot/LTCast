@@ -447,6 +447,14 @@ export default function App(): React.JSX.Element {
             fps: tc.fps, dropFrame: tc.dropFrame,
           })
         }
+        // Mirror the incoming TC into the store so the big TimecodeDisplay
+        // ticks while chase is following. Without this the digits stay
+        // frozen at whatever the last file-LTC frame was — confusing because
+        // the cursor and cues clearly are advancing.
+        const sNow = useStore.getState()
+        if (sNow.chaseEnabled) {
+          sNow.setTimecode(tc)
+        }
       },
       onLtcInputError: (type) => {
         const l = useStore.getState().lang
