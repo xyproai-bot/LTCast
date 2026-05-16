@@ -1196,10 +1196,7 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
                           >✕</button>
                         </Tooltip>
                       )}
-                    </div>
-                  )}
-                  {isExpanded && (
-                    <div className="setlist-expanded-actions" onClick={(e) => e.stopPropagation()}>
+                      <span className="setlist-expanded-divider" />
                       <Tooltip text={t(lang, 'songNotes')}>
                         <button
                           className={`setlist-action-btn${editingNotesIdx === i ? ' active' : ''}`}
