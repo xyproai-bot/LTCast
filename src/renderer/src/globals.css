@@ -4018,7 +4018,7 @@ html, body, #root {
   min-width: 0;
   padding: 8px 18px;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   background: var(--accent);
@@ -4030,10 +4030,13 @@ html, body, #root {
 }
 .timer-btn-primary:hover  { filter: brightness(1.12); }
 .timer-btn-primary:active { transform: translateY(1px); }
-.timer-btn-start  { background: #4ade80; color: #052e16; }   /* fresh — green */
+/* Text stays pure black on every state — same-hue dark text (e.g. dark-green
+   on green) reads as washed-out / disabled. Pure black gives 7-10:1 contrast
+   on all three background colors. */
+.timer-btn-start  { background: #4ade80; color: #000; }   /* fresh — green */
 .timer-btn-start:hover  { background: #6ee08f; }
 .timer-btn-resume { background: var(--accent); color: #000; } /* resume — cyan */
-.timer-btn-pause  { background: #f59e0b; color: #1a1206; }   /* running — amber */
+.timer-btn-pause  { background: #f59e0b; color: #000; }   /* running — amber */
 .timer-btn-pause:hover  { background: #fbb536; }
 
 .timer-btn-secondary {
