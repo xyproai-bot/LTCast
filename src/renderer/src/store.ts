@@ -379,18 +379,6 @@ export function buildPresetData(s: Pick<AppState,
   }
 }
 
-/** Rebuild the runtime id-keyed markers map from a freshly-loaded setlist
- *  whose items carry `markers` (v8). Empty / undefined arrays are omitted. */
-function deriveMarkersFromSetlist(setlist: SetlistItem[]): Record<string, WaveformMarker[]> {
-  const out: Record<string, WaveformMarker[]> = {}
-  for (const item of setlist) {
-    if (item.markers && item.markers.length > 0) {
-      out[item.id] = item.markers
-    }
-  }
-  return out
-}
-
 /** Ensure setlist items in all variants have unique ids */
 function ensureVariantSetlistIds(variants: SetlistVariant[]): SetlistVariant[] {
   return variants.map(v => ({
@@ -463,7 +451,7 @@ export interface AppState {
   musicOutputDeviceId: string
   ltcOutputDeviceId: string
   ltcGain: number       // 0.0–1.5 (1.0 = unity / 0 dB)
-  musicVolume: number   // 0.0–1.5 (1.0 = unity)
+  musicVolume: number   // 0.0–5.7 (1.0 = unity, +15 dB max)
   musicPan: number      // -1.0 (L) to +1.0 (R), 0 = center
 
   // MIDI
@@ -724,6 +712,7 @@ export interface AppState {
   setLicenseStatus: (status: 'none' | 'valid' | 'expired' | 'invalid') => void
   setLicenseValidatedAt: (ts: number | null) => void
   setLicenseExpiresAt: (expiresAt: string | null) => void
+  setTrialDaysLeft: (days: number | null) => void
   isPro: () => boolean
   setAutoAdvanceGap: (gap: number) => void
   setSelectedCueMidiPort: (port: string | null) => void
@@ -736,7 +725,7 @@ export interface AppState {
 
   // Project actions
   newPreset: () => void
-  savePreset: () => void
+  savePreset: () => Promise<void>
   savePresetAs: () => void
   openProject: () => Promise<void>
   openRecentFile: (path: string) => Promise<void>

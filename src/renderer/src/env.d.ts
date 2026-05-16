@@ -8,6 +8,7 @@ interface Window {
     readAudioFile(path: string): Promise<ArrayBuffer>
     getAudioDurations(paths: string[]): Promise<Record<string, number | null>>
     getAppVersion(): Promise<string>
+    checkForUpdates(): Promise<{ ok: boolean; updateAvailable?: boolean; version?: string; error?: string }>
     openVideoDialog(): Promise<string | null>
     extractAudioFromVideo(path: string): Promise<ArrayBuffer>
 
@@ -19,9 +20,15 @@ interface Window {
     licenseActivate(key: string): Promise<{ valid: boolean; error?: string }>
     licenseDeactivate(key: string): Promise<{ valid: boolean; error?: string }>
     licenseValidate(key: string): Promise<{ valid: boolean; error?: string }>
+    licenseStatus(key: string): Promise<{ status: string; tampered?: boolean; expiresAt?: string | null }>
+    // Authoritative Pro check (main process with safeStorage-encrypted state)
+    isPro(): Promise<{ isPro: boolean; reason: string }>
 
     // Trial
     trialCheck(): Promise<{ daysLeft: number; expired: boolean }>
+
+    // Promo code redemption
+    promoRedeem(code: string, email: string): Promise<{ ok: boolean; error?: string; licenseKey?: string; expiresAt?: string | null; alreadyRedeemed?: boolean }>
 
     // Preset / project management (filesystem)
     getLTCastPath(): Promise<string>
@@ -65,6 +72,7 @@ interface Window {
     oscSendTc(hours: number, minutes: number, seconds: number, frames: number, fps: number, targetIp: string, port: number): void
     oscSendTransport(state: string, targetIp: string, port: number): void
     oscSendSong(name: string, index: number, targetIp: string, port: number): void
+    oscSendTcCustom(address: string, tcString: string, fps: number, targetIp: string, port: number): void
 
     // OSC Feedback (F3) — INBOUND listener for /ltcast/tc_ack
     oscFeedbackStart(port: number, bindAddress: '127.0.0.1' | '0.0.0.0'): Promise<{ ok: true } | { ok: false; error: string }>
@@ -80,6 +88,35 @@ interface Window {
 
     // Art-Net socket failure notification
     onArtnetSocketFailed(callback: () => void): () => void
+
+    // Auto-updater progress (v0.5.4 sprint A)
+    onUpdateProgress(callback: (data: { percent: number; transferred: number; total: number; bytesPerSecond: number }) => void): () => void
+    onUpdateProgressDismiss(callback: () => void): () => void
+    onUpdateCancelledToast(callback: () => void): () => void
+    updateCancel(): Promise<{ ok: true } | { ok: false; reason: string }>
+
+    // Window controls (custom title bar)
+    windowMinimize(): Promise<void>
+    windowMaximize(): Promise<void>
+    windowClose(): Promise<void>
+    windowSetZoom(factor: number): Promise<void>
+
+    // Open URL in default browser / email client
+    openExternal(url: string): Promise<void>
+
+    // PDF export (Chromium printToPDF — supports CJK)
+    printToPdf(html: string, defaultName: string): Promise<{ ok: boolean; path?: string; error?: string }>
+
+    // Clipboard
+    copyToClipboard(text: string): Promise<{ ok: boolean; error?: string }>
+
+    // Sprint D — F11: Auto Backup
+    backupSnapshot(presetName: string, presetData: unknown): Promise<{ ok: boolean; path?: string; error?: string }>
+    listBackups(presetName: string): Promise<Array<{ path: string; timestamp: string; sizeBytes: number }>>
+    restoreBackup(backupPath: string): Promise<{ name: string; data: unknown } | null>
+    deleteBackup(backupPath: string): Promise<{ ok: boolean; error?: string }>
+    pruneBackups(presetName: string, keepN: number): Promise<{ ok: boolean; error?: string }>
+    openBackupFolder(presetName: string): Promise<{ ok: boolean; error?: string }>
 
     // Platform detection
     platform: NodeJS.Platform

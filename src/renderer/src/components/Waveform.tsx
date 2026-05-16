@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useCallback, useState } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline.esm.js'
 import MinimapPlugin from 'wavesurfer.js/dist/plugins/minimap.esm.js'
-import { useStore, WaveformMarker, MARKER_TYPE_COLORS, MARKER_TYPES, MarkerType, getContrastLetterColor } from '../store'
+import { useStore, WaveformMarker, getContrastLetterColor } from '../store'
 import { MARKER_TYPE_ABBREV, resolveMarkerTypeColor } from './StructurePanel'
 import { t } from '../i18n'
 
@@ -37,7 +37,7 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     videoWaveform, videoDuration, videoOffsetSeconds,
     videoStartTimecode, videoFileName, videoLoading,
     loopA, loopB,
-    markers, addMarker, removeMarker, updateMarker,
+    markers,
     markerTypeColorOverrides
   } = useStore()
 
@@ -692,6 +692,7 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
         markersRef.current = useStore.getState().markers
         drawMarkers()
       } else if (e.key === 'Escape') {
+        e.stopPropagation()
         setSelectedMarkerId(null)
         drawMarkers()
       }
