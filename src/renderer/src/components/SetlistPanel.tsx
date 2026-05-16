@@ -1134,61 +1134,6 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
                         {item.stageNote && (
                           <span className="setlist-notes-badge" title={item.stageNote} style={{ background: '#e8c97a22', color: '#e8c97a' }}>S</span>
                         )}
-                        <Tooltip text={t(lang, 'songNotes')}>
-                          <button
-                            className={`setlist-offset-btn${editingNotesIdx === i ? ' active' : ''}`}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (editingNotesIdx === i) {
-                                setEditingNotesIdx(null)
-                              } else {
-                                setEditingNotesStr(item.notes ?? '')
-                                setEditingNotesIdx(i)
-                                setEditingOffsetIdx(null)
-                                setEditingStageNoteIdx(null)
-                              }
-                            }}
-                          >N</button>
-                        </Tooltip>
-                        <Tooltip text={t(lang, 'stageNote')}>
-                          <button
-                            className={`setlist-offset-btn${editingStageNoteIdx === i ? ' active' : ''}`}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (editingStageNoteIdx === i) {
-                                setEditingStageNoteIdx(null)
-                              } else {
-                                setEditingStageNoteStr(item.stageNote ?? '')
-                                setEditingStageNoteIdx(i)
-                                setEditingNotesIdx(null)
-                                setEditingOffsetIdx(null)
-                              }
-                            }}
-                            style={{ color: item.stageNote ? '#e8c97a' : undefined }}
-                          >S</button>
-                        </Tooltip>
-                        <Tooltip text={t(lang, 'replaceAudio') + ' (Pro)'}>
-                          <button
-                            className="setlist-offset-btn"
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (!useStore.getState().isPro()) { onShowLicense?.(); return }
-                              handleReplaceAudio(i)
-                            }}
-                            disabled={replacingAudioIdx === i && replaceAligning}
-                            title={t(lang, 'replaceAudio') + ' (Pro)'}
-                          >⇄</button>
-                        </Tooltip>
-                        <Tooltip text={t(lang, 'remove')}>
-                          <button
-                            className="setlist-remove"
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onClick={(e) => { e.stopPropagation(); removeFromSetlist(i) }}
-                          >✕</button>
-                        </Tooltip>
                       </div>
                     </div>
                     {/* Bottom row: duration. ml-5 in Stitch ≈ aligned under the name (skip arrow column). */}
@@ -1251,6 +1196,65 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
                           >✕</button>
                         </Tooltip>
                       )}
+                    </div>
+                  )}
+                  {isExpanded && (
+                    <div className="setlist-expanded-actions" onClick={(e) => e.stopPropagation()}>
+                      <Tooltip text={t(lang, 'songNotes')}>
+                        <button
+                          className={`setlist-action-btn${editingNotesIdx === i ? ' active' : ''}`}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (editingNotesIdx === i) {
+                              setEditingNotesIdx(null)
+                            } else {
+                              setEditingNotesStr(item.notes ?? '')
+                              setEditingNotesIdx(i)
+                              setEditingOffsetIdx(null)
+                              setEditingStageNoteIdx(null)
+                            }
+                          }}
+                        >N</button>
+                      </Tooltip>
+                      <Tooltip text={t(lang, 'stageNote')}>
+                        <button
+                          className={`setlist-action-btn${editingStageNoteIdx === i ? ' active' : ''}`}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (editingStageNoteIdx === i) {
+                              setEditingStageNoteIdx(null)
+                            } else {
+                              setEditingStageNoteStr(item.stageNote ?? '')
+                              setEditingStageNoteIdx(i)
+                              setEditingNotesIdx(null)
+                              setEditingOffsetIdx(null)
+                            }
+                          }}
+                          style={{ color: item.stageNote ? '#e8c97a' : undefined }}
+                        >S</button>
+                      </Tooltip>
+                      <Tooltip text={t(lang, 'replaceAudio') + ' (Pro)'}>
+                        <button
+                          className="setlist-action-btn"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (!useStore.getState().isPro()) { onShowLicense?.(); return }
+                            handleReplaceAudio(i)
+                          }}
+                          disabled={replacingAudioIdx === i && replaceAligning}
+                          title={t(lang, 'replaceAudio') + ' (Pro)'}
+                        >⇄</button>
+                      </Tooltip>
+                      <Tooltip text={t(lang, 'remove')}>
+                        <button
+                          className="setlist-action-btn setlist-action-btn--danger"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => { e.stopPropagation(); removeFromSetlist(i) }}
+                        >✕</button>
+                      </Tooltip>
                     </div>
                   )}
                   {editingNotesIdx === i && (
