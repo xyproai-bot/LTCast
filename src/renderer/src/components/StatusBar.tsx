@@ -43,6 +43,7 @@ export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator, on
     lang, setLang, midiConnected, ltcSignalOk, artnetEnabled, oscEnabled,
     playState, tcGeneratorMode, showLocked, setShowLocked,
     chaseEnabled, setChaseEnabled, chaseStatus,
+    ltcInputDeviceId,
   } = useStore()
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [showPreShow, setShowPreShow] = useState(false)
@@ -107,7 +108,14 @@ export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator, on
         <button
           className={`status-pill${chaseEnabled ? ' status-pill--active' : ''}${chaseEnabled && chaseStatus === 'freewheeling' ? ' status-pill--warn' : ''}`}
           onClick={() => setChaseEnabled(!chaseEnabled)}
-          title={t(lang, 'chaseMode')}
+          title={
+            // Surface the most actionable diagnostic in the tooltip:
+            // if chase is in 'lost' AND there's no input device, the
+            // operator's next step is to go to Settings → Devices.
+            chaseEnabled && chaseStatus === 'lost' && !ltcInputDeviceId
+              ? t(lang, 'ltcInputNotConfiguredHint')
+              : t(lang, 'chaseMode')
+          }
         >
           <span
             className={`status-dot${

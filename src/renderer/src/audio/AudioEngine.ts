@@ -35,6 +35,14 @@ export interface AudioEngineCallbacks {
   onDeviceReconnected?: (deviceId: string) => void
   onPlayStarted?: (perfNow: number, audioTime: number) => void
   onLtcError?: (message: string) => void
+  /** Fires when the LTC input pipeline produces a decoded TC frame from
+   *  the external audio device (chase mode). Separate from onTimecode,
+   *  which is reserved for the file-LTC decoder path. */
+  onLtcInputTimecode?: (tc: TimecodeFrame) => void
+  /** Fires when the LTC input device fails (permission denied, missing
+   *  device, mid-show disconnect). `type` is a coarse classifier so the
+   *  UI can pick the right toast string. */
+  onLtcInputError?: (type: 'permission-denied' | 'device-missing' | 'disconnected' | 'unknown') => void
 }
 
 /**
@@ -111,6 +119,20 @@ export class AudioEngine {
   private generatorStartFrames = 0   // parsed from HH:MM:SS:FF
   private generatorFps = 25
   private lastGeneratedFrame = -1
+
+  // ── LTC Input pipeline (external audio device → chase) ──────────
+  // Independent of the file-LTC path. Owns its own AudioContext (so the
+  // input device's nominal sample rate can differ from the file context)
+  // plus a dedicated ltc-processor worklet instance. Frames are dispatched
+  // via callbacks.onLtcInputTimecode.
+  private ltcInputCtx: AudioContext | null = null
+  private ltcInputStream: MediaStream | null = null
+  private ltcInputSourceNode: MediaStreamAudioSourceNode | null = null
+  private ltcInputWorkletNode: AudioWorkletNode | null = null
+  private ltcInputDeviceId: string | null = null
+  // Track the worklet load promise so concurrent setLtcInputDevice() calls
+  // don't race on addModule.
+  private ltcInputWorkletLoaded = false
 
   // ── Pre-buffer (F1) — one-slot cache for the next cued song ──────
   // A disposable scratch AudioContext decodes the next file ahead of time
@@ -415,6 +437,180 @@ export class AudioEngine {
     }
   }
 
+  /**
+   * Configure the external audio input device used for LTC chase.
+   *
+   * Pass `null` or `''` to detach. Otherwise getUserMedia is called for
+   * the given deviceId, a MediaStreamAudioSourceNode is wired into a
+   * dedicated ltc-processor AudioWorklet instance, and decoded frames are
+   * delivered via `onLtcInputTimecode`.
+   *
+   * The input context is intentionally separate from `ltcCtx` because:
+   *   - The input device may use a different sample rate than the file
+   *     decoder.
+   *   - Routing input audio through an output-sink context can cause
+   *     monitor loops on Windows.
+   *   - Worklet input/output topology differs (we want numberOfOutputs=0
+   *     here — no audio is emitted by this pipeline).
+   *
+   * Errors are surfaced via `onLtcInputError`; the method itself never
+   * throws so the UI can call it freely from a select handler.
+   */
+  async setLtcInputDevice(deviceId: string | null): Promise<void> {
+    const normalised = deviceId && deviceId.length > 0 ? deviceId : null
+
+    // Always tear down the previous pipeline first — even if the device
+    // id didn't change. This makes "Re-grant permission then re-pick the
+    // same device" actually re-open the stream.
+    await this._teardownLtcInput()
+
+    this.ltcInputDeviceId = normalised
+    if (!normalised) return
+
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: { exact: normalised },
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+        video: false,
+      })
+    } catch (e) {
+      // Classify the failure so the UI can show a useful toast. DOMException
+      // names are the documented mediaDevices error contract.
+      const name = (e as { name?: string })?.name ?? ''
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        this.callbacks.onLtcInputError?.('permission-denied')
+      } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+        this.callbacks.onLtcInputError?.('device-missing')
+      } else {
+        this.callbacks.onLtcInputError?.('unknown')
+      }
+      this.ltcInputDeviceId = null
+      return
+    }
+
+    // If a concurrent call already overrode our device while we were
+    // awaiting the prompt, drop the stream we just acquired.
+    if (this.ltcInputDeviceId !== normalised) {
+      try { stream.getTracks().forEach(t => t.stop()) } catch { /* ignore */ }
+      return
+    }
+
+    try {
+      // New AudioContext — let the browser pick the rate to match the
+      // input device (avoids resampling artefacts in the LTC decoder).
+      this.ltcInputCtx = new AudioContext()
+      // Load the LTC decoder worklet code if not already loaded for this
+      // context (each new context needs its own addModule).
+      this.ltcInputWorkletLoaded = false
+      const blob = new Blob([ltcProcessorCode], { type: 'application/javascript' })
+      const url = URL.createObjectURL(blob)
+      try {
+        await this.ltcInputCtx.audioWorklet.addModule(url)
+        this.ltcInputWorkletLoaded = true
+      } finally {
+        try { URL.revokeObjectURL(url) } catch { /* ignore */ }
+      }
+
+      // Re-check ownership after the worklet load (which yields).
+      if (this.ltcInputDeviceId !== normalised) {
+        try { stream.getTracks().forEach(t => t.stop()) } catch { /* ignore */ }
+        await this._teardownLtcInput()
+        return
+      }
+
+      this.ltcInputStream = stream
+      this.ltcInputSourceNode = this.ltcInputCtx.createMediaStreamSource(stream)
+      this.ltcInputWorkletNode = new AudioWorkletNode(this.ltcInputCtx, 'ltc-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 0,
+        // Accept mono OR stereo — the LTC worklet looks at channel 0 only,
+        // but the input source may be stereo so we let the WebAudio
+        // automatic mixdown handle it (channelCountMode: max picks the
+        // source's actual channelCount).
+        channelCount: 1,
+        channelCountMode: 'explicit',
+      })
+      this.ltcInputWorkletNode.port.onmessage = (e): void => this._onLtcInputFrame(e.data)
+      this.ltcInputSourceNode.connect(this.ltcInputWorkletNode)
+
+      // Hook device-disconnect: if the USB cable is yanked, the MediaStream
+      // ends asynchronously. We tear down + notify so the UI flips chase to
+      // "no input" without crashing.
+      for (const track of stream.getAudioTracks()) {
+        track.onended = (): void => {
+          // The track ending is authoritative — but it could fire after
+          // we've already torn down for an unrelated reason. Only react if
+          // this is still our active stream.
+          if (this.ltcInputStream === stream) {
+            this.callbacks.onLtcInputError?.('disconnected')
+            this._teardownLtcInput().catch(() => { /* best-effort */ })
+            this.ltcInputDeviceId = null
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('LTC input pipeline setup failed:', e)
+      this.callbacks.onLtcInputError?.('unknown')
+      try { stream.getTracks().forEach(t => t.stop()) } catch { /* ignore */ }
+      await this._teardownLtcInput()
+      this.ltcInputDeviceId = null
+    }
+  }
+
+  /** Currently-configured LTC input device id, or null if none. */
+  getLtcInputDeviceId(): string | null { return this.ltcInputDeviceId }
+
+  /**
+   * Tear down the LTC input pipeline. Idempotent — safe to call from
+   * dispose() or back-to-back setLtcInputDevice() calls.
+   */
+  private async _teardownLtcInput(): Promise<void> {
+    if (this.ltcInputWorkletNode) {
+      this.ltcInputWorkletNode.port.onmessage = null
+      try { this.ltcInputWorkletNode.disconnect() } catch { /* ignore */ }
+      this.ltcInputWorkletNode = null
+    }
+    if (this.ltcInputSourceNode) {
+      try { this.ltcInputSourceNode.disconnect() } catch { /* ignore */ }
+      this.ltcInputSourceNode = null
+    }
+    if (this.ltcInputStream) {
+      try { this.ltcInputStream.getTracks().forEach(t => { t.onended = null; t.stop() }) } catch { /* ignore */ }
+      this.ltcInputStream = null
+    }
+    if (this.ltcInputCtx) {
+      try { await this.ltcInputCtx.close() } catch { /* ignore */ }
+      this.ltcInputCtx = null
+    }
+    this.ltcInputWorkletLoaded = false
+  }
+
+  /**
+   * Convert a raw LTC worklet message (HH:MM:SS:FF + fps + dropFrame)
+   * into a TimecodeFrame and hand it to the host. This mirrors the
+   * `_onLtcFrame` shape but does NOT apply file-decode offsetFrames —
+   * chase consumes the absolute external TC directly.
+   */
+  private _onLtcInputFrame(raw: TimecodeFrame): void {
+    const fps = raw.fps
+    if (!fps || fps <= 0 || !isFinite(fps)) return
+    const fpsInt = Math.round(fps)
+    const tc: TimecodeFrame = {
+      hours: raw.hours,
+      minutes: raw.minutes,
+      seconds: raw.seconds,
+      frames: Math.min(raw.frames, fpsInt - 1),
+      fps,
+      dropFrame: raw.dropFrame,
+    }
+    this.callbacks.onLtcInputTimecode?.(tc)
+  }
+
   getLtcGain(): number { return this.ltcGainValue }
 
   setMusicVolume(linearGain: number): void {
@@ -558,6 +754,9 @@ export class AudioEngine {
     if (this.ltcSignalTimeout) { clearTimeout(this.ltcSignalTimeout); this.ltcSignalTimeout = null }
     this._stopPlayback()
     await this._closeLtcCtx()
+    // dispose() runs on every loadFile (intentional reset). The input pipeline,
+    // however, follows the device-selection lifecycle — keep it alive so that
+    // loading a new audio file doesn't kick the operator out of chase.
     this.buffer = null
     // Drop any cached prebuffer so it can't outlive the engine session
     this.prebufferedBuffer = null
@@ -595,10 +794,21 @@ export class AudioEngine {
     if (this.musicSource) { try { this.musicSource.stop() } catch { /**/ } this.musicSource = null }
     if (this.ctx) { try { this.ctx.close() } catch { /**/ } this.ctx = null }
     if (this.ltcCtx) { try { this.ltcCtx.close() } catch { /**/ } this.ltcCtx = null }
+    // LTC input — sync best-effort teardown. Async _teardownLtcInput would
+    // race the process exit; here we just yank everything.
+    if (this.ltcInputWorkletNode) {
+      this.ltcInputWorkletNode.port.onmessage = null
+      try { this.ltcInputWorkletNode.disconnect() } catch { /* ignore */ }
+      this.ltcInputWorkletNode = null
+    }
+    if (this.ltcInputSourceNode) { try { this.ltcInputSourceNode.disconnect() } catch { /* ignore */ } this.ltcInputSourceNode = null }
+    if (this.ltcInputStream) { try { this.ltcInputStream.getTracks().forEach(t => { t.onended = null; t.stop() }) } catch { /* ignore */ } this.ltcInputStream = null }
+    if (this.ltcInputCtx) { try { this.ltcInputCtx.close() } catch { /* ignore */ } this.ltcInputCtx = null }
     this.musicGainNode = null
     this.musicPannerNode = null
     this.ltcWorkletReady = false
     this.ltcEncoderReady = false
+    this.ltcInputWorkletLoaded = false
   }
 
   /**

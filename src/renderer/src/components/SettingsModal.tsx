@@ -518,6 +518,7 @@ function DevicesSection({
     audioOutputDevices, setAudioOutputDevices,
     musicOutputDeviceId, setMusicOutputDeviceId,
     ltcOutputDeviceId, setLtcOutputDeviceId,
+    ltcInputDeviceId, setLtcInputDevice,
     midiOutputs,
     selectedMidiPort, setSelectedMidiPort,
     midiConnected,
@@ -525,7 +526,14 @@ function DevicesSection({
     ltcSignalOk,
   } = useStore()
 
-  // Enumerate audio output devices on mount + on plug/unplug
+  // Per-render local list of audio INPUT devices (mics, line-ins, virtual
+  // input cables). Kept local to this component because nothing else in
+  // the app currently consumes the list, and the input enumeration only
+  // returns useful labels after the user has granted microphone permission
+  // at least once — so we re-enumerate on every mount.
+  const [audioInputDevices, setAudioInputDevices] = useState<AudioDevice[]>([])
+
+  // Enumerate audio output AND input devices on mount + on plug/unplug
   useEffect(() => {
     const refresh = (): void => {
       navigator.mediaDevices.enumerateDevices().then((devices) => {
@@ -533,6 +541,10 @@ function DevicesSection({
           .filter((d) => d.kind === 'audiooutput')
           .map((d) => ({ deviceId: d.deviceId, label: d.label || d.deviceId }))
         setAudioOutputDevices(outputs)
+        const inputs: AudioDevice[] = devices
+          .filter((d) => d.kind === 'audioinput')
+          .map((d) => ({ deviceId: d.deviceId, label: d.label || d.deviceId }))
+        setAudioInputDevices(inputs)
       }).catch(() => {})
     }
     refresh()
@@ -544,6 +556,13 @@ function DevicesSection({
   const handleMusicDevice = (deviceId: string): void => { setMusicOutputDeviceId(deviceId); onMusicDeviceChange(deviceId) }
   const handleLtcDevice = (deviceId: string): void => { setLtcOutputDeviceId(deviceId); onLtcDeviceChange(deviceId) }
   const handleLtcChannel = (ch: LtcChannel): void => { setLtcChannel(ch); onLtcChannelChange(ch) }
+  // LTC INPUT device select: '' from the dropdown is the "None" sentinel
+  // (no input pipeline). Anything else is a real device id which the
+  // engine will getUserMedia() against. We do NOT call any output-side
+  // wiring here — the engine subscribes to the store change directly.
+  const handleLtcInputDevice = (deviceId: string): void => {
+    setLtcInputDevice(deviceId === '' ? null : deviceId)
+  }
 
   return (
     <div className="device-panel">
@@ -601,6 +620,23 @@ function DevicesSection({
         </select>
       </div>
 
+      {/* LTC INPUT device — chase mode */}
+      <div className="device-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="device-label">{t(lang, 'ltcInputDevice')}</span>
+          <select
+            className="device-select"
+            value={ltcInputDeviceId ?? ''}
+            onChange={(e) => handleLtcInputDevice(e.target.value)}
+          >
+            <option value="">{t(lang, 'ltcInputDeviceNone')}</option>
+            {audioInputDevices.map((d) => (<option key={d.deviceId} value={d.deviceId}>{d.label}</option>))}
+          </select>
+        </div>
+        <span className="ltc-gain-hint">{t(lang, 'ltcInputDeviceHint')}</span>
+        <span className="ltc-gain-hint" style={{ opacity: 0.7 }}>{t(lang, 'ltcInputPermissionHint')}</span>
+      </div>
+
       {/* MTC MIDI port */}
       <div className="device-row">
         <span className="device-label">{t(lang, 'midiOutput')}</span>
@@ -639,7 +675,10 @@ function ChaseSection(): React.JSX.Element {
     chaseOutputAudio, setChaseOutputAudio,
     chaseFreewheelMs, setChaseFreewheelMs,
     chaseStatus,
+    ltcInputDeviceId,
   } = useStore()
+
+  const noInputDeviceConfigured = !ltcInputDeviceId
 
   const statusLabel = chaseStatus === 'idle' ? t(lang, 'chaseStatusIdle')
     : chaseStatus === 'chasing' ? t(lang, 'chaseStatusChasing')
@@ -653,6 +692,24 @@ function ChaseSection(): React.JSX.Element {
 
   return (
     <div className="device-panel">
+      {/* Warn if no LTC input device is configured. Chase needs external
+          LTC; without an input device the engine sits in 'lost' forever. */}
+      {noInputDeviceConfigured && (
+        <div
+          className="device-row"
+          style={{
+            color: '#fbbf24',
+            background: 'rgba(251, 191, 36, 0.08)',
+            border: '1px solid rgba(251, 191, 36, 0.3)',
+            borderRadius: 4,
+            padding: '6px 10px',
+            fontSize: 12,
+          }}
+        >
+          {t(lang, 'ltcInputNotConfiguredHint')}
+        </div>
+      )}
+
       {/* Enable chase mode */}
       <div className="device-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
         <label className="artnet-toggle" style={{ gap: 8, cursor: 'pointer' }}>
