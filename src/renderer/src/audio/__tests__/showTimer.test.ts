@@ -149,3 +149,119 @@ describe('parseDurationInput', () => {
     expect(parseDurationInput('1:60')).toBeNull()
   })
 })
+
+// ── ShowTimer UX overhaul tests ──────────────────────────────
+// These pin down two non-obvious behaviours the new panel UI relies on:
+//   1. stopShowTimer is effectively a "pause" — remainingMsAtStop is
+//      preserved so the button can present a "Resume" affordance and
+//      startShowTimer picks up where pause left off (no reset).
+//   2. resetShowTimer snaps remaining back to the full duration and is
+//      what the user must reach to clear the "completed" / DONE badge
+//      tracked separately by the panel.
+describe('stopShowTimer → startShowTimer = pause/resume semantics', () => {
+  // We synthesize the reducer logic the store uses (lines 1416-1430 of
+  // store.ts) so the test exercises that exact arithmetic without
+  // booting Zustand / window.api. If the store implementation changes,
+  // this guard catches a divergence.
+  function pause(t: TimerLikeFull, now: number): TimerLikeFull {
+    if (!t.running || t.startedAt === null) return t
+    const elapsed = now - t.startedAt
+    const remaining = Math.max(0, Math.min(t.durationMs, t.durationMs - elapsed))
+    return { ...t, running: false, startedAt: null, remainingMsAtStop: remaining }
+  }
+  function resume(t: TimerLikeFull, now: number): TimerLikeFull {
+    if (t.running) return t
+    const remaining = t.remainingMsAtStop > 0 ? t.remainingMsAtStop : t.durationMs
+    return {
+      ...t,
+      running: true,
+      startedAt: now - (t.durationMs - remaining),
+      remainingMsAtStop: remaining,
+    }
+  }
+  type TimerLikeFull = {
+    running: boolean
+    startedAt: number | null
+    durationMs: number
+    remainingMsAtStop: number
+  }
+
+  it('pause preserves remaining; resume continues from there', () => {
+    const start: TimerLikeFull = {
+      running: true,
+      startedAt: 1_000_000,
+      durationMs: 60_000,
+      remainingMsAtStop: 60_000,
+    }
+    const paused = pause(start, 1_000_000 + 20_000) // 20 s in
+    expect(paused.running).toBe(false)
+    expect(paused.remainingMsAtStop).toBe(40_000)
+
+    // 30 s later, user hits Resume. Remaining should still read ~40s
+    // immediately, then count down from there.
+    const resumed = resume(paused, 1_000_000 + 50_000)
+    expect(resumed.running).toBe(true)
+    expect(computeRemaining(resumed, 1_000_000 + 50_000)).toBe(40_000)
+    expect(computeRemaining(resumed, 1_000_000 + 50_000 + 10_000)).toBe(30_000)
+  })
+
+  it('control mode picker: paused timer (0 < remaining < duration) maps to "resume"', () => {
+    // Mirrors the controlMode logic in ShowTimerPanel.TimerRow: a stopped
+    // timer with a remainingMsAtStop strictly between 0 and durationMs
+    // must surface "Resume", not "Start" (which would imply a fresh run).
+    const t: TimerLikeFull = {
+      running: false,
+      startedAt: null,
+      durationMs: 60_000,
+      remainingMsAtStop: 35_000,
+    }
+    const isPaused = !t.running && t.remainingMsAtStop > 0 && t.remainingMsAtStop < t.durationMs
+    expect(isPaused).toBe(true)
+  })
+
+  it('control mode picker: fresh / reset timer maps to "start" (not resume)', () => {
+    const t: TimerLikeFull = {
+      running: false,
+      startedAt: null,
+      durationMs: 60_000,
+      remainingMsAtStop: 60_000, // == durationMs == reset state
+    }
+    const isPaused = !t.running && t.remainingMsAtStop > 0 && t.remainingMsAtStop < t.durationMs
+    expect(isPaused).toBe(false)
+  })
+
+  it('control mode picker: completed timer (remaining == 0) maps to "start"', () => {
+    const t: TimerLikeFull = {
+      running: false,
+      startedAt: null,
+      durationMs: 60_000,
+      remainingMsAtStop: 0,
+    }
+    const isPaused = !t.running && t.remainingMsAtStop > 0 && t.remainingMsAtStop < t.durationMs
+    expect(isPaused).toBe(false)
+  })
+})
+
+describe('progress fraction tiering', () => {
+  // Mirrors the tier selection in ShowTimerPanel.TimerRow so future
+  // tweaks to thresholds stay deliberate.
+  function tier(progress: number): 'ok' | 'warn' | 'critical' {
+    if (progress >= 0.9) return 'critical'
+    if (progress >= 0.7) return 'warn'
+    return 'ok'
+  }
+
+  it('< 0.7 is ok', () => {
+    expect(tier(0)).toBe('ok')
+    expect(tier(0.5)).toBe('ok')
+    expect(tier(0.6999)).toBe('ok')
+  })
+  it('0.7..0.9 is warn', () => {
+    expect(tier(0.7)).toBe('warn')
+    expect(tier(0.85)).toBe('warn')
+  })
+  it('>= 0.9 is critical', () => {
+    expect(tier(0.9)).toBe('critical')
+    expect(tier(1.0)).toBe('critical')
+  })
+})

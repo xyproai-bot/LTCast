@@ -3873,7 +3873,7 @@ html, body, #root {
   gap: 4px;
 }
 .timer-btn-start { color: #66bb6a; }
-/* F4 Q-F — visual-only 5-second flash when a timer reaches zero. No sound. */
+/* F4 Q-F — visual-only 5-second flash when a timer reaches zero. */
 .timer-row--flashing {
   animation: timer-flash 1s steps(2, end) infinite;
 }
@@ -3882,6 +3882,180 @@ html, body, #root {
   50%  { background: rgba(255, 68, 68, 0.08); }
   100% { background: rgba(255, 68, 68, 0.5); }
 }
+
+/* ── ShowTimer UX overhaul ─────────────────────────────────────
+   Append-only additions on top of the F4 block above. These add
+   labels, quick-add presets, duration chips, click-to-edit, a
+   progress bar, completion badge and larger remaining display.
+   They must not change F4's behaviour for unaffected rows. */
+
+/* Bigger, monospaced remaining time with urgency tiers. Override
+   the F4 22px default — wider rows justify the extra height. */
+.timer-row-remaining {
+  font-size: 30px;
+  line-height: 1.05;
+  color: #f0f0f0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.timer-row-remaining.is-idle {
+  color: #6b6b6b;  /* zinc-500-ish: clearly "stopped" */
+}
+.timer-row--running .timer-row-remaining { color: var(--accent); }
+.timer-row-remaining.is-urgent-60 { color: #ff9e3d; }
+.timer-row-remaining.is-urgent-10 {
+  color: #ff4d4d;
+  font-weight: 800;
+}
+.timer-row-remaining.is-editable { cursor: pointer; }
+.timer-row-remaining.is-editable:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.timer-row-remaining.is-editable:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+.timer-row-remaining:not(.is-editable) { cursor: not-allowed; }
+.timer-edit-pencil {
+  font-size: 12px;
+  color: #888;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.timer-row-remaining.is-editable:hover .timer-edit-pencil { opacity: 0.85; }
+.timer-row-time-input {
+  /* Match the new 30 px display so the inline-edit input doesn't reflow. */
+  font-size: 26px;
+  width: 160px;
+}
+
+/* Quick-add preset row above the form. Wraps on narrow panels. */
+.timer-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 8px 0;
+}
+.timer-preset-btn {
+  background: #121212;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  color: #c8c8c8;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.timer-preset-btn:hover {
+  background: #181818;
+  border-color: var(--accent);
+  color: #fff;
+}
+.timer-preset-btn--custom {
+  margin-left: auto;
+  color: #888;
+}
+.timer-preset-btn--custom.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Stack the Name + Duration fields with explicit labels, instead of
+   the old side-by-side placeholder-only layout. */
+.timer-add-form {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.timer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.timer-field-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #888;
+  font-weight: 700;
+}
+.timer-add-btn {
+  align-self: flex-start;
+  padding: 5px 14px;
+}
+
+/* Duration chips row sits beneath the duration input. */
+.timer-duration-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 4px;
+}
+.timer-chip {
+  background: #0e0e0e;
+  border: 1px solid #262626;
+  border-radius: 3px;
+  color: #aaa;
+  font-size: 10px;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.timer-chip:hover {
+  background: #161616;
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Progress bar below the remaining display. Width is set inline. */
+.timer-progress-bar {
+  position: relative;
+  height: 4px;
+  background: #161616;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.timer-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s linear, background-color 0.2s ease;
+}
+.timer-progress-fill--ok       { background: var(--accent); }
+.timer-progress-fill--warn     { background: #ff9e3d; }
+.timer-progress-fill--critical { background: #ff4d4d; }
+.timer-row:not(.timer-row--running) .timer-progress-fill {
+  opacity: 0.65;  /* dim when paused/stopped — still informative but not loud */
+}
+.timer-row--completed .timer-progress-fill {
+  background: #ff4d4d;
+  opacity: 1;
+}
+
+/* DONE tag — persistent post-completion label next to the name. */
+.timer-completed-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(255, 77, 77, 0.18);
+  color: #ff7c7c;
+  border: 1px solid rgba(255, 77, 77, 0.35);
+  white-space: nowrap;
+}
+
+/* Pause / Resume button accents distinct from Start (green) so the
+   primary action is unambiguous at a glance. */
+.timer-btn-pause  { color: #ffb14d; }
+.timer-btn-resume { color: #4dcaff; }
 
 /* ─────────────────────────────────────────────────────────────
  * F5 — Stage Display (fullscreen TC) layout overrides.
