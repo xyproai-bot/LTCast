@@ -1,8 +1,8 @@
 /**
  * Sprint UI-Reorg-Option-A — SettingsModal
  *
- * Houses all per-install + per-preset configuration that used to live in
- * DevicePanel (now deleted). Five sections, picked from a left sidebar:
+ * Houses all per-install + per-preset configuration. Five sections, picked
+ * from a left sidebar:
  *
  *   Outputs   — LTC level / Music vol+pan / MTC mode / Art-Net / OSC /
  *               OSC Feedback / MIDI Clock
@@ -18,8 +18,7 @@
  *
  * State (active section + open/closed) is owned by App.tsx and passed via
  * props. ESC closes; overlay click closes. All field edits write through
- * to store actions exactly as the deleted DevicePanel did — no separate
- * draft state.
+ * to store actions — no separate draft state.
  */
 
 import React, { useEffect, useMemo, useState } from 'react'
@@ -83,8 +82,8 @@ export function SettingsModal({
         onClose()
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [onClose])
 
   const sections: Array<{ id: SettingsSection; labelKey: 'settingsSection_outputs' | 'settingsSection_devices' | 'settingsSection_appearance' | 'settingsSection_backup' | 'settingsSection_license' }> = [
@@ -182,7 +181,7 @@ function OutputsSection({
     tappedBpm, detectedBpm,
   } = useStore()
 
-  // F3 — OSC feedback listener subscription (same as DevicePanel had)
+  // F3 — OSC feedback listener subscription
   useEffect(() => {
     const offTc = window.api.onOscFeedbackTc((data) => {
       recordOscFeedbackDevice(data.sourceId, { h: data.h, m: data.m, s: data.s, f: data.f }, data.ts)

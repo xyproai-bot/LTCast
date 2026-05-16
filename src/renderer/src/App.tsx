@@ -61,9 +61,6 @@ export default function App(): React.JSX.Element {
   const autoAdvanceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   // FPS mismatch warning: track last shown mismatch to avoid spam
   const fpsMismatchKey = useRef<string | null>(null)
-  // LTC signal-lost prompt: track whether toast has been shown
-  const signalLostToastShown = useRef(false)
-  const signalLostToastId = useRef<number | null>(null)
   // MIDI cue: track last triggered cue IDs per playback session
   const triggeredCueIds = useRef<Set<string>>(new Set())
   // MIDI input: learning state
@@ -137,10 +134,10 @@ export default function App(): React.JSX.Element {
     artnetEnabled, artnetTargetIp,
     oscEnabled, oscTargetIp, oscTargetPort,
     setSelectedMidiPort,
-    rightTab, setMidiInputs, showLocked, setShowLocked,
-    selectedCueMidiPort, setSelectedCueMidiPort,
-    midiInputPort, setMidiInputPort,
-    midiMappings, updateMidiMapping,
+    rightTab, setMidiInputs, showLocked,
+    setSelectedCueMidiPort,
+    setMidiInputPort,
+    updateMidiMapping,
     trialDaysLeft, isPro, savePreset,
     audioLoading, loadingFileName, setAudioLoading,
     themeColor, uiSize,
@@ -597,7 +594,6 @@ export default function App(): React.JSX.Element {
   // (CSS `zoom` would overflow on scale-up / leave gaps on scale-down).
   useEffect(() => {
     const factor = uiSize === 'sm' ? 0.9 : uiSize === 'lg' ? 1.15 : 1.0
-    // @ts-expect-error windowSetZoom not in env.d.ts
     window.api.windowSetZoom?.(factor)
   }, [uiSize])
 
@@ -1212,12 +1208,6 @@ export default function App(): React.JSX.Element {
     }
   }, [setMidiInputPort])
 
-  const handleMidiActivity = useCallback((): void => {
-    setMidiActivity(true)
-    if (midiActivityTimer.current) clearTimeout(midiActivityTimer.current)
-    midiActivityTimer.current = setTimeout(() => setMidiActivity(false), 200)
-  }, [])
-
   const handleStartLearn = useCallback((mappingId: string): void => {
     if (!midiIn.current) return
     if (learningMappingId === mappingId) {
@@ -1725,8 +1715,8 @@ export default function App(): React.JSX.Element {
                   {ltcSignalOk && ltcConfidence > 0 && (
                     <span className="signal-confidence">{Math.round(ltcConfidence * 100)}%</span>
                   )}
-                  {ltcSignalOk && detectedLtcChannel && (
-                    <span className="signal-ch">CH{detectedLtcChannel === 'left' ? '1' : '2'}</span>
+                  {ltcSignalOk && detectedLtcChannel !== null && (
+                    <span className="signal-ch">CH{(detectedLtcChannel ?? 0) + 1}</span>
                   )}
                 </div>
               )}

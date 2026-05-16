@@ -70,8 +70,6 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
   const [variantContextMenu, setVariantContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const [renamingVariantId, setRenamingVariantId] = useState<string | null>(null)
   const [renamingVariantStr, setRenamingVariantStr] = useState('')
-  // PDF layout choice (compact vs detailed)
-  const [pdfLayout, setPdfLayout] = useState<CueSheetLayout>('detailed')
   const [showPdfLayoutMenu, setShowPdfLayoutMenu] = useState(false)
   const pdfMenuRef = useRef<HTMLDivElement>(null)
   // F6: which row (if any) has passed the LONG_PRESS_MS threshold and is now draggable.

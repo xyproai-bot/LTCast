@@ -73,6 +73,7 @@ export function FileMenu({
     const handler = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         setOpen(false)
+        e.stopPropagation()
       }
     }
     document.addEventListener('keydown', handler)
