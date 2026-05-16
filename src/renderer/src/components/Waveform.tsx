@@ -79,6 +79,13 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   const selectedMarkerIdRef = useRef<string | null>(null)
   useEffect(() => { selectedMarkerIdRef.current = selectedMarkerId }, [selectedMarkerId])
 
+  // Measured label widths per marker (filled by drawMarkers via measureText).
+  // Used by findNearestMarker for precise hit-testing — clicking inside the
+  // marker's visible label/badge area counts as a hit, but clicking past the
+  // end of the label (empty waveform) does NOT, so double-click between
+  // markers can still add a new marker.
+  const markerHitWidthsRef = useRef<Record<string, number>>({})
+
   // ═══════════════════════════════════════════════════════════════════════════
   //  Music waveform — WaveSurfer.js
   // ═══════════════════════════════════════════════════════════════════════════
@@ -363,8 +370,10 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       ctx.fillText(abbrev, badgeX + 3, badgeY - 1)
 
       // Label — white text with black outline so it stays readable on any marker color
+      let labelTextWidth = 0
       if (marker.label) {
         ctx.font = isSongTitle ? 'bold 16px sans-serif' : '14px sans-serif'
+        labelTextWidth = ctx.measureText(marker.label).width
         const labelX = Math.min(x + 4 + badgeSize + 4, cssW - 100)
         const labelY = isSongTitle ? 32 : 30
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)'
@@ -374,6 +383,9 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
         ctx.fillStyle = '#fff'
         ctx.fillText(marker.label, labelX, labelY)
       }
+      // Cache the visible extent right of the marker line for hit-testing.
+      // Equals: gap + badge + gap + label width (or just badge if no label).
+      markerHitWidthsRef.current[marker.id] = 4 + badgeSize + (labelTextWidth > 0 ? 4 + labelTextWidth + 2 : 4)
     }
   }, [])
 
@@ -429,18 +441,18 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
     const fileMarkers = markersRef.current[itemId] ?? []
     const clickX = e.clientX - rect.left
     const clickY = e.clientY - rect.top
-    // Top region = badge + label area (~40px tall). Below = just the line.
-    // The hitbox is asymmetric (extends right) because badge + label live to
-    // the right of the line.
-    const inTopRegion = clickY <= 40
+    // Top region covers triangle (~10px) + badge (~18px) + label baseline (~30px)
+    // → use 36px so the full label height is hittable but the audio bars below aren't.
+    const inTopRegion = clickY <= 36
     let closest: WaveformMarker | null = null
     let bestScore = Infinity
     for (const mk of fileMarkers) {
       const mx = mk.time * m.pxPerSec - m.scrollLeft
       const dx = clickX - mx
+      const rightExtent = markerHitWidthsRef.current[mk.id] ?? 22   // fallback ~ badge width
       const hit = inTopRegion
-        ? (dx >= -8 && dx <= 110)   // badge (~18) + label (~90) generous
-        : Math.abs(dx) <= 10        // tight hitbox on the line itself
+        ? (dx >= -8 && dx <= rightExtent)
+        : Math.abs(dx) <= 10
       if (hit && Math.abs(dx) < bestScore) {
         bestScore = Math.abs(dx)
         closest = mk
