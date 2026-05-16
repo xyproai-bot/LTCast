@@ -472,7 +472,15 @@ export const strings = {
     chaseStatusLost: 'Lost',
     chaseLockedToast: 'Chase is active — disable to switch songs manually',
     scanningLtc: 'Scanning LTC...',
-    setlistRescan: 'Rescan LTC'
+    setlistRescan: 'Rescan LTC',
+    // LTC input device (chase mode)
+    ltcInputDevice: 'LTC Input Device',
+    ltcInputDeviceNone: 'None',
+    ltcInputDeviceHint: 'Audio device that receives external LTC for chase mode',
+    ltcInputPermissionHint: 'Permission required — your browser will ask for microphone access on first use',
+    ltcInputPermissionDenied: 'Microphone permission denied. LTC chase requires audio input access.',
+    ltcInputDeviceDisconnected: 'LTC input device disconnected',
+    ltcInputNotConfiguredHint: 'No LTC input device selected. Pick one in Devices.'
   },
   zh: {
     openFile: '開啟檔案',
@@ -944,7 +952,15 @@ export const strings = {
     chaseStatusLost: '失訊',
     chaseLockedToast: '追蹤模式啟用中，關閉後才能手動切歌',
     scanningLtc: '掃描 LTC...',
-    setlistRescan: '重新掃描 LTC'
+    setlistRescan: '重新掃描 LTC',
+    // LTC 輸入裝置（Chase 模式）
+    ltcInputDevice: 'LTC 輸入設備',
+    ltcInputDeviceNone: '無',
+    ltcInputDeviceHint: '接收外部 LTC 訊號的音訊輸入設備（Chase 模式專用）',
+    ltcInputPermissionHint: '首次使用時瀏覽器會請求麥克風權限',
+    ltcInputPermissionDenied: '麥克風權限被拒絕，無法接收 LTC 輸入。',
+    ltcInputDeviceDisconnected: 'LTC 輸入設備已中斷',
+    ltcInputNotConfiguredHint: '尚未選擇 LTC 輸入設備，請至「設備」頁設定。'
   },
   ja: {
     openFile: 'ファイルを開く',
@@ -1416,7 +1432,15 @@ export const strings = {
     chaseStatusLost: 'ロスト',
     chaseLockedToast: 'チェイス中です — 手動切替はチェイスを無効化してから',
     scanningLtc: 'LTC をスキャン中...',
-    setlistRescan: 'LTC を再スキャン'
+    setlistRescan: 'LTC を再スキャン',
+    // LTC 入力デバイス（チェイスモード）
+    ltcInputDevice: 'LTC 入力デバイス',
+    ltcInputDeviceNone: 'なし',
+    ltcInputDeviceHint: 'チェイスモード用の外部 LTC を受信する音声入力デバイス',
+    ltcInputPermissionHint: '初回使用時にブラウザがマイク権限を要求します',
+    ltcInputPermissionDenied: 'マイク権限が拒否されました。LTC チェイスには入力アクセスが必要です。',
+    ltcInputDeviceDisconnected: 'LTC 入力デバイスが切断されました',
+    ltcInputNotConfiguredHint: 'LTC 入力デバイスが選択されていません。「デバイス」で選択してください。'
   }
 }
 

@@ -394,6 +394,33 @@ export default function App(): React.JSX.Element {
         if (type === 'worklet') toast.error(t(l, 'ltcWorkletError'))
         else if (type === 'warmup') toast.warning(t(l, 'ltcWarmupError'))
         else if (type === 'encoder') toast.warning(t(l, 'ltcEncoderError'))
+      },
+      onLtcInputTimecode: (tc) => {
+        // Route every decoded LTC frame from the external input pipeline
+        // into the ChaseEngine. We do NOT gate on chaseEnabled here —
+        // ChaseEngine itself early-outs when disabled, and we want the
+        // engine to see frames the moment chase is toggled on (instead
+        // of losing the first frames during the next decode cycle).
+        if (chase.current) {
+          chase.current.onIncomingTc({
+            hours: tc.hours, minutes: tc.minutes, seconds: tc.seconds, frames: tc.frames,
+            fps: tc.fps, dropFrame: tc.dropFrame,
+          })
+        }
+      },
+      onLtcInputError: (type) => {
+        const l = useStore.getState().lang
+        if (type === 'permission-denied') {
+          toast.error(t(l, 'ltcInputPermissionDenied'))
+        } else if (type === 'device-missing') {
+          toast.warning(t(l, 'ltcInputDeviceDisconnected'))
+        } else if (type === 'disconnected') {
+          toast.warning(t(l, 'ltcInputDeviceDisconnected'))
+          // Clear the saved device so the dropdown doesn't keep showing a
+          // device that's no longer there. Operator picks a new one on the
+          // next configure step.
+          useStore.getState().setLtcInputDevice(null)
+        }
       }
     })
 
@@ -550,6 +577,14 @@ export default function App(): React.JSX.Element {
     // preventing the "locked handle" issue on Windows
     if (savedState.ltcOutputDeviceId && savedState.ltcOutputDeviceId !== 'default') {
       engine.current.setLtcOutputDevice(savedState.ltcOutputDeviceId).catch(() => {})
+    }
+
+    // Restore previously-selected LTC input device. We delay slightly so
+    // the browser-side device list has time to populate (some drivers are
+    // slow to enumerate on cold boot). The engine's own error handling
+    // surfaces a toast if the device has vanished since last quit.
+    if (savedState.ltcInputDeviceId) {
+      engine.current.setLtcInputDevice(savedState.ltcInputDeviceId).catch(() => {})
     }
 
     // ── LTC Chase — instantiate engine + start background scanner ──
@@ -807,6 +842,20 @@ export default function App(): React.JSX.Element {
     })
     return unsub
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Sync LTC input device selection to the engine. We subscribe directly
+  // instead of putting `ltcInputDeviceId` in the destructured component
+  // state because the store update path is the only place that needs to
+  // re-trigger the audio pipeline; doing this via React state would re-
+  // render the whole App on every device change.
+  useEffect(() => {
+    const unsub = useStore.subscribe((s, prev) => {
+      if (s.ltcInputDeviceId !== prev.ltcInputDeviceId) {
+        engine.current?.setLtcInputDevice(s.ltcInputDeviceId).catch(() => { /* engine surfaces errors */ })
+      }
+    })
+    return unsub
   }, [])
 
   // Re-apply offset when it changes
@@ -1292,19 +1341,13 @@ export default function App(): React.JSX.Element {
     artnet.current?.sendTimecode(tc)
     osc.current?.sendTimecode(tc)
 
-    // LTC Chase — when enabled, route every decoded frame to the chase
-    // engine. Chase has its own cue scheduler, so skip the playback-time
-    // path below when chase is active to avoid duplicate fires.
-    const s0 = useStore.getState()
-    if (s0.chaseEnabled && chase.current) {
-      chase.current.onIncomingTc({
-        hours: tc.hours, minutes: tc.minutes, seconds: tc.seconds, frames: tc.frames,
-        fps: tc.fps, dropFrame: tc.dropFrame,
-      })
-      // Engine internally drives cue firing and song change; nothing else
-      // to do here on this code path.
-      return
-    }
+    // NOTE: file-decoded LTC is NOT routed to the ChaseEngine. Chase
+    // follows external LTC from the dedicated input device only, set
+    // up via Settings → Devices → LTC Input Device. The previous
+    // arrangement (forwarding file-LTC frames here) caused chase to
+    // re-trigger from its own playback, which made song-switch logic
+    // race with the playhead. The new wiring lives on
+    // AudioEngine.onLtcInputTimecode → chase.onIncomingTc.
 
     // MIDI Cue triggering — compare absolute timecode
     const s = useStore.getState()

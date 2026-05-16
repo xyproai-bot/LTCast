@@ -488,6 +488,10 @@ export interface AppState {
   audioOutputDevices: AudioDevice[]
   musicOutputDeviceId: string
   ltcOutputDeviceId: string
+  // External LTC input device for chase mode. null = none selected
+  // (operator hasn't configured an input source yet). Per-install
+  // setting (Q-G): persisted via Zustand, never written to .ltcast.
+  ltcInputDeviceId: string | null
   ltcGain: number       // 0.0–1.5 (1.0 = unity / 0 dB)
   musicVolume: number   // 0.0–5.7 (1.0 = unity, +15 dB max)
   musicPan: number      // -1.0 (L) to +1.0 (R), 0 = center
@@ -657,6 +661,7 @@ export interface AppState {
   setAudioOutputDevices: (devices: AudioDevice[]) => void
   setMusicOutputDeviceId: (id: string) => void
   setLtcOutputDeviceId: (id: string) => void
+  setLtcInputDevice: (id: string | null) => void
   setLtcGain: (gain: number) => void
   setMusicVolume: (v: number) => void
   setMusicPan: (p: number) => void
@@ -831,6 +836,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   audioOutputDevices: [],
   musicOutputDeviceId: 'default',
   ltcOutputDeviceId: 'default',
+  ltcInputDeviceId: null,
   ltcGain: 1.0,
   musicVolume: 1.0,
   musicPan: 0.0,
@@ -987,6 +993,8 @@ export const useStore = create<AppState>()(persist((set) => ({
   setAudioOutputDevices: (audioOutputDevices) => set({ audioOutputDevices }),
   setMusicOutputDeviceId: (musicOutputDeviceId) => set({ musicOutputDeviceId, presetDirty: true }),
   setLtcOutputDeviceId: (ltcOutputDeviceId) => set({ ltcOutputDeviceId, presetDirty: true }),
+  // LTC Input — per-install, never marks presetDirty (Q-G).
+  setLtcInputDevice: (ltcInputDeviceId) => set({ ltcInputDeviceId }),
   setLtcGain: (ltcGain) => set({ ltcGain, presetDirty: true }),
   setMusicVolume: (musicVolume) => set({ musicVolume: Math.max(0, Math.min(5.7, musicVolume)), presetDirty: true }),
   setMusicPan: (musicPan) => set({ musicPan: Math.max(-1.0, Math.min(1.0, musicPan)), presetDirty: true }),
@@ -2108,6 +2116,8 @@ export const useStore = create<AppState>()(persist((set) => ({
     loop: state.loop,
     musicOutputDeviceId: state.musicOutputDeviceId,
     ltcOutputDeviceId: state.ltcOutputDeviceId,
+    // Per-install: persisted via Zustand only, NOT in .ltcast preset (Q-G).
+    ltcInputDeviceId: state.ltcInputDeviceId,
     ltcGain: state.ltcGain,
     musicVolume: state.musicVolume,
     musicPan: state.musicPan,
@@ -2253,6 +2263,14 @@ export const useStore = create<AppState>()(persist((set) => ({
     }
     if (typeof merged.chaseEnabled !== 'boolean') merged.chaseEnabled = false
     if (typeof merged.chaseOutputAudio !== 'boolean') merged.chaseOutputAudio = false
+    // LTC Input device: must be null or non-empty string. Older installs
+    // won't have the field at all — coerce to null so the engine treats
+    // "no input device selected" identically to first-launch.
+    if (merged.ltcInputDeviceId !== null && typeof merged.ltcInputDeviceId !== 'string') {
+      merged.ltcInputDeviceId = null
+    } else if (merged.ltcInputDeviceId === '') {
+      merged.ltcInputDeviceId = null
+    }
     // Ensure setlist items from old storage have IDs
     merged.setlist = merged.setlist.map((item: SetlistItem) =>
       item.id ? item : { ...item, id: nextSetlistId() }
