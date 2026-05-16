@@ -106,7 +106,7 @@ export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator, on
             Click toggles chaseEnabled. Long-click via Settings link surfaces
             advanced options. */}
         <button
-          className={`status-pill${chaseEnabled ? ' status-pill--active' : ''}${chaseEnabled && chaseStatus === 'freewheeling' ? ' status-pill--warn' : ''}`}
+          className={`status-pill status-pill--chase${chaseEnabled ? ' status-pill--active' : ''}${chaseEnabled && chaseStatus === 'freewheeling' ? ' status-pill--warn' : ''}${chaseEnabled ? ' status-pill--chase-on' : ''}${chaseEnabled && chaseStatus === 'chasing' ? ' status-pill--chase-chasing' : ''}${chaseEnabled && chaseStatus === 'lost' ? ' status-pill--chase-lost' : ''}`}
           onClick={() => setChaseEnabled(!chaseEnabled)}
           title={
             // Surface the most actionable diagnostic in the tooltip:
@@ -114,7 +114,7 @@ export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator, on
             // operator's next step is to go to Settings → Devices.
             chaseEnabled && chaseStatus === 'lost' && !ltcInputDeviceId
               ? t(lang, 'ltcInputNotConfiguredHint')
-              : t(lang, 'chaseMode')
+              : `${t(lang, 'chaseMode')} — Ctrl+Shift+C`
           }
         >
           <span

@@ -31,6 +31,44 @@ import { toast } from './components/Toast'
 import { showLog } from './utils/showLog'
 import { LTC_CONFIDENCE_THRESHOLD } from './constants'
 
+/**
+ * Compact CHASE on/off pill that lives in the center-top-right strip
+ * (next to the SIGNAL OK badge). Mirrors the StatusBar CHASE pill's
+ * state model:
+ *   off       → grey outline
+ *   chasing   → cyan filled
+ *   freewheel → amber filled
+ *   lost      → red filled
+ *
+ * Click toggles `chaseEnabled`. Tooltip surfaces the keyboard shortcut.
+ * Subscribes via a narrow selector so this widget re-renders independently
+ * of the App tree.
+ */
+function ChaseQuickToggle(): React.JSX.Element {
+  const chaseEnabled    = useStore(s => s.chaseEnabled)
+  const chaseStatus     = useStore(s => s.chaseStatus)
+  const lang            = useStore(s => s.lang)
+  const setChaseEnabled = useStore(s => s.setChaseEnabled)
+
+  let stateClass = ''
+  if (chaseEnabled && chaseStatus === 'chasing')      stateClass = ' chase-quick-toggle--chasing'
+  else if (chaseEnabled && chaseStatus === 'freewheeling') stateClass = ' chase-quick-toggle--freewheel'
+  else if (chaseEnabled && chaseStatus === 'lost')         stateClass = ' chase-quick-toggle--lost'
+  else if (chaseEnabled)                                   stateClass = ' chase-quick-toggle--on'
+
+  return (
+    <button
+      className={`chase-quick-toggle${stateClass}`}
+      onClick={() => setChaseEnabled(!chaseEnabled)}
+      title={t(lang, 'chaseToggleHint')}
+      aria-label={t(lang, 'chaseMode')}
+    >
+      <span className="chase-quick-toggle-dot" />
+      CHASE
+    </button>
+  )
+}
+
 export default function App(): React.JSX.Element {
   const engine    = useRef<AudioEngine | null>(null)
   const chase     = useRef<ChaseEngine | null>(null)
@@ -154,6 +192,7 @@ export default function App(): React.JSX.Element {
     audioLoading, loadingFileName, setAudioLoading,
     themeColor, uiSize,
     musicVolume, musicPan, setMusicVolume, setMusicPan,
+    muteLtcFromMusic,
     shareProjectZip, importLtcastProject
   } = useStore(useShallow((s) => ({
     filePath: s.filePath, fileName: s.fileName, presetName: s.presetName,
@@ -182,6 +221,7 @@ export default function App(): React.JSX.Element {
     themeColor: s.themeColor, uiSize: s.uiSize,
     musicVolume: s.musicVolume, musicPan: s.musicPan,
     setMusicVolume: s.setMusicVolume, setMusicPan: s.setMusicPan,
+    muteLtcFromMusic: s.muteLtcFromMusic,
     shareProjectZip: s.shareProjectZip, importLtcastProject: s.importLtcastProject
   })))
 
@@ -571,6 +611,8 @@ export default function App(): React.JSX.Element {
     engine.current.setLtcGain(savedState.ltcGain)
     engine.current.setMusicVolume(savedState.musicVolume ?? 1.0)
     engine.current.setMusicPan(savedState.musicPan ?? 0.0)
+    engine.current.setMuteLtcFromMusic(savedState.muteLtcFromMusic ?? false)
+    engine.current.setOperatorLtcChannelChoice(savedState.ltcChannel)
 
     // Warm up VB-CABLE / BlackHole device on startup
     // This forces the OS to establish the device connection early,
@@ -933,6 +975,9 @@ export default function App(): React.JSX.Element {
   // Sync manual LTC channel override to engine
   // When switching back to 'auto', restore the auto-detected channel index
   useEffect(() => {
+    // Track the operator choice so mute-LTC-from-music routing can resolve
+    // the correct channel even when 'auto' + no LTC was detected.
+    engine.current?.setOperatorLtcChannelChoice(ltcChannel)
     if (ltcChannel !== 'auto') {
       engine.current?.setLtcChannel(ltcChannel)
     } else {
@@ -941,6 +986,12 @@ export default function App(): React.JSX.Element {
       if (detected !== null) engine.current?.setLtcChannel(detected)
     }
   }, [ltcChannel])
+
+  // Sync mute-LTC-from-music flag to engine. Engine rebuilds the music
+  // routing live while playing so the change is audible immediately.
+  useEffect(() => {
+    engine.current?.setMuteLtcFromMusic(muteLtcFromMusic)
+  }, [muteLtcFromMusic])
 
   // Sync Art-Net settings
   useEffect(() => {
@@ -1099,6 +1150,15 @@ export default function App(): React.JSX.Element {
         e.preventDefault()
         const s = useStore.getState()
         s.setShowLocked(!s.showLocked)
+        return
+      }
+
+      // Ctrl+Shift+C: toggle LTC chase. Does not collide with Ctrl+C (copy)
+      // because the Shift requirement is mandatory.
+      if (e.code === 'KeyC' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault()
+        const s = useStore.getState()
+        s.setChaseEnabled(!s.chaseEnabled)
         return
       }
 
@@ -1963,6 +2023,7 @@ export default function App(): React.JSX.Element {
                   <span>GENERATING</span>
                 </div>
               )}
+              <ChaseQuickToggle />
               <TapBpm />
             </div>
           </div>

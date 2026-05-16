@@ -485,7 +485,10 @@ export const strings = {
     ltcInputChannelHint: 'Which channel of the input device carries LTC. Auto = channel 1.',
     ltcInputPermissionDenied: 'Microphone permission denied. LTC chase requires audio input access.',
     ltcInputDeviceDisconnected: 'LTC input device disconnected',
-    ltcInputNotConfiguredHint: 'No LTC input device selected. Pick one in Devices.'
+    ltcInputNotConfiguredHint: 'No LTC input device selected. Pick one in Devices.',
+    muteLtcFromMusic: 'Mute LTC channel from music output',
+    muteLtcFromMusicHint: 'Useful when your audio file has LTC mixed in — keeps LTC out of your monitor speakers',
+    chaseToggleHint: 'Toggle LTC chase mode (Ctrl+Shift+C)'
   },
   zh: {
     openFile: '開啟檔案',
@@ -970,7 +973,10 @@ export const strings = {
     ltcInputChannelHint: '輸入設備上 LTC 所在的聲道。自動 = 聲道 1。',
     ltcInputPermissionDenied: '麥克風權限被拒絕，無法接收 LTC 輸入。',
     ltcInputDeviceDisconnected: 'LTC 輸入設備已中斷',
-    ltcInputNotConfiguredHint: '尚未選擇 LTC 輸入設備，請至「設備」頁設定。'
+    ltcInputNotConfiguredHint: '尚未選擇 LTC 輸入設備，請至「設備」頁設定。',
+    muteLtcFromMusic: '從音樂輸出中靜音 LTC 聲道',
+    muteLtcFromMusicHint: '當音訊檔案混錄了 LTC 時很實用 — 避免 LTC 嗶嗶聲傳到監聽喇叭',
+    chaseToggleHint: '切換 LTC 追蹤模式（Ctrl+Shift+C）'
   },
   ja: {
     openFile: 'ファイルを開く',
@@ -1455,7 +1461,10 @@ export const strings = {
     ltcInputChannelHint: '入力デバイスで LTC が乗っているチャンネル。自動 = チャンネル 1。',
     ltcInputPermissionDenied: 'マイク権限が拒否されました。LTC チェイスには入力アクセスが必要です。',
     ltcInputDeviceDisconnected: 'LTC 入力デバイスが切断されました',
-    ltcInputNotConfiguredHint: 'LTC 入力デバイスが選択されていません。「デバイス」で選択してください。'
+    ltcInputNotConfiguredHint: 'LTC 入力デバイスが選択されていません。「デバイス」で選択してください。',
+    muteLtcFromMusic: '音楽出力から LTC チャンネルをミュート',
+    muteLtcFromMusicHint: 'オーディオファイルに LTC がミックスされている場合に便利 — モニタースピーカーに LTC が流れません',
+    chaseToggleHint: 'LTC チェイスモード切替（Ctrl+Shift+C）'
   }
 }
 

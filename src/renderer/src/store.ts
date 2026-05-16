@@ -496,6 +496,11 @@ export interface AppState {
   ltcGain: number       // 0.0–1.5 (1.0 = unity / 0 dB)
   musicVolume: number   // 0.0–5.7 (1.0 = unity, +15 dB max)
   musicPan: number      // -1.0 (L) to +1.0 (R), 0 = center
+  // When true, the music output strips the LTC channel from the source so
+  // the music speakers don't get the LTC buzz on files where LTC is mixed
+  // in with music. Per-install (Q-G): persisted via Zustand, never written
+  // to .ltcast.
+  muteLtcFromMusic: boolean
 
   // MIDI
   midiOutputs: MidiPort[]
@@ -667,6 +672,7 @@ export interface AppState {
   setLtcGain: (gain: number) => void
   setMusicVolume: (v: number) => void
   setMusicPan: (p: number) => void
+  setMuteLtcFromMusic: (v: boolean) => void
   setMidiOutputs: (ports: MidiPort[]) => void
   setSelectedMidiPort: (port: string | null) => void
   setMidiConnected: (connected: boolean) => void
@@ -843,6 +849,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   ltcGain: 1.0,
   musicVolume: 1.0,
   musicPan: 0.0,
+  muteLtcFromMusic: false,
 
   midiOutputs: [],
   selectedMidiPort: null,
@@ -1002,6 +1009,8 @@ export const useStore = create<AppState>()(persist((set) => ({
   setLtcGain: (ltcGain) => set({ ltcGain, presetDirty: true }),
   setMusicVolume: (musicVolume) => set({ musicVolume: Math.max(0, Math.min(5.7, musicVolume)), presetDirty: true }),
   setMusicPan: (musicPan) => set({ musicPan: Math.max(-1.0, Math.min(1.0, musicPan)), presetDirty: true }),
+  // Per-install only (Q-G); does not mark presetDirty.
+  setMuteLtcFromMusic: (muteLtcFromMusic) => set({ muteLtcFromMusic }),
   setMidiOutputs: (midiOutputs) => set({ midiOutputs }),
   setSelectedMidiPort: (selectedMidiPort) => set({ selectedMidiPort, presetDirty: true }),
   setMidiConnected: (midiConnected) => set({ midiConnected }),
@@ -2125,6 +2134,8 @@ export const useStore = create<AppState>()(persist((set) => ({
     ltcGain: state.ltcGain,
     musicVolume: state.musicVolume,
     musicPan: state.musicPan,
+    // Per-install: persisted via Zustand only, NOT in .ltcast preset (Q-G).
+    muteLtcFromMusic: state.muteLtcFromMusic,
     selectedMidiPort: state.selectedMidiPort,
     forceFps: state.forceFps,
     ltcChannel: state.ltcChannel,
