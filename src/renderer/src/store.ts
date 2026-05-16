@@ -555,6 +555,9 @@ export interface AppState {
   showLoopDragLabel: boolean
   // F4: behavior of number keys 1-9
   numericKeyAction: 'goto-song' | 'goto-marker'
+  // Whether a plain double-click on empty waveform creates a new marker.
+  // Ctrl+double-click always adds, regardless of this setting.
+  doubleClickAddsMarker: boolean
 
   // Sprint D — F11: auto backup per-install settings
   autoBackupEnabled: boolean       // default true
@@ -713,6 +716,7 @@ export interface AppState {
   setMarkerTypeFilter: (filter: MarkerType[]) => void
   setShowLoopDragLabel: (show: boolean) => void
   setNumericKeyAction: (action: 'goto-song' | 'goto-marker') => void
+  setDoubleClickAddsMarker: (val: boolean) => void
   // Sprint A — AC-1.4: per-preset marker type color override action
   setMarkerTypeColorOverride: (markerType: MarkerType, color: string | null) => void
   // License
@@ -843,6 +847,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   markerTypeFilter: [],          // empty = all types shown
   showLoopDragLabel: true,       // show label by default (Q2.1)
   numericKeyAction: 'goto-song', // backward-compatible default (Q4.1)
+  doubleClickAddsMarker: true,   // plain double-click on empty waveform adds a marker
 
   // Sprint D — F11: auto backup defaults
   autoBackupEnabled: true,
@@ -1552,6 +1557,7 @@ export const useStore = create<AppState>()(persist((set) => ({
   setMarkerTypeFilter: (markerTypeFilter) => set({ markerTypeFilter }),
   setShowLoopDragLabel: (showLoopDragLabel) => set({ showLoopDragLabel }),
   setNumericKeyAction: (numericKeyAction) => set({ numericKeyAction }),
+  setDoubleClickAddsMarker: (doubleClickAddsMarker) => set({ doubleClickAddsMarker }),
 
   // Sprint A — AC-1.4: per-preset marker type color override
   setMarkerTypeColorOverride: (markerType, color) => set((s) => {
@@ -2011,6 +2017,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     markerTypeFilter: state.markerTypeFilter,
     showLoopDragLabel: state.showLoopDragLabel,
     numericKeyAction: state.numericKeyAction,
+    doubleClickAddsMarker: state.doubleClickAddsMarker,
     // Sprint D — F11: auto backup per-install settings
     autoBackupEnabled: state.autoBackupEnabled,
     autoBackupIntervalMin: state.autoBackupIntervalMin,
