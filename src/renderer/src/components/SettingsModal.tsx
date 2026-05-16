@@ -637,6 +637,7 @@ function AppearanceSection(): React.JSX.Element {
     ultraDark, setUltraDark,
     numericKeyAction, setNumericKeyAction,
     showLoopDragLabel, setShowLoopDragLabel,
+    doubleClickAddsMarker, setDoubleClickAddsMarker,
   } = useStore()
 
   return (
@@ -733,6 +734,19 @@ function AppearanceSection(): React.JSX.Element {
           />
           <span className="device-label" style={{ cursor: 'pointer' }}>{t(lang, 'showLoopDragLabel')}</span>
         </label>
+      </div>
+
+      {/* doubleClickAddsMarker — toggle off if user wants only Ctrl+double-click to add */}
+      <div className="device-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+        <label className="artnet-toggle" style={{ gap: 8, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={doubleClickAddsMarker}
+            onChange={(e) => setDoubleClickAddsMarker(e.target.checked)}
+          />
+          <span className="device-label" style={{ cursor: 'pointer' }}>{t(lang, 'doubleClickAddsMarker')}</span>
+        </label>
+        <span className="ltc-gain-hint" style={{ marginLeft: 28 }}>{t(lang, 'doubleClickAddsMarkerHint')}</span>
       </div>
     </div>
   )

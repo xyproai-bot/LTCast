@@ -462,12 +462,35 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   }
 
   // Double-click on waveform area:
-  //   - on existing marker → open inline label editor
-  //   - on empty area      → add new marker at click time
+  //   - Ctrl/Cmd + double-click → ALWAYS add a new marker (even on top of existing one)
+  //   - Plain double-click on existing marker → open inline label editor
+  //   - Plain double-click on empty area → add new marker (only if setting enabled)
   const handleMarkerDblClick = useCallback((e: React.MouseEvent): void => {
     const fp = filePathRef.current
     if (fp === null) return
 
+    const addNewMarkerAtClick = (): void => {
+      const time = getTimeFromMouseEvent(e)
+      if (time === null) return
+      const mm = Math.floor(time / 60)
+      const ss = Math.floor(time % 60)
+      useStore.getState().addMarker(fp, {
+        id: `marker-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        time,
+        label: `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`,
+        type: 'custom' as const
+      })
+      markersRef.current = useStore.getState().markers
+      drawMarkers()
+    }
+
+    // Ctrl/Cmd + double-click → force add new marker (overrides everything else)
+    if (e.ctrlKey || e.metaKey) {
+      addNewMarkerAtClick()
+      return
+    }
+
+    // Plain double-click on existing marker → inline edit label
     const closest = findNearestMarker(e)
     if (closest) {
       const metrics = getWsMetrics()
@@ -480,18 +503,11 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       return
     }
 
-    const time = getTimeFromMouseEvent(e)
-    if (time === null) return
-    const mm = Math.floor(time / 60)
-    const ss = Math.floor(time % 60)
-    useStore.getState().addMarker(fp, {
-      id: `marker-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      time,
-      label: `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`,
-      type: 'custom' as const
-    })
-    markersRef.current = useStore.getState().markers
-    drawMarkers()
+    // Plain double-click on empty area → add marker, but only if the
+    // per-install setting allows it (settings → appearance toggle)
+    const allowed = useStore.getState().doubleClickAddsMarker
+    if (!allowed) return
+    addNewMarkerAtClick()
   }, [drawMarkers])
 
   const commitMarkerEdit = useCallback((): void => {

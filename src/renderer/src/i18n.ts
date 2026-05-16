@@ -315,6 +315,8 @@ export const strings = {
     markerTypeColorReset: 'Reset to default',
     // Sprint A — F2 right-click drag loop
     showLoopDragLabel: 'Show loop drag label',
+    doubleClickAddsMarker: 'Double-click waveform adds a marker',
+    doubleClickAddsMarkerHint: 'Ctrl + double-click always adds, regardless of this setting',
     // Sprint A — F3 beat-aligned offset
     beatNudgeUsing: 'Using {bpm} BPM',
     beatNudgeNoBpm: 'No BPM detected — tap tempo first',
@@ -783,6 +785,8 @@ export const strings = {
     markerTypeColorReset: '恢復預設',
     // Sprint A — F2 right-click drag loop
     showLoopDragLabel: '顯示循環拖曳標籤',
+    doubleClickAddsMarker: '雙擊波形新增 marker',
+    doubleClickAddsMarkerHint: 'Ctrl + 雙擊永遠會新增，無關此設定',
     // Sprint A — F3 beat-aligned offset
     beatNudgeUsing: '使用 {bpm} BPM',
     beatNudgeNoBpm: '未偵測到 BPM — 請先使用手打節拍',
@@ -1251,6 +1255,8 @@ export const strings = {
     markerTypeColorReset: 'デフォルトに戻す',
     // Sprint A — F2 right-click drag loop
     showLoopDragLabel: 'ループドラッグラベルを表示',
+    doubleClickAddsMarker: 'ダブルクリックでマーカーを追加',
+    doubleClickAddsMarkerHint: 'Ctrl + ダブルクリックは設定に関わらず常に追加',
     // Sprint A — F3 beat-aligned offset
     beatNudgeUsing: '{bpm} BPM を使用',
     beatNudgeNoBpm: 'BPM が検出されていません — タップテンポを先に使用',
