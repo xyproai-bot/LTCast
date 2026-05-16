@@ -1310,18 +1310,22 @@ app.whenReady().then(() => {
   // Force dark mode — prevents Windows title bar from flickering between light/dark
   nativeTheme.themeSource = 'dark'
 
-  // Allow Web MIDI API (including SysEx) and speaker selection (for setSinkId) without permission prompt
+  // Allow Web MIDI API (including SysEx), speaker selection (for setSinkId),
+  // and microphone access (for LTC chase mode's audio input pipeline) without
+  // prompting. 'media' covers both camera + microphone — we only ever request
+  // audio, so this is effectively a microphone permission.
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    if (permission === 'midi' || permission === 'midiSysex' || permission === 'speaker-selection') {
+    if (permission === 'midi' || permission === 'midiSysex' || permission === 'speaker-selection' || permission === 'media') {
       callback(true)
     } else {
       callback(false)
     }
   })
 
-  // Permission check handler — required for setSinkId() and enumerateDevices() on macOS
+  // Permission check handler — required for setSinkId() and enumerateDevices() on macOS,
+  // and for getUserMedia(audio) device-label enumeration on all platforms.
   session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-    if (permission === 'midi' || permission === 'midiSysex' || permission === 'speaker-selection' || permission === 'audiooutput') {
+    if (permission === 'midi' || permission === 'midiSysex' || permission === 'speaker-selection' || permission === 'audiooutput' || permission === 'media') {
       return true
     }
     return false
