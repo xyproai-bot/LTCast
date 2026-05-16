@@ -147,6 +147,7 @@ export const strings = {
     testFireCue: 'Test fire',
     duplicateCue: 'Duplicate trigger',
     cueEditClickHint: 'Click to edit',
+    cueSyncToNow: 'Set to current position',
     importMarkersAsCues: 'From markers',
     importMarkersAsCuesTip: 'Convert all markers into triggers (skips duplicates)',
     // Plain-language UX (2026-05-16)
@@ -603,6 +604,7 @@ export const strings = {
     testFireCue: '試擊發',
     duplicateCue: '複製觸發',
     cueEditClickHint: '點擊編輯',
+    cueSyncToNow: '設為目前位置',
     importMarkersAsCues: '從 Marker 匯入',
     importMarkersAsCuesTip: '把所有 marker 轉成觸發（跳過重複 TC）',
     // Plain-language UX (2026-05-16)
@@ -1056,6 +1058,7 @@ export const strings = {
     testFireCue: 'テスト発射',
     duplicateCue: 'トリガーを複製',
     cueEditClickHint: 'クリックで編集',
+    cueSyncToNow: '現在位置に設定',
     importMarkersAsCues: 'マーカーから取り込み',
     importMarkersAsCuesTip: '全マーカーをトリガーに変換（重複 TC はスキップ）',
     // Plain-language UX (2026-05-16)

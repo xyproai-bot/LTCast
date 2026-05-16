@@ -288,6 +288,14 @@ export function MidiCuePanel({
     setNewTc(formatTimecode(timecode).replace(';', ':'))
   }
 
+  // Update an existing cue's triggerTimecode to the current live timecode.
+  // One-click "I want this cue to fire at the moment I'm hearing now".
+  const handleSyncCueToNow = (cueId: string): void => {
+    if (!timecode || activeSetlistIndex === null) return
+    const tc = formatTimecode(timecode).replace(';', ':')
+    updateSetlistItemMidiCue(activeSetlistIndex, cueId, { triggerTimecode: tc })
+  }
+
   // Import markers as cues — one cue per marker, NOTE on with ascending data1.
   // Skips markers whose TC already collides with an existing cue.
   const handleImportMarkers = (): void => {
@@ -540,6 +548,19 @@ export function MidiCuePanel({
                           title={t(lang, 'cueEditClickHint')}
                         >{cue.triggerTimecode}</span>
                       )}
+                      {/* Sync TC to current playback position */}
+                      <button
+                        className="cp-cue-sync"
+                        onClick={() => handleSyncCueToNow(cue.id)}
+                        disabled={!timecode}
+                        title={t(lang, 'cueSyncToNow')}
+                        aria-label={t(lang, 'cueSyncToNow')}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.25">
+                          <circle cx="6" cy="6" r="4.5" />
+                          <path d="M6 3.5 V6 L8 7" strokeLinecap="round" />
+                        </svg>
+                      </button>
 
                       {/* LABEL — the primary identity of the row. Big white text;
                           falls back to "Untitled trigger" italic if empty. */}
