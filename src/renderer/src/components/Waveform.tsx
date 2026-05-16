@@ -670,15 +670,21 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
 
   // Delete / Backspace removes the currently selected marker.
   // Esc deselects without deleting.
+  //
+  // Capture-phase listener so the marker-delete intercepts before any
+  // document-level handler (e.g. SetlistPanel's own Delete-key handler that
+  // would otherwise remove the currently-selected setlist item, taking the
+  // whole song + all its markers with it).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       // Don't intercept while typing in an input / textarea / select
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
       const id = selectedMarkerIdRef.current
-      if (!id) return
+      if (!id) return   // no marker selected → let other handlers run
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
+        e.stopPropagation()  // critical: prevent SetlistPanel from also deleting the active song
         const fp = filePathRef.current
         if (!fp) return
         useStore.getState().removeMarker(fp, id)
@@ -690,8 +696,8 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
         drawMarkers()
       }
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [drawMarkers])
 
 
