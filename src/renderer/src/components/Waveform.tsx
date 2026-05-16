@@ -74,6 +74,11 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   const [editingLabelValue, setEditingLabelValue] = useState('')
   const editingInputRef = useRef<HTMLInputElement | null>(null)
 
+  // Selected marker (click to select, Delete key to remove, Esc / click empty to deselect)
+  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null)
+  const selectedMarkerIdRef = useRef<string | null>(null)
+  useEffect(() => { selectedMarkerIdRef.current = selectedMarkerId }, [selectedMarkerId])
+
   // ═══════════════════════════════════════════════════════════════════════════
   //  Music waveform — WaveSurfer.js
   // ═══════════════════════════════════════════════════════════════════════════
@@ -317,8 +322,16 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       const mType = marker.type ?? 'custom'
       const color = marker.color ?? resolveMarkerTypeColor(mType, markerTypeColorOverrides)
       const isSongTitle = mType === 'song-title'
+      const isSelected = marker.id === selectedMarkerIdRef.current
 
-      // Vertical line (thicker for song-title)
+      // Selected marker: translucent vertical halo so it's obvious which one
+      // Delete will affect. Drawn first so the line + badge sit on top.
+      if (isSelected) {
+        ctx.fillStyle = color + '33'   // ~20% alpha (8-digit hex)
+        ctx.fillRect(x - 8, 0, 16, cssH)
+      }
+
+      // Vertical line (thicker for song-title; brighter outline when selected)
       ctx.beginPath()
       ctx.strokeStyle = color
       ctx.lineWidth = isSongTitle ? 4 : 3
@@ -367,8 +380,8 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   // Keep drawMarkersRef in sync so WaveSurfer event handlers can call it
   drawMarkersRef.current = drawMarkers
 
-  // Redraw markers whenever markers, filePath, duration, currentTime, or loop points change
-  useEffect(() => { drawMarkers() }, [markers, filePath, duration, currentTime, loopA, loopB, drawMarkers])
+  // Redraw markers whenever markers, filePath, duration, currentTime, loop points, or selected marker change
+  useEffect(() => { drawMarkers() }, [markers, filePath, duration, currentTime, loopA, loopB, selectedMarkerId, drawMarkers])
 
   // ResizeObserver for music waveform wrap
   useEffect(() => {
@@ -559,6 +572,9 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
         isDragging: false
       }
       // Don't stopPropagation yet — only block WaveSurfer if it becomes a real drag
+    } else {
+      // Click on empty area → clear selection so Delete won't fire on stale id
+      if (selectedMarkerIdRef.current !== null) setSelectedMarkerId(null)
     }
   }, [])
 
@@ -609,7 +625,8 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
         markersRef.current = useStore.getState().markers
         drawMarkers()
       } else {
-        // Was a click, not a drag — restore original position in ref
+        // Was a click, not a drag — toggle selection (click same marker again to deselect)
+        setSelectedMarkerId(prev => prev === id ? null : id)
         markersRef.current = useStore.getState().markers
         drawMarkers()
       }
@@ -621,6 +638,32 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup', onMouseUp)
     }
+  }, [drawMarkers])
+
+  // Delete / Backspace removes the currently selected marker.
+  // Esc deselects without deleting.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      // Don't intercept while typing in an input / textarea / select
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      const id = selectedMarkerIdRef.current
+      if (!id) return
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault()
+        const fp = filePathRef.current
+        if (!fp) return
+        useStore.getState().removeMarker(fp, id)
+        setSelectedMarkerId(null)
+        markersRef.current = useStore.getState().markers
+        drawMarkers()
+      } else if (e.key === 'Escape') {
+        setSelectedMarkerId(null)
+        drawMarkers()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [drawMarkers])
 
 
