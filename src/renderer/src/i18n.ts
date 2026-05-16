@@ -454,7 +454,25 @@ export const strings = {
     emptyShowTitle: 'No events yet',
     emptyShowHint: 'Events will appear here as the show plays',
     // Sprint UI-Reorg Follow-up — File dropdown menu
-    fileMenuLabel: 'File'
+    fileMenuLabel: 'File',
+    // LTC Chase
+    chase: 'Chase',
+    chaseMode: 'Chase Mode',
+    settingsSection_chase: 'Chase',
+    chaseEnable: 'Enable chase mode',
+    chaseEnableHint: 'Receive external LTC and auto-follow setlist position',
+    chaseOutputAudio: 'Output audio while chasing',
+    chaseOutputAudioHint: 'Default: visual + MIDI only. Enable to also play audio.',
+    chaseFreewheelThreshold: 'Freewheel threshold (ms)',
+    chaseFreewheelHint: 'If LTC stops, keep running for this many ms before pausing',
+    chaseStatusLabel: 'Status',
+    chaseStatusIdle: 'Idle',
+    chaseStatusChasing: 'Chasing',
+    chaseStatusFreewheeling: 'Freewheeling',
+    chaseStatusLost: 'Lost',
+    chaseLockedToast: 'Chase is active — disable to switch songs manually',
+    scanningLtc: 'Scanning LTC...',
+    setlistRescan: 'Rescan LTC'
   },
   zh: {
     openFile: '開啟檔案',
@@ -908,7 +926,25 @@ export const strings = {
     emptyShowTitle: '尚無事件',
     emptyShowHint: '演出開始後事件會顯示在這裡',
     // Sprint UI-Reorg Follow-up — File dropdown menu
-    fileMenuLabel: '檔案'
+    fileMenuLabel: '檔案',
+    // LTC Chase
+    chase: '追蹤',
+    chaseMode: 'LTC 追蹤模式',
+    settingsSection_chase: '追蹤',
+    chaseEnable: '啟用追蹤模式',
+    chaseEnableHint: '接收外部 LTC 並自動跟隨歌單位置',
+    chaseOutputAudio: '追蹤時同步輸出聲音',
+    chaseOutputAudioHint: '預設只有畫面與 MIDI 觸發，開啟則一起播放音檔。',
+    chaseFreewheelThreshold: '滑行門檻 (ms)',
+    chaseFreewheelHint: 'LTC 中斷後，仍依此時間繼續推進再停止',
+    chaseStatusLabel: '狀態',
+    chaseStatusIdle: '閒置',
+    chaseStatusChasing: '追蹤中',
+    chaseStatusFreewheeling: '滑行中',
+    chaseStatusLost: '失訊',
+    chaseLockedToast: '追蹤模式啟用中，關閉後才能手動切歌',
+    scanningLtc: '掃描 LTC...',
+    setlistRescan: '重新掃描 LTC'
   },
   ja: {
     openFile: 'ファイルを開く',
@@ -1362,7 +1398,25 @@ export const strings = {
     emptyShowTitle: 'イベントはまだありません',
     emptyShowHint: 'ショー開始後にイベントが表示されます',
     // Sprint UI-Reorg Follow-up — File dropdown menu
-    fileMenuLabel: 'ファイル'
+    fileMenuLabel: 'ファイル',
+    // LTC Chase
+    chase: 'チェイス',
+    chaseMode: 'LTC チェイスモード',
+    settingsSection_chase: 'チェイス',
+    chaseEnable: 'チェイスモードを有効化',
+    chaseEnableHint: '外部 LTC を受信してセットリスト位置を自動追従',
+    chaseOutputAudio: 'チェイス中も音声を出力',
+    chaseOutputAudioHint: 'デフォルトは映像 + MIDI のみ。音声も出力したい場合はオン。',
+    chaseFreewheelThreshold: 'フリーホイール閾値 (ms)',
+    chaseFreewheelHint: 'LTC が途切れたあと、この時間だけ走り続けてから停止',
+    chaseStatusLabel: 'ステータス',
+    chaseStatusIdle: 'アイドル',
+    chaseStatusChasing: 'チェイス中',
+    chaseStatusFreewheeling: 'フリーホイール',
+    chaseStatusLost: 'ロスト',
+    chaseLockedToast: 'チェイス中です — 手動切替はチェイスを無効化してから',
+    scanningLtc: 'LTC をスキャン中...',
+    setlistRescan: 'LTC を再スキャン'
   }
 }
 

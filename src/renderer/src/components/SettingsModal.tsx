@@ -28,7 +28,7 @@ import { tcToFrames } from '../audio/timecodeConvert'
 import { CHECKOUT_URL_ANNUAL, CHECKOUT_URL_WEEKLY } from '../constants'
 import { toast } from './Toast'
 
-export type SettingsSection = 'outputs' | 'devices' | 'appearance' | 'backup' | 'license'
+export type SettingsSection = 'outputs' | 'devices' | 'chase' | 'appearance' | 'backup' | 'license'
 
 interface Props {
   initialSection?: SettingsSection
@@ -86,9 +86,10 @@ export function SettingsModal({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [onClose])
 
-  const sections: Array<{ id: SettingsSection; labelKey: 'settingsSection_outputs' | 'settingsSection_devices' | 'settingsSection_appearance' | 'settingsSection_backup' | 'settingsSection_license' }> = [
+  const sections: Array<{ id: SettingsSection; labelKey: 'settingsSection_outputs' | 'settingsSection_devices' | 'settingsSection_chase' | 'settingsSection_appearance' | 'settingsSection_backup' | 'settingsSection_license' }> = [
     { id: 'outputs',    labelKey: 'settingsSection_outputs' },
     { id: 'devices',    labelKey: 'settingsSection_devices' },
+    { id: 'chase',      labelKey: 'settingsSection_chase' },
     { id: 'appearance', labelKey: 'settingsSection_appearance' },
     { id: 'backup',     labelKey: 'settingsSection_backup' },
     { id: 'license',    labelKey: 'settingsSection_license' },
@@ -130,6 +131,7 @@ export function SettingsModal({
               onLtcDeviceChange={onLtcDeviceChange}
               onLtcChannelChange={onLtcChannelChange}
             />}
+            {active === 'chase'      && <ChaseSection />}
             {active === 'appearance' && <AppearanceSection />}
             {active === 'backup'     && <BackupSection />}
             {active === 'license'    && <LicenseSection />}
@@ -619,6 +621,98 @@ function DevicesSection({
         <span style={{ whiteSpace: 'pre-line' }}>
           {t(lang, window.api.platform === 'darwin' ? 'virtualDeviceHelpMac' : 'virtualDeviceHelp')}
         </span>
+      </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────
+// Section: Chase — LTC chase-mode controls.
+// Default: chase disabled; visual + MIDI only (no audio output).
+// Operator can override via the toggles below.
+// ────────────────────────────────────────────────────────────
+
+function ChaseSection(): React.JSX.Element {
+  const {
+    lang,
+    chaseEnabled, setChaseEnabled,
+    chaseOutputAudio, setChaseOutputAudio,
+    chaseFreewheelMs, setChaseFreewheelMs,
+    chaseStatus,
+  } = useStore()
+
+  const statusLabel = chaseStatus === 'idle' ? t(lang, 'chaseStatusIdle')
+    : chaseStatus === 'chasing' ? t(lang, 'chaseStatusChasing')
+      : chaseStatus === 'freewheeling' ? t(lang, 'chaseStatusFreewheeling')
+        : t(lang, 'chaseStatusLost')
+
+  const statusColor = chaseStatus === 'chasing' ? '#00d4ff'
+    : chaseStatus === 'freewheeling' ? '#fbbf24'
+      : chaseStatus === 'lost' ? '#ef4444'
+        : '#666'
+
+  return (
+    <div className="device-panel">
+      {/* Enable chase mode */}
+      <div className="device-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+        <label className="artnet-toggle" style={{ gap: 8, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={chaseEnabled}
+            onChange={(e) => setChaseEnabled(e.target.checked)}
+          />
+          <span className="device-label" style={{ cursor: 'pointer' }}>{t(lang, 'chaseEnable')}</span>
+        </label>
+        <span className="ltc-gain-hint" style={{ marginLeft: 28 }}>{t(lang, 'chaseEnableHint')}</span>
+      </div>
+
+      {/* Output audio while chasing */}
+      <div className="device-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+        <label className="artnet-toggle" style={{ gap: 8, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={chaseOutputAudio}
+            onChange={(e) => setChaseOutputAudio(e.target.checked)}
+          />
+          <span className="device-label" style={{ cursor: 'pointer' }}>{t(lang, 'chaseOutputAudio')}</span>
+        </label>
+        <span className="ltc-gain-hint" style={{ marginLeft: 28 }}>{t(lang, 'chaseOutputAudioHint')}</span>
+      </div>
+
+      {/* Freewheel threshold */}
+      <div className="device-row">
+        <span className="device-label">{t(lang, 'chaseFreewheelThreshold')}</span>
+        <input
+          type="number"
+          className="device-select"
+          style={{ width: 80 }}
+          min={100} max={2000} step={50}
+          value={chaseFreewheelMs}
+          onChange={(e) => {
+            const v = parseInt(e.target.value, 10)
+            if (!isNaN(v)) setChaseFreewheelMs(v)
+          }}
+        />
+        <span className="ltc-gain-hint">{t(lang, 'chaseFreewheelHint')}</span>
+      </div>
+
+      {/* Status read-out */}
+      <div className="device-row" style={{ alignItems: 'center' }}>
+        <span className="device-label">{t(lang, 'chaseStatusLabel')}</span>
+        <span
+          className="status-badge"
+          style={{
+            color: statusColor,
+            borderColor: statusColor,
+            padding: '2px 8px',
+            borderRadius: 4,
+            border: `1px solid ${statusColor}`,
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: 0.5,
+            textTransform: 'uppercase',
+          }}
+        >{statusLabel}</span>
       </div>
     </div>
   )

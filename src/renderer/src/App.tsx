@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { AudioEngine } from './audio/AudioEngine'
+import { ChaseEngine, ChaseCue } from './audio/ChaseEngine'
 import { MtcOutput } from './audio/MtcOutput'
 import { MidiInput } from './audio/MidiInput'
 import { ArtNetOutput } from './audio/ArtNetOutput'
 import { OscOutput } from './audio/OscOutput'
+import { getScanManager } from './utils/scanManager'
 import { TimecodeDisplay } from './components/TimecodeDisplay'
 import { Waveform } from './components/Waveform'
 import { Transport } from './components/Transport'
@@ -31,6 +33,7 @@ import { LTC_CONFIDENCE_THRESHOLD } from './constants'
 
 export default function App(): React.JSX.Element {
   const engine    = useRef<AudioEngine | null>(null)
+  const chase     = useRef<ChaseEngine | null>(null)
   const mtc       = useRef<MtcOutput | null>(null)
   const midiIn    = useRef<MidiInput | null>(null)
   const artnet    = useRef<ArtNetOutput | null>(null)
@@ -72,6 +75,15 @@ export default function App(): React.JSX.Element {
   const cueFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Sprint D — F11: Auto backup timer ref
   const autoBackupTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // LTC Chase — host-side state for the virtual chase cursor. Throttled
+  // via rAF in the chase engine callback below; passed to Waveform when
+  // chase is active so the cursor follows external TC instead of audio
+  // playback time.
+  const chaseVirtualTimeRef = useRef<number | null>(null)
+  const [chaseVirtualTime, setChaseVirtualTime] = useState<number | null>(null)
+  // Throttle the React state write to 30Hz so chase doesn't spike re-renders
+  // at the LTC frame rate (which can be 30Hz already + cue scheduling work).
+  const chaseRenderRafRef = useRef<number | null>(null)
 
   // Pre-buffer state (F1). Tracks the currently in-flight / completed
   // prebuffer so openFile() can grab it when the user finally fires Space.
@@ -540,6 +552,14 @@ export default function App(): React.JSX.Element {
       engine.current.setLtcOutputDevice(savedState.ltcOutputDeviceId).catch(() => {})
     }
 
+    // ── LTC Chase — instantiate engine + start background scanner ──
+    chase.current = new ChaseEngine()
+    chase.current.setFreewheelThresholdMs(savedState.chaseFreewheelMs)
+    // Boot up the scan manager so any items already in the setlist get
+    // scanned in the background. We don't store the stop fn — the manager
+    // is a singleton and disposed in the cleanup block below.
+    getScanManager().start()
+
     window.api.getAppVersion().then(setVersion).catch(() => {})
 
     // Load presets from filesystem on startup
@@ -571,6 +591,8 @@ export default function App(): React.JSX.Element {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       engine.current?.forceCleanup()
       engine.current?.dispose()
+      chase.current?.stop()
+      getScanManager().stop()
       mtc.current?.deselectPort()
       mtc.current?.deselectCuePort()
       midiIn.current?.deselectPort()
@@ -645,6 +667,146 @@ export default function App(): React.JSX.Element {
     }
   // Re-run when auto-backup settings change (reads from store on each tick)
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ── LTC Chase ────────────────────────────────────────────────
+  //
+  // Wire the ChaseEngine to:
+  //   - Store-driven config (chaseEnabled, chaseFreewheelMs)
+  //   - The setlist (rebuild segment index whenever items change)
+  //   - The active song's MIDI cues (so cue firing works while chasing)
+  //   - The store's chaseStatus / chaseLastTcFrames runtime fields
+  //   - Setlist actions (auto-switch song when chase decides we're elsewhere)
+  //   - Waveform cursor (via chaseVirtualTime state)
+  //
+  // These useEffects deliberately read from store via subscribe so we don't
+  // re-trigger on every 30Hz timecode update — only on the specific fields
+  // we care about.
+  useEffect(() => {
+    const ch = chase.current
+    if (!ch) return
+    const unsub = useStore.subscribe((s, prev) => {
+      if (s.chaseEnabled !== prev.chaseEnabled) {
+        if (s.chaseEnabled) {
+          // Build initial segment index from scanned items
+          const songs: Array<{ setlistIdx: number; segments: import('./store').LtcSegment[] }> = []
+          for (let i = 0; i < s.setlist.length; i++) {
+            const item = s.setlist[i]
+            if (item.ltcSegments && item.ltcSegments.length > 0) {
+              songs.push({ setlistIdx: i, segments: item.ltcSegments })
+            }
+          }
+          ch.updateSegmentIndex(songs)
+          // Seed cues from the currently-active song
+          const cueSrc: ChaseCue[] = s.activeSetlistIndex !== null
+            ? (s.setlist[s.activeSetlistIndex]?.midiCues ?? []).map(c => ({
+              id: c.id, enabled: c.enabled, triggerTimecode: c.triggerTimecode, offsetFrames: c.offsetFrames,
+            }))
+            : []
+          ch.setActiveSongCues(cueSrc)
+          ch.start({
+            onSongChange: (idx, audioOffsetSec) => {
+              // Switch active song via the standard openFile pathway. We do
+              // NOT setStandbySetlistIndex — chase auto-loads, not standby.
+              const state = useStore.getState()
+              if (idx < 0 || idx >= state.setlist.length) return
+              const item = state.setlist[idx]
+              state.setActiveSetlistIndex(idx)
+              // Seed the cue list for the new song immediately; the load
+              // pathway also updates it but chase needs it synchronously
+              // for the very next incoming frame.
+              ch.setActiveSongCues((item.midiCues ?? []).map(c => ({
+                id: c.id, enabled: c.enabled, triggerTimecode: c.triggerTimecode, offsetFrames: c.offsetFrames,
+              })))
+              openFile(item.path, item.offsetFrames).then(() => {
+                // If audio output is desired during chase, kick off playback
+                // from the offset returned by the engine. Otherwise just
+                // seek so the cursor lands correctly.
+                const cur = useStore.getState()
+                if (cur.duration <= 0) return
+                if (cur.chaseOutputAudio) {
+                  // Start audio at the matched audio-file offset
+                  setPlayState('playing')
+                  engine.current?.seek(audioOffsetSec).then(() => engine.current?.play())
+                    .catch(() => setPlayState('paused'))
+                } else {
+                  engine.current?.seek(audioOffsetSec)
+                }
+              })
+            },
+            onStatusChange: (status) => {
+              useStore.getState().setChaseStatus(status)
+            },
+            onTcUpdate: (chaseSec) => {
+              // chaseSec is the audio-file position the programmer is at.
+              // Drive both the waveform cursor and the store's runtime field
+              // (cursor render is throttled via rAF; store write is once
+              // per ~30 ms so React state doesn't churn at LTC rate).
+              chaseVirtualTimeRef.current = isNaN(chaseSec) ? null : chaseSec
+              if (chaseRenderRafRef.current === null) {
+                chaseRenderRafRef.current = requestAnimationFrame(() => {
+                  chaseRenderRafRef.current = null
+                  setChaseVirtualTime(chaseVirtualTimeRef.current)
+                })
+              }
+            },
+            onFireCue: (cueId) => {
+              const state = useStore.getState()
+              const idx = state.activeSetlistIndex
+              if (idx === null) return
+              const cue = (state.setlist[idx]?.midiCues ?? []).find(c => c.id === cueId)
+              if (!cue) return
+              showLog.log('cue', `[chase] ${cue.messageType} ch${cue.channel} #${cue.data1}${cue.label ? ` "${cue.label}"` : ''} @ ${cue.triggerTimecode}`)
+              setLastFiredCueId(cue.id)
+              if (cueFlashTimer.current) clearTimeout(cueFlashTimer.current)
+              cueFlashTimer.current = setTimeout(() => setLastFiredCueId(null), 500)
+              if (cue.messageType === 'program-change') {
+                mtc.current?.sendProgramChange(cue.channel, cue.data1)
+              } else if (cue.messageType === 'note-on') {
+                mtc.current?.sendNoteOn(cue.channel, cue.data1, cue.data2 ?? 100)
+              } else if (cue.messageType === 'control-change') {
+                mtc.current?.sendControlChange(cue.channel, cue.data1, cue.data2 ?? 0)
+              }
+            },
+          })
+          useStore.getState().setChaseStatus(ch.getStatus())
+        } else {
+          ch.stop()
+          useStore.getState().setChaseStatus('idle')
+          useStore.getState().setChaseLastTcFrames(null)
+          setChaseVirtualTime(null)
+          chaseVirtualTimeRef.current = null
+        }
+      }
+      // Threshold changes apply immediately
+      if (s.chaseFreewheelMs !== prev.chaseFreewheelMs) {
+        ch.setFreewheelThresholdMs(s.chaseFreewheelMs)
+      }
+      // Rebuild segment index whenever the setlist mutates while enabled
+      if (s.chaseEnabled && s.setlist !== prev.setlist) {
+        const songs: Array<{ setlistIdx: number; segments: import('./store').LtcSegment[] }> = []
+        for (let i = 0; i < s.setlist.length; i++) {
+          const item = s.setlist[i]
+          if (item.ltcSegments && item.ltcSegments.length > 0) {
+            songs.push({ setlistIdx: i, segments: item.ltcSegments })
+          }
+        }
+        ch.updateSegmentIndex(songs)
+      }
+      // When the active song changes (chase or otherwise), refresh the
+      // engine's cue list so chase fires cues for the right song.
+      if (s.chaseEnabled && s.activeSetlistIndex !== prev.activeSetlistIndex) {
+        const idx = s.activeSetlistIndex
+        if (idx !== null && idx >= 0 && idx < s.setlist.length) {
+          const item = s.setlist[idx]
+          ch.setActiveSongCues((item.midiCues ?? []).map(c => ({
+            id: c.id, enabled: c.enabled, triggerTimecode: c.triggerTimecode, offsetFrames: c.offsetFrames,
+          })))
+        }
+      }
+    })
+    return unsub
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Re-apply offset when it changes
@@ -1129,6 +1291,20 @@ export default function App(): React.JSX.Element {
     mtc.current?.sendTimecode(tc, audioTime)
     artnet.current?.sendTimecode(tc)
     osc.current?.sendTimecode(tc)
+
+    // LTC Chase — when enabled, route every decoded frame to the chase
+    // engine. Chase has its own cue scheduler, so skip the playback-time
+    // path below when chase is active to avoid duplicate fires.
+    const s0 = useStore.getState()
+    if (s0.chaseEnabled && chase.current) {
+      chase.current.onIncomingTc({
+        hours: tc.hours, minutes: tc.minutes, seconds: tc.seconds, frames: tc.frames,
+        fps: tc.fps, dropFrame: tc.dropFrame,
+      })
+      // Engine internally drives cue firing and song change; nothing else
+      // to do here on this code path.
+      return
+    }
 
     // MIDI Cue triggering — compare absolute timecode
     const s = useStore.getState()
@@ -1834,6 +2010,7 @@ export default function App(): React.JSX.Element {
           <Waveform
             musicData={musicWaveform}
             ltcData={ltcWaveform}
+            chaseTime={chaseVirtualTime}
             onSeek={handleSeek}
             onVideoOffsetChange={(offset) => {
               setVideoOffsetSeconds(offset)

@@ -7,6 +7,7 @@ import { toast } from './Toast'
 import { buildCueSheetHtml, CueSheetLayout } from '../utils/exportCueSheet'
 import { Tooltip } from './Tooltip'
 import { WaveformCompare } from './WaveformCompare'
+import { getScanManager, ScanManagerStatus } from '../utils/scanManager'
 
 // F6: Long-press threshold before a setlist row becomes draggable.
 // Below this, mousedown+mouseup is treated as a normal click (standby toggle).
@@ -123,6 +124,15 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
       if (holdIntervalRef.current) clearInterval(holdIntervalRef.current)
       if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
     }
+  }, [])
+
+  // LTC Chase — scan progress display in header. Subscribe to the scan
+  // manager so the header shows "Scanning LTC … X/Y" while the background
+  // scanner is working its way through the setlist.
+  const [scanStatus, setScanStatus] = useState<ScanManagerStatus>({ total: 0, done: 0, active: false })
+  useEffect(() => {
+    const unsub = getScanManager().onStatus(setScanStatus)
+    return unsub
   }, [])
 
   // Check which setlist files are missing on disk
@@ -275,6 +285,15 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
 
   const handleItemClick = useCallback((index: number, e?: React.MouseEvent): void => {
     if (editingOffsetIdx === index) return
+    // LTC Chase lock: while chase is actively following external TC, the
+    // operator shouldn't be able to override the song by clicking. Show a
+    // toast explaining why and bail. (Idle status — chase enabled but no
+    // LTC yet — is still locked, matching the spec: chase enabled ⇒ lock.)
+    const chaseState = useStore.getState()
+    if (chaseState.chaseEnabled && chaseState.chaseStatus !== 'idle') {
+      toast.info(t(chaseState.lang, 'chaseLockedToast'))
+      return
+    }
     const item = setlist[index]
     if (missingPaths.has(item.path)) {
       handleRelink(index)
@@ -315,6 +334,12 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
 
   const handleItemDoubleClick = useCallback((index: number): void => {
     if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null }
+    // Same chase-lock guard as handleItemClick — double-click can't bypass it.
+    const chaseState = useStore.getState()
+    if (chaseState.chaseEnabled && chaseState.chaseStatus !== 'idle') {
+      toast.info(t(chaseState.lang, 'chaseLockedToast'))
+      return
+    }
     const item = setlist[index]
     if (missingPaths.has(item.path)) return
     setStandbySetlistIndex(null)
@@ -890,6 +915,24 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
             ? t(lang, 'nSelected').replace('{n}', String(selectedIds.size))
             : t(lang, 'setlist')}
         </span>
+        {scanStatus.active && scanStatus.total > 0 && (
+          <span
+            className="scan-progress-badge"
+            title={t(lang, 'scanningLtc')}
+            style={{
+              fontSize: 10,
+              padding: '1px 6px',
+              borderRadius: 4,
+              border: '1px solid #00d4ff',
+              color: '#00d4ff',
+              marginLeft: 6,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {t(lang, 'scanningLtc')} {scanStatus.done}/{scanStatus.total}
+            {' '}({Math.round((scanStatus.done / Math.max(1, scanStatus.total)) * 100)}%)
+          </span>
+        )}
         {selectedIds.size > 0 && (
           <button
             className="btn-sm"
@@ -1242,6 +1285,29 @@ export function SetlistPanel({ onLoadFile, onImportFiles, onShowLicense }: Props
                           disabled={replacingAudioIdx === i && replaceAligning}
                           title={t(lang, 'replaceAudio') + ' (Pro)'}
                         >⇄</button>
+                      </Tooltip>
+                      {/* LTC Chase: rescan LTC for this song. Useful after
+                          replace audio or if the auto-scan reported "no LTC"
+                          incorrectly. */}
+                      <Tooltip text={t(lang, 'setlistRescan')}>
+                        <button
+                          className="setlist-action-btn"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            getScanManager().rescanItem(i)
+                          }}
+                          title={t(lang, 'setlistRescan') +
+                            (item.ltcScanStatus
+                              ? ` (${item.ltcScanStatus})`
+                              : '')}
+                          style={
+                            item.ltcScanStatus === 'scanned' ? { color: '#00d4ff' } :
+                              item.ltcScanStatus === 'no-ltc' ? { color: '#666' } :
+                                item.ltcScanStatus === 'error' ? { color: '#ef4444' } :
+                                  item.ltcScanStatus === 'scanning' ? { color: '#fbbf24' } : undefined
+                          }
+                        >⟳</button>
                       </Tooltip>
                       <Tooltip text={t(lang, 'remove')}>
                         <button

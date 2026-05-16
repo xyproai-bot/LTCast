@@ -17,13 +17,16 @@ const CUE_COLOR: Record<MidiCuePoint['messageType'], string> = {
 interface Props {
   musicData: Float32Array | null
   ltcData:   Float32Array | null
+  /** LTC Chase — host-supplied virtual playhead seconds when chase is
+   *  active. null means "no chase override; use audio playback time". */
+  chaseTime?: number | null
   onSeek:    (time: number) => void
   onVideoOffsetChange?: (offset: number) => void
   onClearVideo?: () => void
   onResyncVideo?: () => void
 }
 
-export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onClearVideo, onResyncVideo }: Props): React.JSX.Element {
+export function Waveform({ musicData, ltcData, chaseTime, onSeek, onVideoOffsetChange, onClearVideo, onResyncVideo }: Props): React.JSX.Element {
   const musicContainerRef  = useRef<HTMLDivElement>(null)
   const musicWrapRef       = useRef<HTMLDivElement>(null)
   const markerCanvasRef    = useRef<HTMLCanvasElement>(null)   // marker overlay on music waveform
@@ -77,7 +80,12 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   const videoDataRef   = useRef(videoWaveform)
   const videoOffsetRef = useRef(videoOffsetSeconds)
   const videoDurRef    = useRef(videoDuration)
-  useEffect(() => { currentTimeRef.current = currentTime }, [currentTime])
+  // LTC Chase — when chase is active, cursor follows chaseTime instead of
+  // currentTime. We update currentTimeRef to chaseTime so all the existing
+  // cursor-drawing code paths (which read from currentTimeRef) Just Work.
+  useEffect(() => {
+    currentTimeRef.current = (chaseTime != null && isFinite(chaseTime)) ? chaseTime : currentTime
+  }, [currentTime, chaseTime])
   useEffect(() => { durationRef.current    = duration    }, [duration])
   useEffect(() => { ltcDataRef.current     = ltcData     }, [ltcData])
   useEffect(() => { videoDataRef.current   = videoWaveform }, [videoWaveform])
@@ -236,8 +244,11 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   useEffect(() => {
     const ws = wsRef.current
     if (!ws || duration <= 0) return
-    ws.setTime(currentTime)
-  }, [currentTime, duration])
+    // LTC Chase: prefer chase time when present so the wavesurfer cursor
+    // syncs with the external programmer instead of audio playback time.
+    const t = (chaseTime != null && isFinite(chaseTime)) ? chaseTime : currentTime
+    ws.setTime(Math.max(0, Math.min(duration, t)))
+  }, [currentTime, duration, chaseTime])
 
   // Ctrl+scroll zoom — on musicWrapRef (parent) so it works even when marker canvas is on top
   useEffect(() => {
@@ -973,7 +984,8 @@ export function Waveform({ musicData, ltcData, onSeek, onVideoOffsetChange, onCl
   // Background: redraw only when data or loop points change (expensive — draws 6000 bars)
   useEffect(() => { redrawLtcBg() }, [ltcData, loopA, loopB, redrawLtcBg])
   // Cursor overlay: redraw every frame (cheap — only cursor line + loop region)
-  useEffect(() => { redrawLtcCursor() }, [currentTime, loopA, loopB, redrawLtcCursor])
+  // chaseTime is included so chase mode pushes the cursor when audio is paused.
+  useEffect(() => { redrawLtcCursor() }, [currentTime, chaseTime, loopA, loopB, redrawLtcCursor])
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  Video waveform — draggable, same timeline as music/LTC

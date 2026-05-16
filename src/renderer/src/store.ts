@@ -73,6 +73,23 @@ export interface MidiMapping {
   actionParam?: number // for goto-song: setlist index (0-based)
 }
 
+// LTC Chase — scanned segments of embedded LTC inside an audio file.
+// Each segment is a continuous run of LTC frames; a song may have several
+// (e.g. silence in the middle that the LTC operator paused through).
+// Frame counts are absolute integer frame indices computed via tcToFrames
+// — kept as integers (not strings) so the chase hot path does numeric
+// comparison instead of string parsing.
+export interface LtcSegment {
+  audioStartSec: number       // position inside the audio file (seconds)
+  audioEndSec: number
+  tcAtStartFrames: number     // absolute LTC TC at audioStartSec, in frame-count form
+  tcAtEndFrames: number
+  fps: number                 // 24 / 25 / 29.97 / 30
+  dropFrame: boolean
+}
+
+export type LtcScanStatus = 'pending' | 'scanning' | 'scanned' | 'no-ltc' | 'error'
+
 export interface SetlistItem {
   id: string
   path: string
@@ -82,6 +99,10 @@ export interface SetlistItem {
   stageNote?: string     // F13: single-line operator note for fullscreen stage display (≤200 chars)
   midiCues?: MidiCuePoint[]  // per-song MIDI cue points
   markers?: WaveformMarker[]  // per-song structure markers (intro/verse/etc); v8+
+  // LTC Chase (v13): scanned LTC segments for chase-mode song lookup.
+  // undefined → not yet scanned; empty array + status 'no-ltc' → scanned, no LTC found.
+  ltcSegments?: LtcSegment[]
+  ltcScanStatus?: LtcScanStatus
 }
 
 export type MarkerType = 'intro' | 'verse' | 'chorus' | 'bridge' | 'outro' | 'break' | 'song-title' | 'custom'
@@ -217,7 +238,7 @@ function ensureSetlistIds(data: PresetData): PresetData {
   return data
 }
 
-const CURRENT_PRESET_VERSION = 12
+const CURRENT_PRESET_VERSION = 13
 
 /** Warn once if a preset was created by a newer version of the app. */
 function warnIfNewerVersion(data: PresetData): void {
@@ -318,6 +339,16 @@ function migratePreset(data: PresetData): PresetData {
   if (version < 12) {
     data.rightTab = migrateRightTab(data.rightTab)
   }
+  // version 12 → 13: LTC Chase mode. Old setlist items have no ltcSegments
+  // and no ltcScanStatus — leave both undefined so the background scanner
+  // picks them up the next time the user opens this preset. We do NOT
+  // force a rescan trigger here; the scanManager subscribes to setlist
+  // changes and processes anything with status === undefined.
+  if (version < 13) {
+    // No data shape change; just a new feature with optional fields. We
+    // intentionally do not touch existing items so users opening a v12
+    // preset on v13 simply see "Scanning LTC…" in the background.
+  }
   data.version = CURRENT_PRESET_VERSION
   return data
 }
@@ -416,6 +447,13 @@ function deriveMarkersFromAllVariants(variants: SetlistVariant[]): Record<string
 export type SortMode = 'az' | 'za' | 'ext' | 'reverse'
 export type ThemeColor = 'cyan' | 'red' | 'green' | 'orange' | 'purple' | 'pink'
 export type UiSize = 'sm' | 'md' | 'lg'
+
+// LTC Chase — engine status, exposed to UI for badge color + lock logic.
+//   idle           = chase disabled
+//   chasing        = receiving LTC, locked to external timecode
+//   freewheeling   = LTC dropped briefly (< 5s); engine projects virtual time
+//   lost           = no LTC for > 5s (or chase enabled but never received)
+export type ChaseStatus = 'idle' | 'chasing' | 'freewheeling' | 'lost'
 
 export interface AppState {
   // File
@@ -572,6 +610,16 @@ export interface AppState {
   themeColor: ThemeColor  // Accent color theme (per-install)
   uiSize: UiSize          // UI scale factor (per-install)
 
+  // LTC Chase mode — D3-style follow external timecode.
+  // chaseEnabled / chaseOutputAudio / chaseFreewheelMs are per-install
+  // settings (persisted via Zustand). chaseStatus / chaseLastTcFrames are
+  // runtime-only — never persisted, never marks preset dirty.
+  chaseEnabled: boolean
+  chaseOutputAudio: boolean
+  chaseFreewheelMs: number       // 100–2000, default 500
+  chaseStatus: ChaseStatus       // runtime
+  chaseLastTcFrames: number | null  // runtime, integer frame count for cursor follow
+
   // License
   licenseKey: string | null
   licenseStatus: 'none' | 'valid' | 'expired' | 'invalid'
@@ -708,6 +756,20 @@ export interface AppState {
   setDoubleClickAddsMarker: (val: boolean) => void
   // Sprint A — AC-1.4: per-preset marker type color override action
   setMarkerTypeColorOverride: (markerType: MarkerType, color: string | null) => void
+  // LTC Chase actions
+  setChaseEnabled: (v: boolean) => void
+  setChaseOutputAudio: (v: boolean) => void
+  setChaseFreewheelMs: (v: number) => void
+  setChaseStatus: (s: ChaseStatus) => void
+  setChaseLastTcFrames: (v: number | null) => void
+  // Set / clear scanned LTC segments on a setlist item (by index, not id, to
+  // match every other setlist action). Triggered by the background scan
+  // manager + manual rescan in SetlistPanel. Mirrors into the active variant.
+  setSetlistItemLtcScan: (
+    index: number,
+    segments: LtcSegment[] | undefined,
+    status: LtcScanStatus | undefined
+  ) => void
   // License
   setLicenseKey: (key: string | null) => void
   setLicenseStatus: (status: 'none' | 'valid' | 'expired' | 'invalid') => void
@@ -853,6 +915,14 @@ export const useStore = create<AppState>()(persist((set) => ({
   ultraDark: false,
   themeColor: 'cyan',
   uiSize: 'md',
+
+  // LTC Chase defaults — off by default per spec (default visual-only operation
+  // means safe for any operator who isn't expecting external TC).
+  chaseEnabled: false,
+  chaseOutputAudio: false,
+  chaseFreewheelMs: 500,
+  chaseStatus: 'idle',
+  chaseLastTcFrames: null,
 
   licenseKey: null,
   licenseStatus: 'none',
@@ -1227,7 +1297,12 @@ export const useStore = create<AppState>()(persist((set) => ({
     for (const { index, newPath } of updates) {
       if (index < 0 || index >= setlist.length) continue
       const newName = newPath.split(/[/\\]/).pop() ?? setlist[index].name
-      setlist[index] = { ...setlist[index], path: newPath, name: newName }
+      // LTC Chase: drop scanned segments so the new file gets re-scanned.
+      setlist[index] = {
+        ...setlist[index],
+        path: newPath, name: newName,
+        ltcSegments: undefined, ltcScanStatus: undefined,
+      }
     }
     return {
       setlist,
@@ -1313,7 +1388,12 @@ export const useStore = create<AppState>()(persist((set) => ({
   setSetlistItemPath: (index, path, name) => set((s) => {
     if (index < 0 || index >= s.setlist.length) return s
     const setlist = [...s.setlist]
-    setlist[index] = { ...setlist[index], path, name }
+    // LTC Chase: clear scanned segments — new path needs a fresh scan.
+    setlist[index] = {
+      ...setlist[index],
+      path, name,
+      ltcSegments: undefined, ltcScanStatus: undefined,
+    }
     return {
       setlist,
       setlistVariants: s.setlistVariants.map(v =>
@@ -1336,7 +1416,13 @@ export const useStore = create<AppState>()(persist((set) => ({
     const prevSetlist = [...s.setlist]
 
     const newSetlist = [...s.setlist]
-    newSetlist[index] = { ...newSetlist[index], path: newPath, name: newName, midiCues: shiftedMidiCues }
+    // LTC Chase: file changed → scanned segments are stale. Drop them so
+    // the background scanner picks the item up again and rebuilds segments.
+    newSetlist[index] = {
+      ...newSetlist[index],
+      path: newPath, name: newName, midiCues: shiftedMidiCues,
+      ltcSegments: undefined, ltcScanStatus: undefined,
+    }
 
     const newMarkers = {
       ...s.markers,
@@ -1578,6 +1664,38 @@ export const useStore = create<AppState>()(persist((set) => ({
       overrides[markerType] = color
     }
     return { markerTypeColorOverrides: overrides, presetDirty: true }
+  }),
+
+  // LTC Chase — per-install settings persisted via Zustand. None of these
+  // touch presetDirty (they're operator preferences, not show data).
+  setChaseEnabled: (chaseEnabled) => set({ chaseEnabled }),
+  setChaseOutputAudio: (chaseOutputAudio) => set({ chaseOutputAudio }),
+  setChaseFreewheelMs: (chaseFreewheelMs) =>
+    set({ chaseFreewheelMs: Math.max(100, Math.min(2000, Math.floor(chaseFreewheelMs))) }),
+  setChaseStatus: (chaseStatus) => set({ chaseStatus }),
+  setChaseLastTcFrames: (chaseLastTcFrames) => set({ chaseLastTcFrames }),
+  // Write scanned LTC segments + status onto a setlist item. Mirrors into
+  // the active variant so a save+reload round-trip preserves the scan
+  // results. We do NOT mark presetDirty — scanned segments are derived
+  // data; the user shouldn't see a "*" on title bar just because the
+  // background scanner finished.
+  setSetlistItemLtcScan: (index, segments, status) => set((s) => {
+    if (index < 0 || index >= s.setlist.length) return s
+    const setlist = [...s.setlist]
+    const next = { ...setlist[index] }
+    if (segments === undefined) delete next.ltcSegments
+    else next.ltcSegments = segments
+    if (status === undefined) delete next.ltcScanStatus
+    else next.ltcScanStatus = status
+    setlist[index] = next
+    return {
+      setlist,
+      setlistVariants: s.setlistVariants.map(v =>
+        v.id === s.activeSetlistVariantId ? { ...v, setlist } : v
+      )
+      // intentionally no presetDirty: scan results are derived from the
+      // audio file, not user-authored show data.
+    }
   }),
 
   // License actions
@@ -2032,6 +2150,11 @@ export const useStore = create<AppState>()(persist((set) => ({
     autoBackupEnabled: state.autoBackupEnabled,
     autoBackupIntervalMin: state.autoBackupIntervalMin,
     autoBackupKeepCount: state.autoBackupKeepCount,
+    // LTC Chase — per-install settings (chaseStatus / chaseLastTcFrames are
+    // runtime-only and deliberately excluded from persistence).
+    chaseEnabled: state.chaseEnabled,
+    chaseOutputAudio: state.chaseOutputAudio,
+    chaseFreewheelMs: state.chaseFreewheelMs,
     // F4 — Show Timer: per-install, not per-preset (Q-E). On rehydrate we
     // force running=false in merge() so a ticking timer at quit comes back
     // stopped at its last snapshot (AC-8).
@@ -2117,6 +2240,19 @@ export const useStore = create<AppState>()(persist((set) => ({
       merged.oscFeedbackBindAddress = '127.0.0.1'
     }
     merged.oscFeedbackDevices = {}
+    // LTC Chase — runtime fields always reset on launch. Even if the user
+    // had chaseEnabled = true at quit, status starts at 'idle' (or 'lost'
+    // once the engine starts) — never persist a 'chasing' state across
+    // restarts because there's no LTC source live yet.
+    merged.chaseStatus = 'idle'
+    merged.chaseLastTcFrames = null
+    if (typeof merged.chaseFreewheelMs !== 'number' || !isFinite(merged.chaseFreewheelMs)) {
+      merged.chaseFreewheelMs = 500
+    } else {
+      merged.chaseFreewheelMs = Math.max(100, Math.min(2000, Math.floor(merged.chaseFreewheelMs)))
+    }
+    if (typeof merged.chaseEnabled !== 'boolean') merged.chaseEnabled = false
+    if (typeof merged.chaseOutputAudio !== 'boolean') merged.chaseOutputAudio = false
     // Ensure setlist items from old storage have IDs
     merged.setlist = merged.setlist.map((item: SetlistItem) =>
       item.id ? item : { ...item, id: nextSetlistId() }
