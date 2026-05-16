@@ -131,7 +131,7 @@ export function SettingsModal({
               onLtcDeviceChange={onLtcDeviceChange}
               onLtcChannelChange={onLtcChannelChange}
             />}
-            {active === 'chase'      && <ChaseSection />}
+            {active === 'chase'      && <ChaseSection onJumpToDevices={() => setActive('devices')} />}
             {active === 'appearance' && <AppearanceSection />}
             {active === 'backup'     && <BackupSection />}
             {active === 'license'    && <LicenseSection />}
@@ -532,6 +532,12 @@ function DevicesSection({
   // returns useful labels after the user has granted microphone permission
   // at least once — so we re-enumerate on every mount.
   const [audioInputDevices, setAudioInputDevices] = useState<AudioDevice[]>([])
+  // True when at least one audio input device has an empty label, meaning
+  // the browser hasn't granted microphone permission yet. Names will look
+  // like garbled deviceIds, and virtual cables (VB-Cable Output etc.) won't
+  // be recognisable.
+  const [needsMicPermission, setNeedsMicPermission] = useState(false)
+  const [requestingMic, setRequestingMic] = useState(false)
 
   // Enumerate audio output AND input devices on mount + on plug/unplug
   useEffect(() => {
@@ -541,16 +547,52 @@ function DevicesSection({
           .filter((d) => d.kind === 'audiooutput')
           .map((d) => ({ deviceId: d.deviceId, label: d.label || d.deviceId }))
         setAudioOutputDevices(outputs)
-        const inputs: AudioDevice[] = devices
-          .filter((d) => d.kind === 'audioinput')
+        const rawInputs = devices.filter((d) => d.kind === 'audioinput')
+        const inputs: AudioDevice[] = rawInputs
           .map((d) => ({ deviceId: d.deviceId, label: d.label || d.deviceId }))
         setAudioInputDevices(inputs)
+        // Heuristic: if any input has an empty raw label, permission hasn't
+        // been granted. Browsers hide labels until getUserMedia is granted
+        // at least once. (Drop the empty-deviceId "" sentinel which Chromium
+        // returns for the default device.)
+        setNeedsMicPermission(
+          rawInputs.some(d => d.deviceId !== '' && !d.label)
+        )
       }).catch(() => {})
     }
     refresh()
     navigator.mediaDevices.addEventListener('devicechange', refresh)
     return () => navigator.mediaDevices.removeEventListener('devicechange', refresh)
   }, [setAudioOutputDevices])
+
+  // One-shot getUserMedia to unlock real device labels. We open a stream
+  // for the briefest moment and immediately release the tracks — the side
+  // effect is that subsequent enumerateDevices() returns proper names like
+  // "VB-Audio Cable Output (VB-Audio Virtual Cable)" instead of hashes.
+  const handleRequestMicPermission = async (): Promise<void> => {
+    setRequestingMic(true)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      stream.getTracks().forEach(t => t.stop())
+      // Refresh — labels should now populate
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      const outputs: AudioDevice[] = devices
+        .filter((d) => d.kind === 'audiooutput')
+        .map((d) => ({ deviceId: d.deviceId, label: d.label || d.deviceId }))
+      setAudioOutputDevices(outputs)
+      const rawInputs = devices.filter((d) => d.kind === 'audioinput')
+      const inputs: AudioDevice[] = rawInputs
+        .map((d) => ({ deviceId: d.deviceId, label: d.label || d.deviceId }))
+      setAudioInputDevices(inputs)
+      setNeedsMicPermission(
+        rawInputs.some(d => d.deviceId !== '' && !d.label)
+      )
+    } catch (e) {
+      console.warn('Microphone permission denied or failed:', e)
+    } finally {
+      setRequestingMic(false)
+    }
+  }
 
   const handleMidiSelect = (portId: string): void => { setSelectedMidiPort(portId); onMidiPortChange(portId) }
   const handleMusicDevice = (deviceId: string): void => { setMusicOutputDeviceId(deviceId); onMusicDeviceChange(deviceId) }
@@ -633,8 +675,37 @@ function DevicesSection({
             {audioInputDevices.map((d) => (<option key={d.deviceId} value={d.deviceId}>{d.label}</option>))}
           </select>
         </div>
+        {needsMicPermission && (
+          <button
+            type="button"
+            onClick={handleRequestMicPermission}
+            disabled={requestingMic}
+            style={{
+              alignSelf: 'flex-start',
+              marginTop: 4,
+              padding: '6px 12px',
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              background: 'rgba(0, 212, 255, 0.08)',
+              border: '1px solid rgba(0, 212, 255, 0.4)',
+              color: 'var(--accent)',
+              borderRadius: 4,
+              cursor: requestingMic ? 'wait' : 'pointer',
+              transition: 'background 0.12s',
+            }}
+            onMouseEnter={(e) => { if (!requestingMic) e.currentTarget.style.background = 'rgba(0, 212, 255, 0.16)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(0, 212, 255, 0.08)' }}
+          >
+            {requestingMic ? t(lang, 'ltcInputRequestingPermission') : t(lang, 'ltcInputGrantPermission')}
+          </button>
+        )}
         <span className="ltc-gain-hint">{t(lang, 'ltcInputDeviceHint')}</span>
-        <span className="ltc-gain-hint" style={{ opacity: 0.7 }}>{t(lang, 'ltcInputPermissionHint')}</span>
+        {needsMicPermission && (
+          <span className="ltc-gain-hint" style={{ color: '#fbbf24', opacity: 0.9 }}>
+            {t(lang, 'ltcInputDeviceNamesHidden')}
+          </span>
+        )}
       </div>
 
       {/* MTC MIDI port */}
@@ -668,7 +739,7 @@ function DevicesSection({
 // Operator can override via the toggles below.
 // ────────────────────────────────────────────────────────────
 
-function ChaseSection(): React.JSX.Element {
+function ChaseSection({ onJumpToDevices }: { onJumpToDevices: () => void }): React.JSX.Element {
   const {
     lang,
     chaseEnabled, setChaseEnabled,
@@ -695,19 +766,39 @@ function ChaseSection(): React.JSX.Element {
       {/* Warn if no LTC input device is configured. Chase needs external
           LTC; without an input device the engine sits in 'lost' forever. */}
       {noInputDeviceConfigured && (
-        <div
+        <button
+          type="button"
+          onClick={onJumpToDevices}
           className="device-row"
           style={{
             color: '#fbbf24',
             background: 'rgba(251, 191, 36, 0.08)',
             border: '1px solid rgba(251, 191, 36, 0.3)',
             borderRadius: 4,
-            padding: '6px 10px',
+            padding: '8px 12px',
             fontSize: 12,
+            cursor: 'pointer',
+            textAlign: 'left',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            transition: 'background 0.12s, border-color 0.12s',
+            width: '100%',
           }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(251, 191, 36, 0.16)'
+            e.currentTarget.style.borderColor = 'rgba(251, 191, 36, 0.5)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(251, 191, 36, 0.08)'
+            e.currentTarget.style.borderColor = 'rgba(251, 191, 36, 0.3)'
+          }}
+          title={t(lang, 'ltcInputJumpToDevicesHint')}
         >
-          {t(lang, 'ltcInputNotConfiguredHint')}
-        </div>
+          <span>{t(lang, 'ltcInputNotConfiguredHint')}</span>
+          <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>→</span>
+        </button>
       )}
 
       {/* Enable chase mode */}
