@@ -589,7 +589,7 @@ export default function App(): React.JSX.Element {
 
     // ── LTC Chase — instantiate engine + start background scanner ──
     chase.current = new ChaseEngine()
-    chase.current.setFreewheelThresholdMs(savedState.chaseFreewheelMs)
+    chase.current.setFreewheelEnabled(savedState.chaseFreewheelEnabled)
     // Boot up the scan manager so any items already in the setlist get
     // scanned in the background. We don't store the stop fn — the manager
     // is a singleton and disposed in the cleanup block below.
@@ -707,7 +707,7 @@ export default function App(): React.JSX.Element {
   // ── LTC Chase ────────────────────────────────────────────────
   //
   // Wire the ChaseEngine to:
-  //   - Store-driven config (chaseEnabled, chaseFreewheelMs)
+  //   - Store-driven config (chaseEnabled, chaseFreewheelEnabled)
   //   - The setlist (rebuild segment index whenever items change)
   //   - The active song's MIDI cues (so cue firing works while chasing)
   //   - The store's chaseStatus / chaseLastTcFrames runtime fields
@@ -813,9 +813,9 @@ export default function App(): React.JSX.Element {
           chaseVirtualTimeRef.current = null
         }
       }
-      // Threshold changes apply immediately
-      if (s.chaseFreewheelMs !== prev.chaseFreewheelMs) {
-        ch.setFreewheelThresholdMs(s.chaseFreewheelMs)
+      // Freewheel toggle applies immediately
+      if (s.chaseFreewheelEnabled !== prev.chaseFreewheelEnabled) {
+        ch.setFreewheelEnabled(s.chaseFreewheelEnabled)
       }
       // Rebuild segment index whenever the setlist mutates while enabled
       if (s.chaseEnabled && s.setlist !== prev.setlist) {

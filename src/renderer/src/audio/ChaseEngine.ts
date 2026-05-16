@@ -76,7 +76,10 @@ export interface ChaseCue {
 export class ChaseEngine {
   // ── Config ───────────────────────────────────────────────
   private enabled = false
-  private freewheelThresholdMs = 500
+  // Fixed 500 ms grace before we consider LTC "stopped". Below this,
+  // status stays "chasing" (filters single-frame dropouts).
+  private static readonly FREEWHEEL_GRACE_MS = 500
+  private freewheelEnabled = true
   private lostThresholdMs = 5000
   private callbacks: ChaseEngineCallbacks | null = null
 
@@ -135,9 +138,11 @@ export class ChaseEngine {
     this.lastIncomingFrames = -Infinity
   }
 
-  /** Per-install freewheel threshold from Settings → Chase. */
-  setFreewheelThresholdMs(ms: number): void {
-    this.freewheelThresholdMs = Math.max(100, Math.min(2000, Math.floor(ms)))
+  /** Per-install freewheel toggle from Settings → Chase. When ON, LTC
+   *  drop transitions to "freewheeling" (internal clock keeps running).
+   *  When OFF, LTC drop transitions directly to "lost". */
+  setFreewheelEnabled(enabled: boolean): void {
+    this.freewheelEnabled = enabled
   }
 
   /** Start the engine. Spawns the freewheel/lost ticker. */
@@ -320,8 +325,11 @@ export class ChaseEngine {
     const since = Date.now() - this.lastLtcAtMs
     if (since > this.lostThresholdMs) {
       if (this.status !== 'lost') this._setStatus('lost')
-    } else if (since > this.freewheelThresholdMs) {
-      if (this.status !== 'freewheeling') this._setStatus('freewheeling')
+    } else if (since > ChaseEngine.FREEWHEEL_GRACE_MS) {
+      // LTC dropped past the grace window. If freewheel is enabled we hold
+      // "freewheeling" until lostThreshold; otherwise we go straight to lost.
+      const nextStatus = this.freewheelEnabled ? 'freewheeling' : 'lost'
+      if (this.status !== nextStatus) this._setStatus(nextStatus)
     } else {
       if (this.status !== 'chasing') this._setStatus('chasing')
     }
