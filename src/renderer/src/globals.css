@@ -4010,9 +4010,51 @@ html, body, #root {
 }
 .timer-row-controls {
   display: flex;
-  gap: 4px;
+  gap: 8px;
+  align-items: center;
 }
-.timer-btn-start { color: #66bb6a; }
+.timer-btn-primary {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: filter 0.12s, transform 0.06s;
+}
+.timer-btn-primary:hover  { filter: brightness(1.12); }
+.timer-btn-primary:active { transform: translateY(1px); }
+.timer-btn-start  { background: #4ade80; color: #052e16; }   /* fresh — green */
+.timer-btn-start:hover  { background: #6ee08f; }
+.timer-btn-resume { background: var(--accent); color: #000; } /* resume — cyan */
+.timer-btn-pause  { background: #f59e0b; color: #1a1206; }   /* running — amber */
+.timer-btn-pause:hover  { background: #fbb536; }
+
+.timer-btn-secondary {
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: transparent;
+  color: #71717a;
+  border: 1px solid #3f3f46;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.timer-btn-secondary:hover {
+  color: #d4d4d8;
+  border-color: #52525b;
+  background: rgba(255, 255, 255, 0.03);
+}
+
 /* F4 Q-F — visual-only 5-second flash when a timer reaches zero. */
 .timer-row--flashing {
   animation: timer-flash 1s steps(2, end) infinite;

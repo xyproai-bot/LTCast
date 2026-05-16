@@ -505,14 +505,14 @@ function TimerRow({
 
       <div className="timer-row-controls">
         {controlMode === 'pause' ? (
-          <button className="btn-sm timer-btn-pause" onClick={onStop}>{controlLabel}</button>
+          <button className="timer-btn-primary timer-btn-pause" onClick={onStop}>{controlLabel}</button>
         ) : (
           <button
-            className={`btn-sm ${controlMode === 'resume' ? 'timer-btn-resume' : 'timer-btn-start'}`}
+            className={`timer-btn-primary ${controlMode === 'resume' ? 'timer-btn-resume' : 'timer-btn-start'}`}
             onClick={onStart}
           >{controlLabel}</button>
         )}
-        <button className="btn-sm" onClick={onReset}>{t(lang, 'showTimerReset')}</button>
+        <button className="timer-btn-secondary" onClick={onReset}>{t(lang, 'showTimerReset')}</button>
       </div>
     </div>
   )
