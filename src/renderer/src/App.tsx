@@ -584,7 +584,7 @@ export default function App(): React.JSX.Element {
     // slow to enumerate on cold boot). The engine's own error handling
     // surfaces a toast if the device has vanished since last quit.
     if (savedState.ltcInputDeviceId) {
-      engine.current.setLtcInputDevice(savedState.ltcInputDeviceId).catch(() => {})
+      engine.current.setLtcInputDevice(savedState.ltcInputDeviceId, savedState.ltcInputChannel).catch(() => {})
     }
 
     // ── LTC Chase — instantiate engine + start background scanner ──
@@ -851,8 +851,8 @@ export default function App(): React.JSX.Element {
   // render the whole App on every device change.
   useEffect(() => {
     const unsub = useStore.subscribe((s, prev) => {
-      if (s.ltcInputDeviceId !== prev.ltcInputDeviceId) {
-        engine.current?.setLtcInputDevice(s.ltcInputDeviceId).catch(() => { /* engine surfaces errors */ })
+      if (s.ltcInputDeviceId !== prev.ltcInputDeviceId || s.ltcInputChannel !== prev.ltcInputChannel) {
+        engine.current?.setLtcInputDevice(s.ltcInputDeviceId, s.ltcInputChannel).catch(() => { /* engine surfaces errors */ })
       }
     })
     return unsub
