@@ -39,7 +39,11 @@ interface Props {
 }
 
 export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator, onOpenSettings }: Props): React.JSX.Element {
-  const { lang, setLang, midiConnected, ltcSignalOk, artnetEnabled, oscEnabled, playState, tcGeneratorMode, showLocked, setShowLocked } = useStore()
+  const {
+    lang, setLang, midiConnected, ltcSignalOk, artnetEnabled, oscEnabled,
+    playState, tcGeneratorMode, showLocked, setShowLocked,
+    chaseEnabled, setChaseEnabled, chaseStatus,
+  } = useStore()
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [showPreShow, setShowPreShow] = useState(false)
 
@@ -91,6 +95,33 @@ export function StatusBar({ version, onToggleFullscreen, onSwitchToGenerator, on
         >
           <span className={`status-dot${oscEnabled ? ' status-dot--ok' : ''}${oscEnabled && playState === 'playing' ? ' status-dot--pulse' : ''}`} />
           OSC
+        </button>
+
+        {/* LTC Chase toggle. Status-coloured dot:
+              chasing      → cyan (ok)
+              freewheeling → amber (warn)
+              lost         → red (warn)
+              idle/off     → grey
+            Click toggles chaseEnabled. Long-click via Settings link surfaces
+            advanced options. */}
+        <button
+          className={`status-pill${chaseEnabled ? ' status-pill--active' : ''}${chaseEnabled && chaseStatus === 'freewheeling' ? ' status-pill--warn' : ''}`}
+          onClick={() => setChaseEnabled(!chaseEnabled)}
+          title={t(lang, 'chaseMode')}
+        >
+          <span
+            className={`status-dot${
+              chaseEnabled && chaseStatus === 'chasing' ? ' status-dot--ok' :
+                chaseEnabled && chaseStatus === 'freewheeling' ? ' status-dot--warn' :
+                  chaseEnabled && chaseStatus === 'lost' ? ' status-dot--warn' : ''
+            }${chaseEnabled && chaseStatus === 'chasing' ? ' status-dot--pulse' : ''}`}
+            style={
+              chaseEnabled && chaseStatus === 'lost'
+                ? { background: '#ef4444', boxShadow: '0 0 4px #ef4444' }
+                : undefined
+            }
+          />
+          CHASE
         </button>
 
         {!ltcSignalOk && playState === 'playing' && !tcGeneratorMode && (
