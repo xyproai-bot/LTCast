@@ -26,6 +26,44 @@ const MSG_TYPES: Array<{ value: MidiCuePoint['messageType']; label: string }> = 
   { value: 'program-change', label: 'PC'   },
 ]
 
+/**
+ * Quick-setup presets — common scenarios pre-fill the type/channel/data values
+ * so LDs don't need to know the underlying MIDI bytes. The string key matches
+ * an i18n key for the dropdown label.
+ *
+ * "custom" means: don't touch the current form values — keep whatever the user
+ * has already filled in (useful as the "do nothing" option in the dropdown).
+ */
+type QuickSetupKey =
+  | 'custom'
+  | 'lighting-note'
+  | 'lighting-pc'
+  | 'resolume-clip'
+  | 'resolume-effect'
+  | 'disguise'
+  | 'daw-transport'
+
+interface QuickSetupPreset {
+  i18nKey:
+    | 'quickSetupCustom' | 'quickSetupLightingNote' | 'quickSetupLightingPc'
+    | 'quickSetupResolumeClip' | 'quickSetupResolumeEffect'
+    | 'quickSetupDisguise' | 'quickSetupDawTransport'
+  type: MidiCuePoint['messageType']
+  channel: number
+  data1: number
+  data2?: number
+}
+
+const QUICK_SETUPS: Record<QuickSetupKey, QuickSetupPreset> = {
+  'custom':          { i18nKey: 'quickSetupCustom',          type: 'note-on',        channel: 1,  data1: 60, data2: 100 }, // values ignored when applied
+  'lighting-note':   { i18nKey: 'quickSetupLightingNote',    type: 'note-on',        channel: 1,  data1: 60, data2: 100 },
+  'lighting-pc':     { i18nKey: 'quickSetupLightingPc',      type: 'program-change', channel: 1,  data1: 0                },
+  'resolume-clip':   { i18nKey: 'quickSetupResolumeClip',    type: 'note-on',        channel: 1,  data1: 36, data2: 100 },
+  'resolume-effect': { i18nKey: 'quickSetupResolumeEffect',  type: 'control-change', channel: 1,  data1: 11, data2: 64  },
+  'disguise':        { i18nKey: 'quickSetupDisguise',        type: 'note-on',        channel: 16, data1: 60, data2: 100 },
+  'daw-transport':   { i18nKey: 'quickSetupDawTransport',    type: 'control-change', channel: 1,  data1: 117, data2: 127 },
+}
+
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 /**
@@ -157,6 +195,9 @@ export function MidiCuePanel({
   const [newData1, setNewData1]     = useState(lastNewData1Ref.current)
   const [newData2, setNewData2]     = useState(lastNewData2Ref.current)
   const [newLabel, setNewLabel]     = useState('')
+  // Advanced section default collapsed — LDs only need label + TC for the
+  // 80% case (after picking a Quick Setup, they're done). Power users expand it.
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   // Inline editing state — only one cue field at a time.
   const [editing, setEditing] = useState<{ cueId: string; field: EditableField } | null>(null)
@@ -178,6 +219,11 @@ export function MidiCuePanel({
   const handleAddCue = (): void => {
     const normalized = normalizeTcInput(newTc)
     if (!isValidTimecode(normalized)) return
+    // Label is now required — the user-facing language is "Trigger", and an
+    // un-named trigger is useless to an LD operating live. Disable Add button
+    // and bail here just in case.
+    const trimmedLabel = newLabel.trim()
+    if (trimmedLabel === '') return
     const cue: MidiCuePoint = {
       id: nextCueId(),
       triggerTimecode: normalized,
@@ -185,7 +231,7 @@ export function MidiCuePanel({
       channel: newChannel,
       data1: newData1,
       data2: newType !== 'program-change' ? newData2 : undefined,
-      label: newLabel || undefined,
+      label: trimmedLabel,
       enabled: true
     }
     const sorted = [...cues, cue].sort((a, b) => a.triggerTimecode.localeCompare(b.triggerTimecode))
@@ -196,6 +242,17 @@ export function MidiCuePanel({
     lastNewData1Ref.current   = newData1
     lastNewData2Ref.current   = newData2
     setNewLabel('')
+  }
+
+  // Apply a Quick Setup preset to the add-form. "custom" is a no-op — leaves
+  // current values in place so the user can fine-tune manually.
+  const handleQuickSetup = (key: QuickSetupKey): void => {
+    if (key === 'custom') return
+    const p = QUICK_SETUPS[key]
+    setNewType(p.type)
+    setNewChannel(p.channel)
+    setNewData1(p.data1)
+    if (p.data2 !== undefined) setNewData2(p.data2)
   }
 
   const handleDeleteCue = (id: string): void => {
@@ -373,7 +430,17 @@ export function MidiCuePanel({
     [newType, newData1]
   )
 
+  // Plain-language explanation for the currently-selected message type. Shown
+  // below the type tabs so LDs new to MIDI can pick the right one without
+  // hunting through specs.
+  const typeHint = newType === 'note-on'        ? t(lang, 'typeHintNote')
+                  : newType === 'control-change' ? t(lang, 'typeHintCc')
+                  : t(lang, 'typeHintPc')
+
   const liveTcAvailable = !!timecode
+  const normalizedNewTc = normalizeTcInput(newTc)
+  const labelTrimmed    = newLabel.trim()
+  const canAdd          = isValidTimecode(normalizedNewTc) && labelTrimmed !== ''
 
   return (
     <div className="midi-cue-panel">
@@ -427,184 +494,223 @@ export function MidiCuePanel({
                 const isEditingThis = editing?.cueId === cue.id
                 const isEditingField = (f: EditableField): boolean => isEditingThis && editing?.field === f
 
+                // Plain-language layout:
+                //   Top line  : [toggle ▶] TC · LABEL (big, white)            [dup ✕]
+                //   Bottom line: Ch1 · Note C4 · Vel 100  (small, zinc-500)
+                // Label is the row's identity; MIDI bytes recede to greyscale.
+                const typeName = cue.messageType === 'note-on' ? 'NOTE' : cue.messageType === 'control-change' ? 'CC' : 'PC'
+                const data1Label = cue.messageType === 'program-change' ? 'Prog' : cue.messageType === 'note-on' ? 'Note' : 'CC'
+                const data2Label = cue.messageType === 'note-on' ? 'Vel' : 'Val'
+
                 return (
-                  <div key={cue.id} className={`cp-cue-item${cue.enabled ? '' : ' cp-cue-item--off'}${lastFiredCueId === cue.id ? ' cp-cue-item--fired' : ''}`}>
-                    <button
-                      className={`cp-cue-toggle${cue.enabled ? ' cp-cue-toggle--on' : ''}`}
-                      onClick={() => handleToggleCue(cue.id)}
-                      title={t(lang, 'cueEnabled')}
-                    />
-                    {/* Test-fire ▶ */}
-                    <button
-                      className="cp-cue-fire"
-                      onClick={() => handleTestFireCue(cue)}
-                      disabled={!onTestFireCue || !selectedCueMidiPort}
-                      title={t(lang, 'testFireCue')}
-                    >
-                      <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
-                        <polygon points="1,1 7,4 1,7" />
-                      </svg>
-                    </button>
-
-                    {/* TC — inline editable */}
-                    {isEditingField('tc') ? (
-                      <input
-                        ref={el => { if (el) editInputRef.current = el }}
-                        type="text"
-                        className="cp-cue-tc cp-cue-edit-input"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={commitEdit}
-                        onKeyDown={handleEditKeyDown}
+                  <div key={cue.id} className={`cp-cue-item cp-cue-item--two-line${cue.enabled ? '' : ' cp-cue-item--off'}${lastFiredCueId === cue.id ? ' cp-cue-item--fired' : ''}`}>
+                    <div className="cp-cue-row-main">
+                      <button
+                        className={`cp-cue-toggle${cue.enabled ? ' cp-cue-toggle--on' : ''}`}
+                        onClick={() => handleToggleCue(cue.id)}
+                        title={t(lang, 'cueEnabled')}
                       />
-                    ) : (
-                      <span
-                        className="cp-cue-tc cp-cue-editable"
-                        onClick={() => startEdit(cue.id, 'tc', cue.triggerTimecode)}
-                        title={t(lang, 'cueEditClickHint')}
-                      >{cue.triggerTimecode}</span>
-                    )}
-
-                    {/* Type — inline editable via select. Commit immediately on
-                        change (don't wait for blur) since select changes are
-                        unambiguous and there's no benefit to deferring. */}
-                    {isEditingField('type') ? (
-                      <select
-                        ref={el => { if (el) editInputRef.current = el }}
-                        className="cp-cue-edit-select"
-                        value={editValue}
-                        autoFocus
-                        onChange={(e) => {
-                          const v = e.target.value as MidiCuePoint['messageType']
-                          if (activeSetlistIndex !== null && (v === 'note-on' || v === 'control-change' || v === 'program-change')) {
-                            const patch: Partial<MidiCuePoint> = { messageType: v }
-                            if (v === 'program-change') patch.data2 = undefined
-                            else if (cue.messageType === 'program-change' && cue.data2 === undefined) patch.data2 = 100
-                            updateSetlistItemMidiCue(activeSetlistIndex, cue.id, patch)
-                          }
-                          cancelEdit()
-                        }}
-                        onBlur={cancelEdit}
-                        onKeyDown={(e) => { if (e.key === 'Escape') cancelEdit() }}
+                      {/* Test-fire ▶ */}
+                      <button
+                        className="cp-cue-fire"
+                        onClick={() => handleTestFireCue(cue)}
+                        disabled={!onTestFireCue || !selectedCueMidiPort}
+                        title={t(lang, 'testFireCue')}
                       >
-                        <option value="note-on">NOTE</option>
-                        <option value="control-change">CC</option>
-                        <option value="program-change">PC</option>
-                      </select>
-                    ) : (
-                      <span
-                        className={`cp-cue-badge cp-cue-badge--${typeColor(cue.messageType)} cp-cue-editable`}
-                        onClick={() => startEdit(cue.id, 'type', cue.messageType)}
-                        title={t(lang, 'cueEditClickHint')}
-                      >
-                        {cue.messageType === 'note-on' ? 'NOTE' : cue.messageType === 'control-change' ? 'CC' : 'PC'}
-                      </span>
-                    )}
+                        <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                          <polygon points="1,1 7,4 1,7" />
+                        </svg>
+                      </button>
 
-                    {/* Channel · data1 · data2 — inline editable cluster */}
-                    <span className="cp-cue-params">
-                      {isEditingField('channel') ? (
+                      {/* TC — inline editable */}
+                      {isEditingField('tc') ? (
                         <input
                           ref={el => { if (el) editInputRef.current = el }}
-                          type="number" min={1} max={16}
-                          className="cp-cue-edit-num"
+                          type="text"
+                          className="cp-cue-tc cp-cue-edit-input"
                           value={editValue}
                           onChange={(e) => setEditValue(e.target.value)}
                           onBlur={commitEdit}
                           onKeyDown={handleEditKeyDown}
                         />
                       ) : (
-                        <span className="cp-cue-editable" onClick={() => startEdit(cue.id, 'channel', cue.channel)}>Ch{cue.channel}</span>
+                        <span
+                          className="cp-cue-tc cp-cue-editable"
+                          onClick={() => startEdit(cue.id, 'tc', cue.triggerTimecode)}
+                          title={t(lang, 'cueEditClickHint')}
+                        >{cue.triggerTimecode}</span>
                       )}
-                      {' · '}
-                      {isEditingField('data1') ? (
+
+                      {/* LABEL — the primary identity of the row. Big white text;
+                          falls back to "Untitled trigger" italic if empty. */}
+                      {isEditingField('label') ? (
                         <input
                           ref={el => { if (el) editInputRef.current = el }}
-                          type="number" min={0} max={127}
-                          className="cp-cue-edit-num"
+                          type="text"
+                          className="cp-cue-edit-label cp-cue-edit-label--big"
                           value={editValue}
                           onChange={(e) => setEditValue(e.target.value)}
                           onBlur={commitEdit}
                           onKeyDown={handleEditKeyDown}
                         />
+                      ) : cue.label ? (
+                        <span
+                          className="cp-cue-label-big cp-cue-editable"
+                          title={cue.label}
+                          onClick={() => startEdit(cue.id, 'label', cue.label ?? '')}
+                        >{cue.label}</span>
                       ) : (
-                        <span className="cp-cue-editable" onClick={() => startEdit(cue.id, 'data1', cue.data1)}>
-                          {cue.data1}{cue.messageType === 'note-on' ? ` (${noteNumberToName(cue.data1)})` : ''}
+                        <span
+                          className="cp-cue-label-big cp-cue-label-big--unnamed cp-cue-editable"
+                          onClick={() => startEdit(cue.id, 'label', '')}
+                          title={t(lang, 'cueEditClickHint')}
+                        >{t(lang, 'triggersUnnamed')}</span>
+                      )}
+
+                      {/* Action buttons (right side) */}
+                      <button
+                        className="cp-cue-dup"
+                        onClick={() => handleDuplicateCue(cue.id)}
+                        title={t(lang, 'duplicateCue')}
+                      >
+                        <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.25">
+                          <rect x="0.5" y="0.5" width="6" height="6" rx="0.5" />
+                          <rect x="2.5" y="2.5" width="6" height="6" rx="0.5" />
+                        </svg>
+                      </button>
+
+                      <button
+                        className="cp-cue-del"
+                        onClick={() => handleDeleteCue(cue.id)}
+                        title={t(lang, 'remove')}
+                      >
+                        <svg width="8" height="8" viewBox="0 0 8 8" stroke="currentColor" strokeWidth="1.5">
+                          <line x1="1" y1="1" x2="7" y2="7"/><line x1="7" y1="1" x2="1" y2="7"/>
+                        </svg>
+                      </button>
+                    </div>
+
+                    {/* Second row — MIDI bytes in plain language, small zinc-500.
+                        Each segment is independently click-to-edit for power
+                        users; casuals can ignore this row entirely. */}
+                    <div className="cp-cue-row-bytes">
+                      {/* Type badge (small) */}
+                      {isEditingField('type') ? (
+                        <select
+                          ref={el => { if (el) editInputRef.current = el }}
+                          className="cp-cue-edit-select"
+                          value={editValue}
+                          autoFocus
+                          onChange={(e) => {
+                            const v = e.target.value as MidiCuePoint['messageType']
+                            if (activeSetlistIndex !== null && (v === 'note-on' || v === 'control-change' || v === 'program-change')) {
+                              const patch: Partial<MidiCuePoint> = { messageType: v }
+                              if (v === 'program-change') patch.data2 = undefined
+                              else if (cue.messageType === 'program-change' && cue.data2 === undefined) patch.data2 = 100
+                              updateSetlistItemMidiCue(activeSetlistIndex, cue.id, patch)
+                            }
+                            cancelEdit()
+                          }}
+                          onBlur={cancelEdit}
+                          onKeyDown={(e) => { if (e.key === 'Escape') cancelEdit() }}
+                        >
+                          <option value="note-on">NOTE</option>
+                          <option value="control-change">CC</option>
+                          <option value="program-change">PC</option>
+                        </select>
+                      ) : (
+                        <span
+                          className={`cp-cue-byte-type cp-cue-byte-type--${typeColor(cue.messageType)} cp-cue-editable`}
+                          onClick={() => startEdit(cue.id, 'type', cue.messageType)}
+                          title={t(lang, 'cueEditClickHint')}
+                        >
+                          {typeName}
                         </span>
                       )}
-                      {cue.data2 !== undefined && (
-                        <>
-                          {' · '}
-                          {isEditingField('data2') ? (
-                            <input
-                              ref={el => { if (el) editInputRef.current = el }}
-                              type="number" min={0} max={127}
-                              className="cp-cue-edit-num"
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              onBlur={commitEdit}
-                              onKeyDown={handleEditKeyDown}
-                            />
-                          ) : (
-                            <span className="cp-cue-editable" onClick={() => startEdit(cue.id, 'data2', cue.data2 ?? 0)}>{cue.data2}</span>
-                          )}
-                        </>
-                      )}
-                    </span>
 
-                    {/* Label — always editable; click empty area to add */}
-                    {isEditingField('label') ? (
-                      <input
-                        ref={el => { if (el) editInputRef.current = el }}
-                        type="text"
-                        className="cp-cue-edit-label"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={commitEdit}
-                        onKeyDown={handleEditKeyDown}
-                      />
-                    ) : cue.label ? (
-                      <span
-                        className="cp-cue-label cp-cue-editable"
-                        title={cue.label}
-                        onClick={() => startEdit(cue.id, 'label', cue.label ?? '')}
-                      >{cue.label}</span>
-                    ) : (
-                      <span
-                        className="cp-cue-label cp-cue-label--placeholder cp-cue-editable"
-                        onClick={() => startEdit(cue.id, 'label', '')}
-                      >+</span>
-                    )}
-
-                    {/* Duplicate button */}
-                    <button
-                      className="cp-cue-dup"
-                      onClick={() => handleDuplicateCue(cue.id)}
-                      title={t(lang, 'duplicateCue')}
-                    >
-                      <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.25">
-                        <rect x="0.5" y="0.5" width="6" height="6" rx="0.5" />
-                        <rect x="2.5" y="2.5" width="6" height="6" rx="0.5" />
-                      </svg>
-                    </button>
-
-                    <button
-                      className="cp-cue-del"
-                      onClick={() => handleDeleteCue(cue.id)}
-                      title={t(lang, 'remove')}
-                    >
-                      <svg width="8" height="8" viewBox="0 0 8 8" stroke="currentColor" strokeWidth="1.5">
-                        <line x1="1" y1="1" x2="7" y2="7"/><line x1="7" y1="1" x2="1" y2="7"/>
-                      </svg>
-                    </button>
+                      {/* Channel · data1 · data2 — plain-language form */}
+                      <span className="cp-cue-bytes">
+                        {'Ch'}
+                        {isEditingField('channel') ? (
+                          <input
+                            ref={el => { if (el) editInputRef.current = el }}
+                            type="number" min={1} max={16}
+                            className="cp-cue-edit-num"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={commitEdit}
+                            onKeyDown={handleEditKeyDown}
+                          />
+                        ) : (
+                          <span className="cp-cue-editable" onClick={() => startEdit(cue.id, 'channel', cue.channel)}>{cue.channel}</span>
+                        )}
+                        {' · '}
+                        {data1Label}{' '}
+                        {isEditingField('data1') ? (
+                          <input
+                            ref={el => { if (el) editInputRef.current = el }}
+                            type="number" min={0} max={127}
+                            className="cp-cue-edit-num"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={commitEdit}
+                            onKeyDown={handleEditKeyDown}
+                          />
+                        ) : (
+                          <span className="cp-cue-editable" onClick={() => startEdit(cue.id, 'data1', cue.data1)}>
+                            {cue.messageType === 'note-on' ? noteNumberToName(cue.data1) : cue.data1}
+                          </span>
+                        )}
+                        {cue.data2 !== undefined && (
+                          <>
+                            {' · '}
+                            {data2Label}{' '}
+                            {isEditingField('data2') ? (
+                              <input
+                                ref={el => { if (el) editInputRef.current = el }}
+                                type="number" min={0} max={127}
+                                className="cp-cue-edit-num"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onBlur={commitEdit}
+                                onKeyDown={handleEditKeyDown}
+                              />
+                            ) : (
+                              <span className="cp-cue-editable" onClick={() => startEdit(cue.id, 'data2', cue.data2 ?? 0)}>{cue.data2}</span>
+                            )}
+                          </>
+                        )}
+                      </span>
+                    </div>
                   </div>
                 )
               })}
             </div>
 
-            {/* Add cue form */}
+            {/* Add cue form — plain-language layout:
+                  Row 1: Label input (primary — "what does this do?")
+                  Row 2: TC input + Now button
+                  Row 3: Advanced ▼ toggle → expands the MIDI byte controls
+                  Row 4 (advanced): Quick Setup dropdown
+                  Row 5 (advanced): Type tabs + plain-language hint
+                  Row 6 (advanced): Channel + data1 + data2
+                  Row 7: Add button (disabled until label + valid TC)
+            */}
             <div className="cp-add-form">
-              {/* Row 1: TC + Now button + type tabs */}
+              {/* Row 1: Label — first thing user fills in */}
+              <div className="cp-form-row">
+                <input
+                  type="text"
+                  className="cp-label-input cp-label-input--primary"
+                  value={newLabel}
+                  onChange={(e) => setNewLabel(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && canAdd) handleAddCue() }}
+                  placeholder={t(lang, 'cueLabelPlaceholder')}
+                  autoFocus={cues.length === 0}
+                />
+              </div>
+
+              {/* Row 2: TC + Now */}
               <div className="cp-form-row">
                 <input
                   type="text"
@@ -622,66 +728,110 @@ export function MidiCuePanel({
                 >
                   {t(lang, 'now')}
                 </button>
-                <div className="cp-type-tabs">
-                  {MSG_TYPES.map(({ value, label }) => (
-                    <button
-                      key={value}
-                      className={`cp-type-tab${newType === value ? ' active' : ''}`}
-                      onClick={() => setNewType(value)}
-                    >{label}</button>
-                  ))}
-                </div>
               </div>
-              {/* Row 2: channel + data */}
-              <div className="cp-form-row cp-form-row--params">
-                <span className="cp-form-lbl">Ch</span>
-                <input
-                  type="number"
-                  className="cp-num"
-                  min={1} max={16}
-                  value={newChannel}
-                  onChange={(e) => setNewChannel(Math.max(1, Math.min(16, parseInt(e.target.value) || 1)))}
-                />
-                <span className="cp-form-lbl">
-                  {newType === 'program-change' ? 'Prog' : newType === 'note-on' ? 'Note' : 'CC'}
-                </span>
-                <input
-                  type="number"
-                  className="cp-num"
-                  min={0} max={127}
-                  value={newData1}
-                  onChange={(e) => setNewData1(Math.max(0, Math.min(127, parseInt(e.target.value) || 0)))}
-                />
-                {newType === 'note-on' && newData1NoteName && (
-                  <span className="cp-form-hint">{newData1NoteName}</span>
-                )}
-                {newType !== 'program-change' && (
-                  <>
-                    <span className="cp-form-lbl">{newType === 'note-on' ? 'Vel' : 'Val'}</span>
+
+              {/* Row 3: Advanced toggle — collapsed by default; lets LDs add
+                  a basic trigger without ever seeing MIDI bytes. */}
+              <div className="cp-form-row">
+                <button
+                  type="button"
+                  className="cp-advanced-toggle"
+                  onClick={() => setAdvancedOpen(o => !o)}
+                  aria-expanded={advancedOpen}
+                >
+                  {advancedOpen ? t(lang, 'advancedCollapse') : t(lang, 'advancedExpand')}
+                </button>
+              </div>
+
+              {advancedOpen && (
+                <>
+                  {/* Quick Setup — applies preset to form fields below */}
+                  <div className="cp-form-row">
+                    <span className="cp-form-lbl">{t(lang, 'quickSetup')}</span>
+                    <select
+                      className="cp-quick-setup"
+                      value="custom"
+                      onChange={(e) => {
+                        handleQuickSetup(e.target.value as QuickSetupKey)
+                        // Reset back to "custom" so the dropdown is reusable —
+                        // we treat it as a one-shot action, not a sticky mode.
+                        e.target.value = 'custom'
+                      }}
+                    >
+                      <option value="custom">{t(lang, 'quickSetupCustom')}</option>
+                      <option value="lighting-note">{t(lang, 'quickSetupLightingNote')}</option>
+                      <option value="lighting-pc">{t(lang, 'quickSetupLightingPc')}</option>
+                      <option value="resolume-clip">{t(lang, 'quickSetupResolumeClip')}</option>
+                      <option value="resolume-effect">{t(lang, 'quickSetupResolumeEffect')}</option>
+                      <option value="disguise">{t(lang, 'quickSetupDisguise')}</option>
+                      <option value="daw-transport">{t(lang, 'quickSetupDawTransport')}</option>
+                    </select>
+                  </div>
+
+                  {/* Type tabs */}
+                  <div className="cp-form-row">
+                    <div className="cp-type-tabs">
+                      {MSG_TYPES.map(({ value, label }) => (
+                        <button
+                          key={value}
+                          className={`cp-type-tab${newType === value ? ' active' : ''}`}
+                          onClick={() => setNewType(value)}
+                        >{label}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Plain-language hint for selected type */}
+                  <div className="cp-form-row cp-form-row--hint">
+                    <span className="cp-type-hint">{typeHint}</span>
+                  </div>
+
+                  {/* Channel + data fields */}
+                  <div className="cp-form-row cp-form-row--params">
+                    <span className="cp-form-lbl">Ch</span>
+                    <input
+                      type="number"
+                      className="cp-num"
+                      min={1} max={16}
+                      value={newChannel}
+                      onChange={(e) => setNewChannel(Math.max(1, Math.min(16, parseInt(e.target.value) || 1)))}
+                    />
+                    <span className="cp-form-lbl">
+                      {newType === 'program-change' ? 'Prog' : newType === 'note-on' ? 'Note' : 'CC'}
+                    </span>
                     <input
                       type="number"
                       className="cp-num"
                       min={0} max={127}
-                      value={newData2}
-                      onChange={(e) => setNewData2(Math.max(0, Math.min(127, parseInt(e.target.value) || 0)))}
+                      value={newData1}
+                      onChange={(e) => setNewData1(Math.max(0, Math.min(127, parseInt(e.target.value) || 0)))}
                     />
-                  </>
-                )}
-              </div>
-              {/* Row 3: label + add button */}
+                    {newType === 'note-on' && newData1NoteName && (
+                      <span className="cp-form-hint">{newData1NoteName}</span>
+                    )}
+                    {newType !== 'program-change' && (
+                      <>
+                        <span className="cp-form-lbl">{newType === 'note-on' ? 'Vel' : 'Val'}</span>
+                        <input
+                          type="number"
+                          className="cp-num"
+                          min={0} max={127}
+                          value={newData2}
+                          onChange={(e) => setNewData2(Math.max(0, Math.min(127, parseInt(e.target.value) || 0)))}
+                        />
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Add button */}
               <div className="cp-form-row">
-                <input
-                  type="text"
-                  className="cp-label-input"
-                  value={newLabel}
-                  onChange={(e) => setNewLabel(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddCue() }}
-                  placeholder={t(lang, 'cueLabelPlaceholder')}
-                />
                 <button
-                  className="cp-add-btn"
+                  className="cp-add-btn cp-add-btn--full"
                   onClick={handleAddCue}
-                  disabled={!isValidTimecode(normalizeTcInput(newTc))}
+                  disabled={!canAdd}
+                  title={!canAdd && labelTrimmed === '' ? t(lang, 'triggerLabelRequiredHint') : undefined}
                 >
                   + {t(lang, 'addCue')}
                 </button>

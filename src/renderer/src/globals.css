@@ -3090,6 +3090,142 @@ html, body, #root {
 }
 .cp-cue-item:hover .cp-cue-label--placeholder { color: #555 !important; }
 
+/* ── Two-line cue row (plain-language layout, 2026-05-16) ──
+   Top row: toggle ▶ TC LABEL [dup ✕]
+   Bottom row: type chip + MIDI bytes in plain language (zinc-500)
+   The label is the row's identity — bigger, white. MIDI bytes recede. */
+.cp-cue-item--two-line {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 4px;
+}
+
+.cp-cue-row-main {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cp-cue-row-bytes {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 36px;  /* indent past toggle + fire button to align under label */
+  margin-top: 1px;
+}
+
+/* The big label on the first row — the row's main identity */
+.cp-cue-label-big {
+  flex: 1;
+  font-size: 12px;
+  color: #e4e4e7;       /* near-white */
+  font-weight: 500;
+  font-family: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.cp-cue-label-big--unnamed {
+  color: #52525b;        /* zinc-600 */
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* Inline editor for the big label — match the size so the row doesn't jump */
+.cp-cue-edit-label--big {
+  font-size: 12px;
+  color: #e4e4e7;
+  padding: 1px 5px;
+  flex: 1;
+}
+
+/* Small grey-text byte chips on the second row */
+.cp-cue-byte-type {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: 'Inter', system-ui, sans-serif;
+  letter-spacing: 0.05em;
+  padding: 0px 4px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  opacity: 0.65;
+}
+.cp-cue-byte-type--note { color: #4fc3f7; background: rgba(79, 195, 247, 0.08); }
+.cp-cue-byte-type--cc   { color: #ffb74d; background: rgba(255, 183, 77, 0.08); }
+.cp-cue-byte-type--pc   { color: #81c784; background: rgba(129, 199, 132, 0.08); }
+
+.cp-cue-bytes {
+  font-size: 10px;
+  color: #71717a;        /* zinc-500 */
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* ── Add-form: advanced toggle + plain-language pieces ── */
+.cp-advanced-toggle {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #71717a;
+  font-size: 10px;
+  font-family: inherit;
+  padding: 3px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.cp-advanced-toggle:hover {
+  color: var(--accent);
+  border-color: rgba(0, 212, 255, 0.3);
+  background: rgba(0, 212, 255, 0.04);
+}
+
+.cp-quick-setup {
+  flex: 1;
+  background: #111;
+  color: #ccc;
+  border: 1px solid #222;
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+  min-width: 0;
+}
+.cp-quick-setup:focus { border-color: var(--accent); }
+
+.cp-form-row--hint {
+  margin-top: -2px;
+}
+
+.cp-type-hint {
+  font-size: 10px;
+  color: #71717a;
+  font-style: italic;
+  line-height: 1.4;
+}
+
+/* Primary label input — bigger so it reads as the main field */
+.cp-label-input--primary {
+  font-size: 12px;
+  padding: 5px 7px;
+  color: #e4e4e7;
+}
+.cp-label-input--primary::placeholder { color: #52525b; font-style: italic; }
+
+/* Full-width Add button */
+.cp-add-btn--full {
+  flex: 1;
+  text-align: center;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 /* "From markers" button on the cue list section header */
 .cp-import-markers-btn {
   background: transparent;
